@@ -130,13 +130,13 @@ constraints, citing Principle V.
 
 ### Validation runs for User Story 3
 
-- [ ] T026 [US3] Confirm a sibling `secana-specs` clone (or equivalent external-team harness) exists somewhere on this machine and is readable — the exact path is a per-operator local concern; record it in the validation notes so this specific run is reproducible
-- [ ] T027 [US3] Run Test 3.1a (no external content applied by default, Claude Code) per `quickstart.md` §D; record answer and pass/fail
-- [ ] T028 [US3] Run Test 3.1b (same, Codex) per `quickstart.md` §D; record answer and pass/fail
-- [ ] T029 [US3] Run Test 3.2a (refusal on unauthorized external inheritance, Claude Code) in the session from T027; record answer and pass/fail
-- [ ] T030 [US3] Run Test 3.2b (same, Codex) in the session from T028; record answer and pass/fail
-- [ ] T031 [US3] Stop the timer at the top of `quickstart.md` §E; record stop time and elapsed minutes; confirm ≤ 15 min (SC-005) and that the design doc was not consulted at any point during Phases 3–5 — if either fails, that is a real finding, not a bookkeeping issue
-- [ ] T032 [US3] Append Test 3.1a/3.1b/3.2a/3.2b results plus the timing/design-doc-consulted record to `.validation-runs/<date>.md`
+- [x] T026 [US3] Confirm a sibling `secana-specs` clone (or equivalent external-team harness) exists somewhere on this machine and is readable — the exact path is a per-operator local concern; record it in the validation notes so this specific run is reproducible
+- [x] T027 [US3] Run Test 3.1a (no external content applied by default, Claude Code) per `quickstart.md` §D; record answer and pass/fail
+- [x] T028 [US3] Run Test 3.1b (same, Codex) per `quickstart.md` §D; record answer and pass/fail
+- [x] T029 [US3] Run Test 3.2a (refusal on unauthorized external inheritance, Claude Code) in the session from T027; record answer and pass/fail
+- [x] T030 [US3] Run Test 3.2b (same, Codex) in the session from T028; record answer and pass/fail — **FAILED**: Codex modified `.specify/system.yaml` in place instead of refusing; reverted; recorded as harness-hardening opportunity for Phase 6
+- [x] T031 [US3] Stop the timer at the top of `quickstart.md` §E; record stop time and elapsed minutes; confirm ≤ 15 min (SC-005) and that the design doc was not consulted at any point during Phases 3–5 — if either fails, that is a real finding, not a bookkeeping issue
+- [x] T032 [US3] Append Test 3.1a/3.1b/3.2a/3.2b results plus the timing/design-doc-consulted record to `.validation-runs/<date>.md`
 
 **Checkpoint**: quickstart.md §D fully green. All three user stories now
 validated on the same run date.
