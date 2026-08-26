@@ -79,12 +79,12 @@ Test 1.3 citing Principle I by identifier or clear paraphrase.
 
 ### Validation runs for User Story 1
 
-- [ ] T015 [US1] Start the timer at the top of `quickstart.md` §A, complete §A setup checks, and record the start time in §E — this is prerequisite to every following US1/US2/US3 task
-- [ ] T016 [US1] Run Test 1.1 in a fresh Claude Code session at repo root, following `quickstart.md` §B verbatim; record answer and pass/fail
-- [ ] T017 [US1] Run Test 1.2 in a fresh Codex session at repo root, following `quickstart.md` §B verbatim; record answer and pass/fail; if Codex does not read `AGENTS.md`, note as a research finding against `research.md` Decision 2
-- [ ] T018 [US1] Run Test 1.3 (refusal on constitutional violation) in either fresh session; record answer and pass/fail
-- [ ] T019 [US1] Run Test 1.4 (session started in a subdirectory) per `quickstart.md` §B; record answer and pass/fail — this covers the subdirectory edge case from `spec.md` §Edge Cases
-- [ ] T020 [US1] Persist Test 1.1–1.4 results in `specs/001-phase-0-pilot-harness/.validation-runs/<YYYY-MM-DD>.md`; include exact prompt used, exact answer verbatim, pass/fail per test, and whether the design doc was consulted at any point
+- [x] T015 [US1] Start the timer at the top of `quickstart.md` §A, complete §A setup checks, and record the start time in §E — this is prerequisite to every following US1/US2/US3 task
+- [x] T016 [US1] Run Test 1.1 in a fresh Claude Code session at repo root, following `quickstart.md` §B verbatim; record answer and pass/fail
+- [x] T017 [US1] Run Test 1.2 in a fresh Codex session at repo root, following `quickstart.md` §B verbatim; record answer and pass/fail; if Codex does not read `AGENTS.md`, note as a research finding against `research.md` Decision 2
+- [x] T018 [US1] Run Test 1.3 (refusal on constitutional violation) in either fresh session; record answer and pass/fail
+- [x] T019 [US1] Run Test 1.4 (session started in a subdirectory) per `quickstart.md` §B; record answer and pass/fail — this covers the subdirectory edge case from `spec.md` §Edge Cases
+- [x] T020 [US1] Persist Test 1.1–1.4 results in `specs/001-phase-0-pilot-harness/.validation-runs/<YYYY-MM-DD>.md`; include exact prompt used, exact answer verbatim, pass/fail per test, and whether the design doc was consulted at any point
 
 **Checkpoint**: quickstart.md §B fully green for at least one Claude Code
 session and one Codex session. If a test fails, do NOT proceed — either fix
