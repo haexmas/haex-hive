@@ -49,8 +49,9 @@ A personal, cross-device AI-assisted development setup:
   registry/manifest approach for group membership. Claude-Code-specific (not
   multi-tool). **Decision: referenced as an external, unmodified harness group — not
   ported or rewritten.**
-- **Plan v3** (`~/Downloads/LLM_AGNOSTIC_SPECKIT_MULTI_REPO_PLAN_v3.md`, 2026-08-19)
-  — a prior plan of the same author, spec-kit-driven, git-only, one always-on remote
+- **Plan v3** (`LLM_AGNOSTIC_SPECKIT_MULTI_REPO_PLAN_v3.md`, an earlier
+  planning document by the same author, dated 2026-08-19) — spec-kit-driven,
+  git-only, one always-on remote
   VM for mobile access (OpenHands as pure execution trigger, not source of truth).
   Solves the original multi-repo/multi-account problem with a much simpler
   architecture than haex-hive (no relay, no daemon, no capability routing). Its

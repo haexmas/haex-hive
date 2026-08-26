@@ -31,7 +31,7 @@ plumbing. Everything in this phase is already committed on branch
 `001-phase-0-pilot-harness` as of the plan commit — tasks are listed for
 traceability and to allow a rebuild-from-scratch to follow the same order.
 
-- [x] T001 Initialize `haex-hive` repository with `git init` at `/home/haex/Projekte/haex-hive/`
+- [x] T001 Initialize `haex-hive` repository with `git init` at the operator's chosen local project location
 - [x] T002 Commit design doc at `docs/plans/2026-08-26-haex-hive-design.md`
 - [x] T003 Run `specify init . --ai claude --force` to scaffold spec-kit under `.specify/` and install skills into `.claude/skills/`
 - [x] T004 Create feature branch `001-phase-0-pilot-harness` and run `.specify/scripts/bash/setup-plan.sh --json`
@@ -130,7 +130,7 @@ constraints, citing Principle V.
 
 ### Validation runs for User Story 3
 
-- [ ] T026 [US3] Confirm the sibling `secana-specs` clone exists on this machine and is readable (`ls /home/haex/Projekte/secana-specs`); record its state in the validation notes so the test is reproducible
+- [ ] T026 [US3] Confirm a sibling `secana-specs` clone (or equivalent external-team harness) exists somewhere on this machine and is readable — the exact path is a per-operator local concern; record it in the validation notes so this specific run is reproducible
 - [ ] T027 [US3] Run Test 3.1a (no external content applied by default, Claude Code) per `quickstart.md` §D; record answer and pass/fail
 - [ ] T028 [US3] Run Test 3.1b (same, Codex) per `quickstart.md` §D; record answer and pass/fail
 - [ ] T029 [US3] Run Test 3.2a (refusal on unauthorized external inheritance, Claude Code) in the session from T027; record answer and pass/fail
