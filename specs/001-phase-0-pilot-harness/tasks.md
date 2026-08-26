@@ -79,10 +79,12 @@ Test 1.3 citing Principle I by identifier or clear paraphrase.
 
 ### Validation runs for User Story 1
 
-- [ ] T015 [US1] Run Test 1.1 in a fresh Claude Code session at repo root, following `quickstart.md` §B verbatim; record answer and pass/fail
-- [ ] T016 [US1] Run Test 1.2 in a fresh Codex session at repo root, following `quickstart.md` §B verbatim; record answer and pass/fail; if Codex does not read `AGENTS.md`, note as a research finding against `research.md` Decision 2
-- [ ] T017 [US1] Run Test 1.3 (refusal on constitutional violation) in either fresh session (Claude or Codex); record answer and pass/fail
-- [ ] T018 [US1] Persist Test 1.1–1.3 results in `specs/001-phase-0-pilot-harness/.validation-runs/2026-08-26.md` (or the date the run happens); include exact prompt used, exact answer, and pass/fail per test
+- [ ] T015 [US1] Start the timer at the top of `quickstart.md` §A, complete §A setup checks, and record the start time in §E — this is prerequisite to every following US1/US2/US3 task
+- [ ] T016 [US1] Run Test 1.1 in a fresh Claude Code session at repo root, following `quickstart.md` §B verbatim; record answer and pass/fail
+- [ ] T017 [US1] Run Test 1.2 in a fresh Codex session at repo root, following `quickstart.md` §B verbatim; record answer and pass/fail; if Codex does not read `AGENTS.md`, note as a research finding against `research.md` Decision 2
+- [ ] T018 [US1] Run Test 1.3 (refusal on constitutional violation) in either fresh session; record answer and pass/fail
+- [ ] T019 [US1] Run Test 1.4 (session started in a subdirectory) per `quickstart.md` §B; record answer and pass/fail — this covers the subdirectory edge case from `spec.md` §Edge Cases
+- [ ] T020 [US1] Persist Test 1.1–1.4 results in `specs/001-phase-0-pilot-harness/.validation-runs/<YYYY-MM-DD>.md`; include exact prompt used, exact answer verbatim, pass/fail per test, and whether the design doc was consulted at any point
 
 **Checkpoint**: quickstart.md §B fully green for at least one Claude Code
 session and one Codex session. If a test fails, do NOT proceed — either fix
@@ -103,14 +105,14 @@ prompt context beyond the standard handoff question.
 
 ### Validation runs for User Story 2
 
-- [ ] T019 [US2] Pick a small, identifiable work unit not yet done in this feature (candidate: add `docs/adr/0001-codex-as-second-cli.md` stating Codex was chosen per `research.md` Decision 1); record the choice in the validation notes
-- [ ] T020 [US2] Run Test 2.1 (Claude Code → Codex handoff) per `quickstart.md` §C; commit the work unit in Claude Code, close, open fresh Codex, ask the standard handoff question; record answer and pass/fail
-- [ ] T021 [US2] Pick a second small work unit (candidate: add a `.gitignore` entry for `*.local.log` or similar trivially reversible change); record the choice
-- [ ] T022 [US2] Run Test 2.2 (Codex → Claude Code handoff) per `quickstart.md` §C; record answer and pass/fail
-- [ ] T023 [US2] Append Test 2.1–2.2 results to the same `specs/001-phase-0-pilot-harness/.validation-runs/<date>.md` file created in T018
+- [ ] T021 [US2] Pick a small, identifiable work unit not yet done in this feature (candidate: add `docs/adr/0001-codex-as-second-cli.md` stating Codex was chosen per `research.md` Decision 1); record the choice in the validation notes
+- [ ] T022 [US2] Run Test 2.1 (Claude Code → Codex handoff) per `quickstart.md` §C; commit the work unit in Claude Code, close, open fresh Codex, ask the standard handoff question; the pass criterion has three parts (a/b/c per §C) — all must hold; record answer and pass/fail per part
+- [ ] T023 [US2] Pick a second small work unit (candidate: add a `.gitignore` entry for `*.local.log` or similar trivially reversible change); record the choice
+- [ ] T024 [US2] Run Test 2.2 (Codex → Claude Code handoff) per `quickstart.md` §C; same three-part pass criterion; record per-part results
+- [ ] T025 [US2] Append Test 2.1–2.2 results to the same `.validation-runs/<date>.md` file created in T020
 
 **Checkpoint**: quickstart.md §C fully green. Commits produced during the
-tests are either kept (if they carry real value — e.g. the ADR from T019) or
+tests are either kept (if they carry real value — e.g. the ADR from T021) or
 reverted (if they were throw-away — track which in the validation notes).
 
 ---
@@ -128,10 +130,13 @@ constraints, citing Principle V.
 
 ### Validation runs for User Story 3
 
-- [ ] T024 [US3] Confirm the sibling `secana-specs` clone exists on this machine and is readable (`ls /home/haex/Projekte/secana-specs`); record its state in the validation notes so the test is reproducible
-- [ ] T025 [US3] Run Test 3.1 (no external content applied by default) in a fresh session (Claude or Codex — pick one, record which); record answer and pass/fail
-- [ ] T026 [US3] Run Test 3.2 (refusal on unauthorized external inheritance) in the same fresh session; record answer and pass/fail
-- [ ] T027 [US3] Append Test 3.1–3.2 results to `specs/001-phase-0-pilot-harness/.validation-runs/<date>.md`
+- [ ] T026 [US3] Confirm the sibling `secana-specs` clone exists on this machine and is readable (`ls /home/haex/Projekte/secana-specs`); record its state in the validation notes so the test is reproducible
+- [ ] T027 [US3] Run Test 3.1a (no external content applied by default, Claude Code) per `quickstart.md` §D; record answer and pass/fail
+- [ ] T028 [US3] Run Test 3.1b (same, Codex) per `quickstart.md` §D; record answer and pass/fail
+- [ ] T029 [US3] Run Test 3.2a (refusal on unauthorized external inheritance, Claude Code) in the session from T027; record answer and pass/fail
+- [ ] T030 [US3] Run Test 3.2b (same, Codex) in the session from T028; record answer and pass/fail
+- [ ] T031 [US3] Stop the timer at the top of `quickstart.md` §E; record stop time and elapsed minutes; confirm ≤ 15 min (SC-005) and that the design doc was not consulted at any point during Phases 3–5 — if either fails, that is a real finding, not a bookkeeping issue
+- [ ] T032 [US3] Append Test 3.1a/3.1b/3.2a/3.2b results plus the timing/design-doc-consulted record to `.validation-runs/<date>.md`
 
 **Checkpoint**: quickstart.md §D fully green. All three user stories now
 validated on the same run date.
@@ -143,11 +148,11 @@ validated on the same run date.
 **Purpose**: fold any findings surfaced by the validation runs back into
 the harness before marking Phase 0 complete.
 
-- [ ] T028 [P] Review the validation-notes file at `specs/001-phase-0-pilot-harness/.validation-runs/<date>.md` and open a follow-up spec for any FAIL row that requires a real harness change (do not silently fix in-place while validation is in progress)
-- [ ] T029 [P] If Test 1.1 or 1.2 revealed weak wording in the constitution or CLAUDE.md pointer, capture the improvement as ADRs under `docs/adr/`, NOT as silent edits
-- [ ] T030 If T019's ADR was created (Codex-as-second-CLI ADR), verify it survives, is discoverable, and is referenced from `research.md`
-- [ ] T031 Run `git status` and `git log --oneline main..HEAD` — confirm no committed file introduces absolute paths (Principle II) or secret material (Principle I) or unpinned cross-repo references (Principle IV)
-- [ ] T032 Mark the spec quality checklist at `specs/001-phase-0-pilot-harness/checklists/requirements.md` as fully verified against the actual run outcome; update the "Notes" line if any real gap was caught
+- [ ] T033 [P] Review the validation-notes file at `.validation-runs/<date>.md` and open a follow-up spec for any FAIL row (or over-15-min timing, or design-doc-consulted flag) that requires a real harness change — do not silently fix in-place while validation is in progress
+- [ ] T034 [P] If Test 1.1/1.2/1.4 revealed weak wording in the constitution or CLAUDE.md pointer, capture the improvement as ADRs under `docs/adr/`, NOT as silent edits to the constitution
+- [ ] T035 If T021's ADR was created (Codex-as-second-CLI ADR), verify it survives, is discoverable, and is referenced from `research.md`
+- [ ] T036 Run `git status` and `git log --oneline main..HEAD` — confirm no committed file introduces absolute paths (Principle II) or secret material (Principle I) or unpinned cross-repo references (Principle IV); also `grep`-verify `CLAUDE.md` contains no verbatim principle text from `.specify/memory/constitution.md` (per FR-002 no-duplication)
+- [ ] T037 Mark the spec quality checklist at `specs/001-phase-0-pilot-harness/checklists/requirements.md` as fully verified against the actual run outcome; update the "Notes" line if any real gap was caught
 
 **Checkpoint**: all validation results recorded, all findings triaged, no
 Principle I/II/IV violations remain in the diff. Phase 0 is complete.
@@ -178,14 +183,17 @@ Principle I/II/IV violations remain in the diff. Phase 0 is complete.
 - Tasks within one story run sequentially in the listed order — each
   validation run produces output the next task consumes (record → next test
   → append record).
-- The `.validation-runs/<date>.md` notes file is appended to by
-  T018, T023, T027 — it must be created (T018) before the others can append.
+- The `.validation-runs/<date>.md` notes file is created by T020 (US1)
+  and appended to by T025 (US2) and T032 (US3).
+- T015 (start timer) must be the first US1 task executed; T031 (stop
+  timer, verify ≤15 min, verify no design-doc consult) is the final US3
+  task before the polish phase.
 
 ### Parallel Opportunities
 
 - Within Phase 2, T008/T009/T010/T011/T012 were originally parallelizable
   since they touch distinct files (all marked [P]). Now complete.
-- Within Phase 6, T028 and T029 touch different files (validation notes vs
+- Within Phase 6, T033 and T034 touch different files (validation notes vs
   ADRs) and can run in parallel.
 - **Nothing in Phases 3–5 parallelizes usefully** — each user story test
   spawns a fresh interactive session and requires the operator's attention.
