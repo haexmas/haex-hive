@@ -169,6 +169,12 @@ team maintains them; only the *identity* used to clone them comes from this syst
   libraries, package managers). A prebuilt container image is a narrow fallback for
   the rare project where Nix doesn't fit well — not a fully parallel devcontainer
   system.
+- **Platform support**: Nix runs natively on Linux and macOS. It has no native
+  Windows port — on Windows it requires **WSL2**. This means a Windows satellite's
+  daemon runs as a Linux process inside WSL2, not as a native Windows process
+  (pairs fine with VSCode's Remote-WSL support, so "familiar tools" still holds).
+  Bare-Windows-without-WSL2 is not a supported satellite target for Nix-based
+  projects — the container fallback is the only option there.
 - **Capability tags**: satellites advertise capabilities (e.g. `gpu`, `android-sdk`)
   in their relay status events. Commands can target a specific satellite explicitly,
   or request "any satellite with capability X" — needed both for hardware routing
@@ -272,3 +278,7 @@ Mirror secana-specs' `harness-evaluator`/`evals` pattern:
   `status` events for offline-catch-up).
 - Windows symlink permission handling (Developer Mode requirement) — needs
   verification as part of implementation, not just assumed to work.
+- Windows satellites require WSL2 for the Nix-first execution path; whether that's
+  an acceptable prerequisite to require, or whether Windows-without-WSL2 needs
+  first-class container-based support rather than treating it as a narrow fallback,
+  depends on how much real Windows-without-WSL2 usage actually happens.
