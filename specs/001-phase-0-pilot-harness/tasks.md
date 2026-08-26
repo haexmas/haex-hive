@@ -108,8 +108,8 @@ prompt context beyond the standard handoff question.
 - [x] T021 [US2] Pick a small, identifiable work unit not yet done in this feature (candidate: add `docs/adr/0001-codex-as-second-cli.md` stating Codex was chosen per `research.md` Decision 1); record the choice in the validation notes
 - [x] T022 [US2] Run Test 2.1 (Claude Code → Codex handoff) per `quickstart.md` §C; commit the work unit in Claude Code, close, open fresh Codex, ask the standard handoff question; the pass criterion has three parts (a/b/c per §C) — all must hold; record answer and pass/fail per part
 - [x] T023 [US2] Pick a second small work unit (candidate: add a `.gitignore` entry for `*.local.log` or similar trivially reversible change); record the choice
-- [ ] T024 [US2] Run Test 2.2 (Codex → Claude Code handoff) per `quickstart.md` §C; same three-part pass criterion; record per-part results
-- [ ] T025 [US2] Append Test 2.1–2.2 results to the same `.validation-runs/<date>.md` file created in T020
+- [x] T024 [US2] Run Test 2.2 (Codex → Claude Code handoff) per `quickstart.md` §C; same three-part pass criterion; record per-part results
+- [x] T025 [US2] Append Test 2.1–2.2 results to the same `.validation-runs/<date>.md` file created in T020
 
 **Checkpoint**: quickstart.md §C fully green. Commits produced during the
 tests are either kept (if they carry real value — e.g. the ADR from T021) or
