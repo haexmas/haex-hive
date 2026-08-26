@@ -49,6 +49,22 @@ A personal, cross-device AI-assisted development setup:
   registry/manifest approach for group membership. Claude-Code-specific (not
   multi-tool). **Decision: referenced as an external, unmodified harness group — not
   ported or rewritten.**
+- **Plan v3** (`~/Downloads/LLM_AGNOSTIC_SPECKIT_MULTI_REPO_PLAN_v3.md`, 2026-08-19)
+  — a prior plan of the same author, spec-kit-driven, git-only, one always-on remote
+  VM for mobile access (OpenHands as pure execution trigger, not source of truth).
+  Solves the original multi-repo/multi-account problem with a much simpler
+  architecture than haex-hive (no relay, no daemon, no capability routing). Its
+  cross-repo reference mechanism (`spec-ref.yaml` + `spec-resolve` tool) is more
+  mature than what was drafted here initially. **Decision: adopt Plan v3's
+  cross-repo reference mechanism, revision pinning, per-repo opt-in allowlist, and
+  incremental phasing discipline** (see "Adopted from Plan v3" below). Explicitly
+  **not adopted**: Plan v3's "conversation state is disposable, git is the only sync"
+  stance (haex-hive deliberately keeps cross-device session continuity as a goal),
+  its OpenHands-as-single-remote-VM model (haex-hive requires autonomous multi-
+  satellite execution incl. local AI), and its Impact-Map/Contracts/Workstreams
+  layer (only applies to enterprise multi-service systems where one feature spans
+  many repos — the personal use case here is multiple unrelated repos sharing
+  conventions, not contracts).
 - **earendil-works/pi** — a replacement agent runtime (own multi-provider LLM API,
   own agent core, own CLI), not a compatibility shim over Claude Code/Codex/Gemini.
   No built-in permission system. Would mean replacing the daily-driver tools rather
@@ -124,6 +140,8 @@ harness-registry/              (private root git repo)
       permissions.yaml
       mcp-servers.yaml
       identity: personal-github  (alias, not a secret)
+      external_sources:
+        allowed: []              # this group inherits no external spec sources
     experiments/
       ...
   external-groups.yaml
@@ -132,6 +150,14 @@ harness-registry/              (private root git repo)
       identity: work-gitlab
       mode: unmodified            # cloned/updated, never compiled/rewritten
 ```
+
+Each consuming project may carry a `.specify/system.yaml` opt-in file whose
+`external_sources.allowed` allowlist names the external harness repos it is
+permitted to resolve — **without such a file, or with an empty allowlist, no
+external harness is loaded, ever**, regardless of what the registry says. The
+registry describes availability; the per-project file grants use. This is a
+security/trust boundary, not just convention: a private repo dropped anywhere on
+disk stays isolated by default.
 
 **Project identity is device-independent, and never carries a raw filesystem path:**
 - Git-backed project → identity = git remote URL. Identical on Windows and Linux
@@ -159,6 +185,34 @@ output:
 
 External groups (e.g. secana-specs) are cloned and used exactly as their owning
 team maintains them; only the *identity* used to clone them comes from this system.
+
+### Cross-repo spec references (adopted from Plan v3)
+
+Where a project's harness pulls in a specific document from an external harness
+repo (e.g. a group instruction file, a specific spec), the reference format is:
+
+```yaml
+# specs/<feature>/spec-ref.yaml
+repository: itemis/solutions/pltf/secana-specs
+revision: 7ae4c218e140       # full commit SHA — immutable, mandatory
+path: .specify/memory/constitution.md
+```
+
+**Revision pinning is non-negotiable**, part of the constitution (see below).
+Branches are not the normal case — a satellite resolving a spec on Monday and
+another satellite resolving on Wednesday must see byte-identical content.
+
+A small `spec-resolve` tool handles resolution and works directly against git
+objects (`git show <sha>:<path>`), so a full working clone of the external repo
+is not required. Default is a managed cache under the OS's standard cache
+directory; developers actively working on the external repo may opt into a
+local-clone mapping that is never versioned.
+
+This replaces the earlier symlink-only + per-device-path-table approach for
+external references — it's more reproducible (SHA-pinned), cleaner across OSes
+(no Windows symlink permission dance for cross-repo references), and works
+without a full clone. Symlinks remain the mechanism only for the daemon's own
+compiled outputs (per-tool CLAUDE.md/AGENTS.md/GEMINI.md) inside a *single* repo.
 
 ## Execution & Dev Environment
 
@@ -267,6 +321,68 @@ Mirror secana-specs' `harness-evaluator`/`evals` pattern:
   does the compiled `.claude/settings.json` actually restrict what it should).
 - Integration tests for the relay round-trip (publish command → daemon receives →
   status observable).
+
+## Constitution (non-negotiable hard rules)
+
+These are hard invariants of the system, not defaults. Every subsequent spec
+must respect them; a change requires an explicit constitution amendment.
+
+1. **No secrets in git, ever.** The harness repo carries only references to
+   identities (aliases), never key material, tokens, passwords, or SSH keys.
+2. **No local absolute filesystem paths in versioned harness configuration.**
+   Anything committed must resolve identically on Linux, macOS, and WSL2.
+   Cross-repo references use `repository + revision + repo-relative path`.
+3. **Cross-repo spec references must pin an immutable Git revision** (full
+   commit SHA). Branches are not the normal case.
+4. **External harness sources are opt-in per project.** A project without an
+   explicit `external_sources.allowed` entry gets nothing external — no
+   implicit inheritance from sibling directories, sibling repos, or a global
+   agent instruction file.
+5. **Project identity is device-independent.** Raw filesystem paths never cross
+   a device boundary — the addressable unit over the relay is `(device-pubkey,
+   project-identity)`, never a path.
+6. **Self-modifying instructions are always review-gated.** Reflection output
+   is proposed as a diff/PR against the harness repo, never auto-merged.
+7. **Relay-plane unavailability must never block local work.** Only mobile
+   visibility/control pauses when the relay is unreachable; agent CLIs on
+   satellites keep running against local disk.
+
+## Phasing (execution order)
+
+Build the simple thing that already works before the ambitious thing that
+generalizes it. Phases are not optional — do not skip forward.
+
+- **Phase 0 — One repo, cleanly harnessed.** Pick one existing repo (candidate:
+  haex-vault or haex-ucan). Write its `CLAUDE.md`/`AGENTS.md` as thin adapters
+  pointing at a canonical `.specify/memory/constitution.md`. Test Claude Code ↔
+  Codex handoff purely through repository state (no conversation-history
+  dependency). Acceptance: a fresh session in either tool reconstructs full
+  context from the repo alone.
+- **Phase 1 — Portable cross-repo references.** Implement `spec-ref.yaml` +
+  `spec-resolve` tool + per-project allowlist. Test on Linux and macOS (WSL2
+  deferred to when a Windows satellite is real). Acceptance: the same
+  `spec-ref.yaml` resolves the identical revision on both OSes without local
+  path configuration.
+- **Phase 2 — Harness registry + multi-tool compiler.** Central harness repo
+  with global/groups/registry structure. Compiler emits per-tool artifacts
+  (CLAUDE.md/AGENTS.md/GEMINI.md via symlink, settings.json/config.toml via
+  compilation). Acceptance: adding a new project to the registry produces
+  correct per-tool files on the next daemon run, no hand-editing.
+- **Phase 3 — Nix-first dev environments** for the registered projects.
+- **Phase 4 — Self-hosted Nostr relay + satellite daemon.** Status events only,
+  no command routing yet. Acceptance: a phone can see which satellites are
+  online and what they're currently doing.
+- **Phase 5 — Command routing over the relay** (mobile → satellite,
+  satellite → satellite for capability routing).
+- **Phase 6 — Secrets provisioning via NIP-44** (one-shot encrypted transport
+  to a new device, never long-lived storage on the relay).
+- **Phase 7 — Hive memory** (Blossom transcripts + graphify ingestion) and
+  **reflection pipeline** (session end → proposed harness diff, review-gated).
+
+Everything through Phase 3 is Plan v3's original scope with the multi-tool
+compiler added — the parts that solve the *original* problem. Phases 4–7 are
+what haex-hive adds beyond Plan v3, and they are gated on the earlier phases
+actually being in daily use first.
 
 ## Open Questions / Deferred
 
