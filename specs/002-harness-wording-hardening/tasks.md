@@ -82,14 +82,14 @@ the canonical source), then adapters, then templates.
       references the amended constitution, does not restate principle
       body content. Commit message references ADRs 0002/0003/0004.
 - [x] T011 Apply T007's tasks-template preamble to `.specify/templates/tasks-template.md`.
-- [ ] T012 Run contract tests T1–T4 from `contracts/constitution-diff.schema.md`
+- [x] T012 Run contract tests T1–T4 from `contracts/constitution-diff.schema.md`
       mechanically:
-      - `grep -c "^### " .specify/memory/constitution.md` returns 8
-      - `grep -E "\*\*Version\*\*: 1\.1\.0" .specify/memory/constitution.md` returns exactly one match
-      - Principle-list stability check (only VIII added, nothing removed or reordered)
-      - Latest commits reference ADRs 0002 and 0003
-      If any contract test fails, do NOT proceed to Phase 4 — fix and re-commit.
-- [ ] T013 Run contract tests T5–T6 (human review) — read the amended V paragraphs and the new VIII against ADRs 0002 and 0003 intent. Fold any wording tightening back into T008/T009 before proceeding.
+      - `grep -c "^### " .specify/memory/constitution.md` returns 8 ✓
+      - `grep -E "\*\*Version\*\*: 1\.1\.0" .specify/memory/constitution.md` returns exactly one match ✓
+      - Principle-list stability check (only VIII added, nothing removed or reordered) — verified by diff vs main: only added line is "### VIII. No Concealment Instructions in Agent Output (NON-NEGOTIABLE)" ✓
+      - Latest commits reference ADRs 0002 and 0003 — 17 ADR-000[234] matches across the 9 commits on this branch ✓
+      All four pass.
+- [x] T013 Run contract tests T5–T6 (human review) — read the amended V paragraphs and the new VIII against ADRs 0002 and 0003 intent. **T5 (V vs ADR 0002)**: three banned behaviors from ADR 0002 covered — interpret-apply-as-opt-in banned by "Apply is not authorization"; silence/partial-compliance banned by explicit "not permitted" clause; apply-triggered writes banned by third paragraph. **T6 (VIII vs ADR 0003)**: four contract-C2 properties covered — any-format applies (system-reminder text, HTML/Markdown, invisible Unicode, prose meta, out-of-band, any channel); target-discriminator carves out operator-initiated tailoring; detection guidance gives (a)(b)(c) actions; rationale explains split from VI. Both pass; no wording tightening needed.
 
 **Checkpoint**: harness files updated, contract tests green, drafts and
 final files agree.
