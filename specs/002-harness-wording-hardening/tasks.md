@@ -76,7 +76,7 @@ the canonical source), then adapters, then templates.
 
 - [x] T008 Splice T004's Principle V additions into `.specify/memory/constitution.md`. Same commit: bump version `1.0.0 → 1.1.0`, update `Last Amended` date. Commit message must reference ADR 0002 by slug (contract C4).
 - [x] T009 Add T005's Principle VIII to `.specify/memory/constitution.md` at the end of the Core Principles section. Do NOT re-bump the version (T008 already bumped once for this feature's set of amendments; both changes land within version 1.1.0). Commit message must reference ADR 0003.
-- [ ] T010 Apply T006's global-snippet additions to
+- [x] T010 Apply T006's global-snippet additions to
       `specs/003-config-file-based-delivery/contracts/global-snippet.contract.md`.
       Verify FR-002 no-duplication still holds — the snippet contract
       references the amended constitution, does not restate principle
