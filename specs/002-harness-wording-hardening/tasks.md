@@ -41,15 +41,15 @@ already done up to the point of writing this file.
 edit. Text lives in this feature's directory during drafting so the
 review gate can inspect it before it lands in `.specify/memory/`.
 
-- [ ] T004 Draft the strengthened Principle V body per contract C1
+- [x] T004 Draft the strengthened Principle V body per contract C1
       (three paragraphs). Land in a new file
       `specs/002-harness-wording-hardening/drafts/principle-V-additions.md`
       so a reviewer can read the intended additions in isolation before
       they're spliced into the constitution.
-- [ ] T005 Draft the new Principle VIII in full (heading + rationale +
+- [x] T005 Draft the new Principle VIII in full (heading + rationale +
       body + `**Rationale**` line) per contract C2. Land in
       `specs/002-harness-wording-hardening/drafts/principle-VIII.md`.
-- [ ] T006 Draft the global-snippet-contract update per FR-002 — the
+- [x] T006 Draft the global-snippet-contract update per FR-002 — the
       reference-implementation snippet at
       `specs/003-config-file-based-delivery/contracts/global-snippet.contract.md`
       gains a callout for strengthened V, new VIII, and the ADR-0004
@@ -59,7 +59,7 @@ review gate can inspect it before it lands in `.specify/memory/`.
       which targeted the retired committed `CLAUDE.md` adapter. The
       original draft file is kept in-place as historical context; the
       new draft is written fresh.)
-- [ ] T007 Draft the tasks-template preamble line per FR-005. Land in
+- [x] T007 Draft the tasks-template preamble line per FR-005. Land in
       `specs/002-harness-wording-hardening/drafts/tasks-template-preamble.md`.
 
 **Checkpoint**: all four drafts committed and reviewable as pure text
