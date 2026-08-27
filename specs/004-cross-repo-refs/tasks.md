@@ -113,7 +113,7 @@ purely predictively.
 
 ### Implementation for User Story 2
 
-- [ ] T024 [US2] Implement the allowlist-matching logic in `spec-resolve` (called by resolve's external branch, and by any `--from spec-ref.json` iteration): iterate `harness_sources` in array order, apply the four shape rules from `data-model.md`, return the first matching entry or `None` — role-carrying entries implicitly permit their own reference per FR-009; string-exact `repository` comparison per Q1; same file `.specify/scripts/spec-resolve`
+- [ ] T024 [US2] Implement the allowlist-matching logic in `spec-resolve` (called by resolve's external branch and by prefetch's `spec-ref.json` enumeration): iterate `harness_sources` in array order, apply the four shape rules from `data-model.md`, return the first matching entry or `None` — role-carrying entries implicitly permit their own reference per FR-009; string-exact `repository` comparison per Q1; same file `.specify/scripts/spec-resolve`
 - [ ] T025 [US2] Implement the refusal path in `spec-resolve resolve`: when T024 returns `None`, exit code 1 with stderr `spec-resolve: refusing reference <repo>@<sha>:<path> — not permitted by any entry in harness_sources.`; ensure no writes to the working tree in the failure path (defensive: no partial cache dir creation, no meta-file writes) — same file
 
 ### Tests for User Story 2
@@ -139,7 +139,7 @@ purely predictively.
 
 - [ ] T029 [P] [US3] Create the curated valid/invalid sample set at `tests/spec-resolve/fixtures/config-samples/`: 5 valid configs (minimum, self-only, self + broad-scope, self + narrow-scope, self + path-list-scope) and ~10 invalid configs (missing `haex_hive_version`, wrong `haex_hive_version`, unknown role, `paths` on role entry, `path` on permission entry, `self` in permission entry, bad SHA, mixed-case SHA, `file://` scheme, `http://` scheme, bare local path). Each sample is a single `.json` file with a sibling `.expected.json` giving `{"expected_result": "accept"|"reject", "expected_error_substring": "..."}` for reject cases
 - [ ] T030 [P] [US3] Write `tests/spec-resolve/test-schema-tool-agreement.sh`: for each sample from T029, run both (a) a schema validator invocation using the checked-in schema — allowed to use `python3 -m jsonschema` if available, else a minimal draft-07-aware Python one-liner shipped inside the test — and (b) `spec-resolve status`; assert both agree on accept/reject; on reject, assert the tool's stderr contains the sample's `expected_error_substring`
-- [ ] T031 [P] [US3] Write `tests/spec-resolve/test-config-invalid.sh`: pick 3-4 representative malformations from T029 and run the full snippet-shape flow (validate → refuse to load constitution → exit 2), assert the entire session-start would refuse, not just `status`
+- [ ] T031 [P] [US3] Write `tests/spec-resolve/test-config-invalid.sh`: pick 3-4 representative malformations from T029 and run `spec-resolve status` on each (the same call the session-start snippet makes per FR-022); assert exit 2, assert stderr pinpoints the offending entry (array index + field + constraint) — this proves the session would refuse to start harness work, without needing to run the snippet itself (which lives per-operator, not in this repo)
 - [ ] T032 [US3] Run quickstart's Story 3 by hand for each of the 5 malformation cases, capture output in `specs/004-cross-repo-refs/.validation-runs/2026-08-27-story-3.md`, verify SC-004 holds
 
 **Checkpoint**: config errors are always caught early and always name the specific problem. Story 3's independent test criterion satisfied.

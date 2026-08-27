@@ -65,29 +65,21 @@ Expected: `diff` produces no output. No network was attempted (a
 
 ## Story 2 — Refusal of a reference not in the allowlist
 
-Uses a scratch spec-ref that points outside the allowlist. Does NOT
-modify `.haex-hive.json`.
+Attempts to resolve a reference outside the allowlist via the direct
+triple mode. Does NOT modify `.haex-hive.json`.
 
 ```bash
-# 1. Create a scratch spec-ref pointing at an external repo.
-mkdir -p /tmp/spec-004-refusal-test/specs/scratch
-cat > /tmp/spec-004-refusal-test/specs/scratch/spec-ref.json <<'JSON'
-{
-  "not-allowed": {
-    "repository": "https://gitlab.com/itemis/solutions/pltf/secana-specs",
-    "revision": "0000000000000000000000000000000000000000",
-    "path": "README.md"
-  }
-}
-JSON
-
-# 2. Copy this repo's .haex-hive.json into the scratch tree
+# 1. Set up a scratch tree with a copy of this repo's .haex-hive.json
 #    (so the resolver sees the same allowlist).
+mkdir -p /tmp/spec-004-refusal-test
 cp .haex-hive.json /tmp/spec-004-refusal-test/.haex-hive.json
 
-# 3. Attempt to resolve.
+# 2. Try to resolve a reference into a repo not on the allowlist.
 cd /tmp/spec-004-refusal-test
-{{PWD}}/.specify/scripts/spec-resolve resolve --from specs/scratch/spec-ref.json
+{{PWD}}/.specify/scripts/spec-resolve resolve \
+    --repository "https://gitlab.com/itemis/solutions/pltf/secana-specs" \
+    --revision "0000000000000000000000000000000000000000" \
+    --path "README.md"
 echo "exit: $?"
 ```
 
@@ -96,6 +88,10 @@ Expected:
 - Exit code: `1`
 - Stderr contains a message like: `spec-resolve: refusing reference https://gitlab.com/…@0000…:README.md — not permitted by any entry in harness_sources.`
 - No file written under the scratch tree.
+
+Repeat with each of the four allowlist shapes if you want to exercise
+Story 2 exhaustively (see `tests/spec-resolve/test-allowlist-refusal.sh`
+after it lands).
 
 Cleanup:
 

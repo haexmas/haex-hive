@@ -39,7 +39,6 @@ contract; tests assert against it.
 ```text
 spec-resolve resolve --role <name>
 spec-resolve resolve --repository <url|self> --revision <sha> --path <p>
-spec-resolve resolve --from <spec-ref-json-path>
 ```
 
 ### Options
@@ -50,11 +49,14 @@ spec-resolve resolve --from <spec-ref-json-path>
 | `--repository <url\|self>` | string | (b) | Direct triple mode. Requires `--revision` and `--path`. |
 | `--revision <sha>` | string | (b) | Full SHA (7-40 lowercase hex chars). Case-normalized to lowercase before validation. |
 | `--path <p>` | string | (b) | Repo-relative path. |
-| `--from <spec-ref-json-path>` | path | (c) | Reads a `spec-ref.json` file, resolves each named entry within, prints them to stdout separated by a JSON envelope (see Output). |
 | `--repo <path>` | path | No | Override for the enclosing repo (default: cwd). |
 
-One of (a), (b), (c) MUST be given. Providing more than one is a
-usage error (exit 4).
+One of (a) or (b) MUST be given. Providing both is a usage error (exit 4).
+
+**Deferred to Spec 005**: `--from <spec-ref-json-path>` mode (resolving all
+named refs in a feature's `spec-ref.json` in one call). Phase 1 has no live
+consumer (haex-hive itself carries no `spec-ref.json` files); `prefetch`
+still discovers `spec-ref.json` files for cache population.
 
 ### Behavior
 
@@ -62,8 +64,8 @@ usage error (exit 4).
 2. Resolve the target reference(s) per the mode.
 3. Enforce allowlist:
    - Role-carrying entry's own reference is self-permitted.
-   - Direct or `--from` references must match at least one entry
-     in `harness_sources`. First match wins (array order).
+   - Direct-triple references must match at least one entry in
+     `harness_sources`. First match wins (array order).
 4. If reference is `self`: read from local repo via
    `git show <sha>:<path>`. If SHA is missing, exit 3 with a message
    naming the missing SHA and `.haex-hive.json`'s pin.
@@ -76,29 +78,8 @@ usage error (exit 4).
 ### Output
 
 - **Mode (a) or (b)**: raw file content to stdout, exit 0.
-- **Mode (c)**: JSON envelope on stdout — each entry as a JSON object
-  wrapping the content, separated by a well-defined boundary. Exact
-  envelope shape:
-
-  ```json
-  {
-    "refs": [
-      {
-        "name": "<key from spec-ref.json>",
-        "repository": "...",
-        "revision": "...",
-        "path": "...",
-        "content_base64": "<base64-encoded content>",
-        "byte_length": 12345
-      },
-      ...
-    ]
-  }
-  ```
-
-  Base64-wrapping keeps the envelope binary-safe without stream-parsing
-  complexity. Consumers decode as needed. Only used in `--from` mode —
-  single-ref mode returns raw content to stdout.
+- Binary-safe (`sys.stdout.buffer.write`); no encoding transformation;
+  no trailing newline added or removed.
 
 ### Errors
 
