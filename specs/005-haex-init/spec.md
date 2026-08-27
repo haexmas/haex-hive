@@ -588,12 +588,17 @@ file is unchanged byte-for-byte.
   `.specify/templates/haex-hive-session-instructions.md` in the
   haex-hive repo, enforced by a dedicated sync test in the test
   suite that would fail CI on any drift.
-- **SC-008**: For an operator on Linux with `claude` and `code`
-  installed, `haex-init` completes an interactive self-ref
-  initialisation without requiring the operator to look at any
-  external documentation for basic prompts — every prompt is
-  self-explanatory with an actionable default suggestion where a
-  default exists.
+- **SC-008**: Every Y/N prompt `haex-init` emits during an
+  interactive self-ref initialisation names its default in bracket
+  form (`[Y/n]` or `[y/N]`); every prompt for a free-form value with
+  a suggested default names that default in bracket form
+  (`[default: <value>]`); every prompt string is under 200 characters
+  and uses no acronym or term that requires operator lookup outside
+  the tool's own action-report or the docs shipped as part of Phase
+  1 (`docs/haex-init.md`). Mechanically verifiable by a smoke assertion
+  in the test suite that scans captured stdout during T030's
+  interactive sub-case and asserts every prompt line matches the
+  above shape.
 
 ## Assumptions
 
