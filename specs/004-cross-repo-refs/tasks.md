@@ -63,7 +63,7 @@ purely predictively.
 
 - [X] T007 Write ADR at `docs/adr/0005-unify-harness-sources-and-drop-system-yaml.md` documenting the rename `external_sources` → `harness_sources`, the collapse of the split `constitution` slot + `external_sources.allowed` into one array, and the removal of `.specify/system.yaml` — quote the pre- and post-shape and link to spec 004 + design doc
 - [X] T008 PATCH-bump the constitution: rewrite Principle V's wording to cite `.haex-hive.json`'s `harness_sources` array rather than `.specify/system.yaml`'s `external_sources.allowed` list; update the version line to `**Version**: 1.1.1 | **Ratified**: 2026-08-26 | **Last Amended**: 2026-08-27`; ensure the changes are pure wording (no principle removed, added, or relaxed) at `.specify/memory/constitution.md`
-- [ ] T009 Update `.haex-hive.json`'s constitution entry `revision` field to the SHA of the T008 commit (the new v1.1.1 constitution) — same file already touched in T005, this is the post-PATCH re-pin
+- [X] T009 Update `.haex-hive.json`'s constitution entry `revision` field to the SHA of the T008 commit (the new v1.1.1 constitution) — same file already touched in T005, this is the post-PATCH re-pin
 
 ### 2c — Tool skeleton
 
@@ -172,7 +172,7 @@ purely predictively.
 - [X] T039 Run `tests/spec-resolve/run-all.sh`, capture the full pass/fail report in `specs/004-cross-repo-refs/.validation-runs/2026-08-27-run-all.md`; must be 100% pass before merge
 - [X] T040 Verify SC-008 mechanically: run `git grep external_sources` on the tip of this branch and confirm the only remaining matches are in `docs/adr/`, `docs/plans/`, and `specs/00[12]-*` historical files (ADRs and this design doc explicitly cite the old name for traceability); capture the grep output in `.validation-runs/2026-08-27-sc-008.md`
 - [X] T041 Verify SC-007 mechanically: `.specify/memory/constitution.md`'s version line reads `**Version**: 1.1.1 | ...` and Principle V's body cites `.haex-hive.json` (not `.specify/system.yaml`); note in `.validation-runs/2026-08-27-sc-007.md`
-- [ ] T042 Update the constitution's `revision` in `.haex-hive.json` (final time this branch) to the SHA of the final polish commit — same as T009 but confirming the pin matches the actual landing SHA
+- [X] T042 Update the constitution's `revision` in `.haex-hive.json` (final time this branch) to the SHA of the final polish commit — same as T009 but confirming the pin matches the actual landing SHA
 - [ ] T043 Reset `.specify/feature.json`'s `feature_directory` to `null` (post-merge feature-pointer reset, matching the Spec 002 T028/T029 pattern) — this task ticks only in the merge commit; do NOT tick it before merge
 
 **Checkpoint**: everything Spec 004 promised is on disk, verified, and traceable. Ready to merge to `main` and advance the design roadmap's Phase 1 status to "in daily use".
