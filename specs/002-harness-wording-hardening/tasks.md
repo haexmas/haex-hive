@@ -137,8 +137,8 @@ back where applicable; verify no incidental violations; close out.
 
 ## Phase 6: Merge
 
-- [ ] T028 Merge branch `002-harness-wording-hardening` to `main`. Fast-forward if possible; if `main` has moved, rebase before merge. Delete local feature branch after merge if desired.
-- [ ] T029 Update `.specify/feature.json` back to point at the next intended feature (or clear it if no next feature is queued).
+- [x] T028 Merge branch `002-harness-wording-hardening` to `main`. **DONE** — fast-forward merge from `96292ff` to `d3848c2`. 12 commits landed. Branch preserved locally for reference.
+- [x] T029 Update `.specify/feature.json` back to point at the next intended feature (or clear it if no next feature is queued). **DONE** — cleared to `{"feature_directory": null}`. Also cleared `.haex-hive.json`'s `active_feature` field to `null` (was still pointing at the now-merged `specs/003-config-file-based-delivery`, another stale-pointer catch-up).
 
 ---
 

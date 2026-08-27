@@ -12,5 +12,5 @@
   "external_sources": {
     "allowed": []
   },
-  "active_feature": "specs/003-config-file-based-delivery"
+  "active_feature": null
 }
