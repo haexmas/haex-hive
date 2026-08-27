@@ -148,11 +148,11 @@ validated on the same run date.
 **Purpose**: fold any findings surfaced by the validation runs back into
 the harness before marking Phase 0 complete.
 
-- [ ] T033 [P] Review the validation-notes file at `.validation-runs/<date>.md` and open a follow-up spec for any FAIL row (or over-15-min timing, or design-doc-consulted flag) that requires a real harness change — do not silently fix in-place while validation is in progress
-- [ ] T034 [P] If Test 1.1/1.2/1.4 revealed weak wording in the constitution or CLAUDE.md pointer, capture the improvement as ADRs under `docs/adr/`, NOT as silent edits to the constitution
-- [ ] T035 If T021's ADR was created (Codex-as-second-CLI ADR), verify it survives, is discoverable, and is referenced from `research.md`
-- [ ] T036 Run `git status` and `git log --oneline main..HEAD` — confirm no committed file introduces absolute paths (Principle II) or secret material (Principle I) or unpinned cross-repo references (Principle IV); also `grep`-verify `CLAUDE.md` contains no verbatim principle text from `.specify/memory/constitution.md` (per FR-002 no-duplication)
-- [ ] T037 Mark the spec quality checklist at `specs/001-phase-0-pilot-harness/checklists/requirements.md` as fully verified against the actual run outcome; update the "Notes" line if any real gap was caught
+- [x] T033 [P] Review the validation-notes file at `.validation-runs/<date>.md` and open a follow-up spec for any FAIL row (or over-15-min timing, or design-doc-consulted flag) that requires a real harness change — do not silently fix in-place while validation is in progress
+- [x] T034 [P] If Test 1.1/1.2/1.4 revealed weak wording in the constitution or CLAUDE.md pointer, capture the improvement as ADRs under `docs/adr/`, NOT as silent edits to the constitution
+- [x] T035 If T021's ADR was created (Codex-as-second-CLI ADR), verify it survives, is discoverable, and is referenced from `research.md`
+- [x] T036 Run `git status` and `git log --oneline main..HEAD` — confirm no committed file introduces absolute paths (Principle II) or secret material (Principle I) or unpinned cross-repo references (Principle IV); also `grep`-verify `CLAUDE.md` contains no verbatim principle text from `.specify/memory/constitution.md` (per FR-002 no-duplication)
+- [x] T037 Mark the spec quality checklist at `specs/001-phase-0-pilot-harness/checklists/requirements.md` as fully verified against the actual run outcome; update the "Notes" line if any real gap was caught
 
 **Checkpoint**: all validation results recorded, all findings triaged, no
 Principle I/II/IV violations remain in the diff. Phase 0 is complete.

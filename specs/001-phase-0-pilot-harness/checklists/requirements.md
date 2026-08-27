@@ -57,5 +57,41 @@
 
 ## Notes
 
-All items pass on first iteration. No spec updates required before
-`/speckit-plan`. Ready to proceed.
+All items passed on first iteration (2026-08-26). No spec updates were
+required before `/speckit-plan`.
+
+## Post-Validation Verification (2026-08-27, T037)
+
+Cross-referenced against the actual validation runs recorded in
+[`.validation-runs/2026-08-26.md`](../.validation-runs/2026-08-26.md):
+
+- **Testability** (Content Quality item 4, Requirement Completeness
+  items 2–4): confirmed empirically. Every FR was exercised in at least
+  one test cell, and every SC either passed or produced a specific
+  documented FAIL that maps to a diagnosable finding. SC-001..SC-004
+  passed cleanly; SC-005 was reclassified as a future-contributor
+  metric per the run header note and remains unmeasured for this
+  author-run.
+- **Edge case coverage** (Requirement Completeness item 6): all three
+  listed edge cases were tested where applicable. Subdirectory
+  discovery was exercised in Test 1.4 (Claude) and its Codex-side
+  bonus, both PASS. Missing per-tool artifact and symlinks-disabled
+  edge cases did not arise on the single Linux workstation used —
+  both remain future-coverage items for a Windows/macOS validation.
+- **Scope boundedness** (Requirement Completeness item 7): held. No
+  Phase-1+ work leaked into Phase 0 execution. Findings were captured
+  as ADRs and a follow-up spec (002) rather than being folded back
+  silently.
+- **Requirement completeness in retrospect** (Feature Readiness item 1):
+  the FR set covered the actual test surface. One real failure surfaced
+  (Codex Test 3.2b) which was diagnosable against Principle V and VI
+  directly, meaning the spec's own principle-anchoring worked — the
+  failure decomposed cleanly into known-shape harness gaps rather than
+  into "we forgot to specify this."
+
+**Overall verdict**: the spec quality checklist was accurate. The
+Phase 0 validation surfaced one real substantive failure (Codex 3.2b),
+one process finding (US2 checkbox lag), and six Principle II violations
+in metadata prose. All are documented, none are silent, all have
+follow-up mechanisms (ADRs 0002/0003/0004 and spec 002). This checklist
+is now considered verified against actual outcomes.
