@@ -1,0 +1,8 @@
+{
+  "json.schemas": [
+    {
+      "fileMatch": [".haex-hive.json"],
+      "url": "./.specify/schemas/haex-hive.schema.json"
+    }
+  ]
+}

@@ -155,7 +155,7 @@ purely predictively.
 ### Implementation + Documentation for User Story 4
 
 - [X] T033 [US4] Add a "JSON Schema editor mapping" section to `docs/spec-resolve.md` with copy-pasteable VSCode `settings.json` snippet mapping `.haex-hive.json` → `.specify/schemas/haex-hive.schema.json`, and JetBrains "JSON Schema Mappings" preferences-path instructions — file `docs/spec-resolve.md`
-- [ ] T034 [P] [US4] Manually verify VSCode mapping: install the mapping in a scratch VSCode profile, open this repo's `.haex-hive.json`, introduce an unknown role, screenshot or note the inline error, capture in `specs/004-cross-repo-refs/.validation-runs/2026-08-27-story-4.md`
+- [X] T034 [P] [US4] Manually verify VSCode mapping: install the mapping in a scratch VSCode profile, open this repo's `.haex-hive.json`, introduce an unknown role, screenshot or note the inline error, capture in `specs/004-cross-repo-refs/.validation-runs/2026-08-27-story-4.md`
 - [X] T035 [P] [US4] (Optional if operator lacks JetBrains) — same manual verification against a JetBrains editor OR document skip with rationale (single-operator, VSCode-only Phase 1) in the same validation-run file
 
 **Checkpoint**: Story 4 documented and verified for the operator's actual editor. If JetBrains skipped, rationale is captured; not a failure.
