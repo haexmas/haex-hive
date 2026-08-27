@@ -15,11 +15,14 @@ consistent standalone runtime. The spec's default assumption (Codex) holds
 without a substitution, so `spec.md` FR-006 is satisfied with the primary
 choice, not the fallback.
 
-**Alternatives considered**: `goose` is also installed at `~/.local/bin/goose`
-and would be a valid substitute per FR-006's "any other supported CLI listed
-by the spec-kit `--ai` options" clause. It is kept as an available fallback
-if Codex fails during validation for any reason (auth, network, upstream
-change) — the switch is documented but not exercised.
+**Alternatives considered**: `goose` is also available on the validation
+machine and would be a valid substitute per FR-006's "any other supported CLI
+listed by the spec-kit `--ai` options" clause. It is kept as an available
+fallback if Codex fails during validation for any reason (auth, network,
+upstream change) — the switch is documented but not exercised.
+
+**Ratified as**:
+[ADR 0001 — Codex as the second validation CLI](../../docs/adr/0001-codex-as-second-cli.md).
 
 ## Decision 2: What per-tool adapter file does Codex read at the repo root
 
