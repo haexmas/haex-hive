@@ -1,0 +1,16 @@
+{
+  "haex_hive_version": "1",
+  "identity": "local:haex-hive",
+  "identity_note": "Placeholder while this repo has no git remote. Becomes the canonical remote URL (e.g. github.com/<user>/haex-hive) once the repo is pushed.",
+  "constitution": {
+    "repository": "self",
+    "revision": "d7a9c6475568bb5484bdf9491daf9eeef1f4fa91",
+    "path": ".specify/memory/constitution.md",
+    "note": "Self-referential during the prototype: the constitution lives in this same repo. The revision pins the SHA at which the file is known-good; if a checkout has drifted, agents should note the drift before applying."
+  },
+  "groups": [],
+  "external_sources": {
+    "allowed": []
+  },
+  "active_feature": "specs/003-config-file-based-delivery"
+}
