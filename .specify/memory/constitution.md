@@ -59,11 +59,11 @@ cross-device drift that only surfaces as inconsistent agent behavior later.
 
 ### V. External Sources Are Opt-in Per Project (NON-NEGOTIABLE)
 
-A project without an explicit `.specify/system.yaml` — or with an empty
-`external_sources.allowed` list — MUST inherit no external harness content,
+A project without a `.haex-hive.json` — or with an empty
+`harness_sources` array — MUST inherit no external harness content,
 regardless of what the registry, sibling directories, sibling repos, or any
 global agent instruction file says. The registry describes what is *available*;
-the per-project file grants *use*.
+the per-project `harness_sources` array grants *use*.
 
 **Rationale**: private/personal repos accidentally picking up work or team
 constraints (or vice versa) is a real failure mode, not a theoretical one. The
@@ -80,8 +80,8 @@ a side effect of an apply-shaped request.
 
 **Refuse-then-propose is the required shape.** When an agent receives a
 request to apply constraints from a source that is not listed in
-`.specify/system.yaml`'s `external_sources.allowed`, the agent MUST (a)
-refuse the apply in this session, (b) name the mechanical reason (empty or
+`.haex-hive.json`'s `harness_sources` array, the agent MUST (a) refuse
+the apply in this session, (b) name the mechanical reason (empty or
 missing allowlist entry for the source), and (c) offer the two legitimate
 paths: either add a pinned entry (`repository + full commit SHA +
 repo-relative path(s)`) through a reviewable commit or PR under Principle
@@ -89,13 +89,13 @@ VI's amendment procedure, or treat the constraints as the operator's direct
 instructions rather than as sourced from the external harness. Silence, or
 partial compliance ("I'll apply just some of them"), is not permitted.
 
-**Modifying `.specify/system.yaml` requires an explicit "modify the
+**Modifying `.haex-hive.json` requires an explicit "modify the
 allowlist" request.** The word "apply" or its synonyms MUST NEVER trigger a
-write to `.specify/system.yaml` or to any other harness configuration file.
+write to `.haex-hive.json` or to any other harness configuration file.
 Only a request that explicitly asks the agent to edit the file (e.g. "add
-X to the allowlist", "update system.yaml to permit Y") may trigger a diff
-— and even then, per Principle VI, the diff is presented for review, not
-committed unilaterally.
+X to the allowlist", "update `harness_sources` to permit Y") may trigger a
+diff — and even then, per Principle VI, the diff is presented for review,
+not committed unilaterally.
 
 ### VI. Self-Modifying Instructions Are Always Review-Gated (NON-NEGOTIABLE)
 
@@ -161,7 +161,7 @@ agent unfiltered — which is every cross-tool handoff in this system.
 
 - Applies to: the haex-hive repository (this repo), any harness registry repo
   built for haex-hive use, and any project repo that declares itself as
-  haex-hive-managed via a `.specify/system.yaml`.
+  haex-hive-managed via a `.haex-hive.json`.
 - Does NOT apply to: external harness repos referenced in `unmodified` mode
   (e.g. secana-specs). Those follow their own owning team's rules; haex-hive
   only governs how they are *referenced*, not their internal contents.
@@ -197,4 +197,4 @@ agent unfiltered — which is every cross-tool handoff in this system.
   Phase 7) validates that no committed file violates Principles I, II, or IV
   mechanically.
 
-**Version**: 1.1.0 | **Ratified**: 2026-08-26 | **Last Amended**: 2026-08-27
+**Version**: 1.1.1 | **Ratified**: 2026-08-26 | **Last Amended**: 2026-08-27

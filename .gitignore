@@ -1,1 +1,3 @@
 *.local.log
+tests/spec-resolve/fixtures/.tmp/
+__pycache__/
