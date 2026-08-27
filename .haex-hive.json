@@ -4,7 +4,7 @@
   "identity_note": "Placeholder while this repo has no git remote. Becomes the canonical remote URL (e.g. github.com/<user>/haex-hive) once the repo is pushed.",
   "constitution": {
     "repository": "self",
-    "revision": "d7a9c6475568bb5484bdf9491daf9eeef1f4fa91",
+    "revision": "406fc786bc8c29826d2c30cd59d03c3a8235c16f",
     "path": ".specify/memory/constitution.md",
     "note": "Self-referential during the prototype: the constitution lives in this same repo. The revision pins the SHA at which the file is known-good; if a checkout has drifted, agents should note the drift before applying."
   },
