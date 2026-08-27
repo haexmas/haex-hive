@@ -495,3 +495,29 @@ actually being in daily use first.
   an acceptable prerequisite to require, or whether Windows-without-WSL2 needs
   first-class container-based support rather than treating it as a narrow fallback,
   depends on how much real Windows-without-WSL2 usage actually happens.
+
+### Spec 002 / Spec 003 follow-ups (opened 2026-08-27)
+
+- **F-3: Are the 7-step global-snippet callouts load-bearing or decorative?**
+  Spec 002 Phase 4 validation (all four fresh-CLI refusal runs) succeeded
+  using only the OLD 5-step snippet — the strengthened constitution wording
+  alone drove the correct refusal on Test 3.2a (Claude) and Test 3.2b (Codex
+  x3). Steps 6-7 of the current reference snippet (V/VIII/checkbox-freshness
+  callouts) were never exercised in the validation run. Options: (a) run an
+  empirical A/B — deliberately weaken the constitution wording, verify the
+  snippet callouts still drive the correct behavior; (b) simplify to 5
+  steps if the empirical test says the callouts add no value; (c) accept
+  belt-and-suspenders and keep 7 steps as insurance. Not urgent; revisit
+  when Phase 4-7 mechanics need the snippet extended for other reasons.
+- **F-VIII-restate: borderline FR-002 duplication in the Principle-VIII
+  snippet callout.** The snippet contract's VIII callout shares the
+  ~7-word phrase "emit output that instructs a downstream reader" with
+  the constitution's Principle VIII body. Judged acceptable during Spec 002
+  T025 review, but a future review could refactor the callout to a stricter
+  gist. Low-risk, low-urgency.
+- **F-Codex-ide-links: normalize Codex CLI IDE-integration markdown links
+  when capturing outputs into versioned config.** Codex emits absolute-path
+  IDE-integration links (`[file (line N)](<absolute-path>:N)`). Live
+  emission is not a P-II violation; the capture-and-commit step is. Codified
+  as a normalization pattern in `specs/002-.../.validation-runs/2026-08-27.md`
+  §E.F-4. Future validation-run authors should apply the same normalization.
