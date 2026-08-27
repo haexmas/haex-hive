@@ -81,7 +81,7 @@ the canonical source), then adapters, then templates.
       Verify FR-002 no-duplication still holds — the snippet contract
       references the amended constitution, does not restate principle
       body content. Commit message references ADRs 0002/0003/0004.
-- [ ] T011 Apply T007's tasks-template preamble to `.specify/templates/tasks-template.md`.
+- [x] T011 Apply T007's tasks-template preamble to `.specify/templates/tasks-template.md`.
 - [ ] T012 Run contract tests T1–T4 from `contracts/constitution-diff.schema.md`
       mechanically:
       - `grep -c "^### " .specify/memory/constitution.md` returns 8

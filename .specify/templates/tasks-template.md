@@ -10,6 +10,13 @@ description: "Task list template for feature implementation"
 
 **Tests**: The examples below include test tasks. Tests are OPTIONAL - only include them if explicitly requested in the feature specification.
 
+**Checkbox freshness is load-bearing.** When a task is completed, tick its
+checkbox in the same commit as the task's output — or at the latest in the
+next commit, before starting the next task. Handoff queries ("what was just
+done, what remains, what is the next step?") read this file's checkbox
+state as the primary state document; stale ticks systematically drift the
+answers toward pending items that are secretly done. See [ADR 0004](../../docs/adr/0004-eager-checkbox-update-rule.md).
+
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
 ## Format: `[ID] [P?] [Story] Description`
