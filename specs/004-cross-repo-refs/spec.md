@@ -12,6 +12,16 @@ required by Constitutional Principles IV and V — replacing the split
 `constitution` slot plus `external_sources.allowed` list left over from
 Spec 003. Design authority: [docs/plans/2026-08-27-spec-004-cross-repo-refs-design.md](../../docs/plans/2026-08-27-spec-004-cross-repo-refs-design.md).
 
+## Clarifications
+
+### Session 2026-08-27
+
+- Q: How does the resolver compare `repository` field values for allowlist matching and cache directory naming? → A: String-exact match (byte-identical values required; no canonicalization).
+- Q: What does the resolver do when a reference's `repository` field is the literal string `"self"`? → A: `"self"` is a reserved magic keyword meaning "the repository containing this `.haex-hive.json`". The resolver reads content from the local repo via git plumbing without any network access. No other special values are recognized in `repository`; every other value is a Git repository URL.
+- Q: Which URL schemes are accepted in a `repository` field? → A: Network schemes only — `https://`, `ssh://`, or SCP-style `user@host:path`. `file://`, `git://` (unencrypted), and bare local paths MUST be rejected at load-time. This enforces Principle II (device-independence) mechanically at the schema level.
+- Q: When `.haex-hive.json` fails validation at session start, what work is the session permitted to do? → A: Fail-closed, whole file. ANY validation error (whole-file or per-entry) blocks the entire session from harness-governed work. The snippet surfaces the error with the offending entry, refuses to load the constitution, and refuses to start harness work. The operator MUST fix `.haex-hive.json` before proceeding.
+- Q: Is `revision: "self"` a legal value? → A: No. `revision` values MUST match `^[0-9a-f]{7,40}$` only. The `"self"` keyword is `repository`-only per Q2. This tightens the design-doc's draft schema pattern which was over-permissive; the corrected pattern is authoritative for Spec 004.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — Fresh session in an opted-in repo resolves its pinned constitution end-to-end (Priority: P1)
@@ -223,7 +233,14 @@ identify the field and the constraint violated.
 - **FR-001**: `.haex-hive.json` MUST carry a top-level `harness_sources`
   array whose entries are either role-carrying (concrete pointer with
   `role`, `repository`, `revision`, `path`) or permission-only (scope
-  entry with `repository` and optional `revision` and `paths`).
+  entry with `repository` and optional `revision` and `paths`). The
+  `repository` field accepts either a Git repository URL or the reserved
+  magic keyword `"self"`; no other special values are recognized.
+  Accepted URL schemes: `https://`, `ssh://`, and SCP-style
+  `user@host:path`. `file://`, `git://` (unencrypted), and bare local
+  paths MUST be rejected at load-time with a validation error. This
+  restriction is enforced at both the JSON Schema layer (FR-016) and
+  the resolver's built-in checks (FR-017).
 - **FR-002**: The system MUST NOT retain a separate top-level
   `constitution` slot in `.haex-hive.json`. The constitution reference
   lives as a `role: "constitution"` entry in `harness_sources`.
@@ -234,17 +251,31 @@ identify the field and the constraint violated.
 - **FR-005**: The Phase 1 role enum MUST contain exactly the value
   `constitution`. Any other `role` value is invalid.
 - **FR-006**: `revision` values in any entry MUST match the pattern
-  `self` OR a 7-to-40-character lowercase hexadecimal string.
+  `^[0-9a-f]{7,40}$` — a 7-to-40-character lowercase hexadecimal string
+  only. The `"self"` keyword is `repository`-only (per FR-001); it is
+  NOT a legal `revision` value. Any `revision: "self"` MUST be rejected
+  at load-time. (This tightens the over-permissive pattern
+  `^(self|[0-9a-f]{7,40})$` drafted in the design doc; Spec 004's FR-006
+  is authoritative.)
 
 **Resolution and enforcement:**
 
 - **FR-007**: The system MUST provide a resolver tool (`spec-resolve`)
   that reads a reference (`repository + revision + path`) and returns
-  the file content pinned at that SHA.
+  the file content pinned at that SHA. When `repository == "self"`, the
+  resolver MUST read content from the local repository containing the
+  invoking `.haex-hive.json` via git plumbing (e.g. `git show <sha>:<path>`)
+  and MUST NOT attempt any network operation. If the pinned SHA is not
+  present in the local object database, the resolver MUST refuse with a
+  message naming the missing SHA — never fall back to a remote fetch
+  under `"self"` semantics.
 - **FR-008**: The resolver MUST refuse any reference not permitted by
   at least one entry in the calling repo's `harness_sources`. Refusal
   MUST name both the offending reference and the missing/mismatching
-  permission scope.
+  permission scope. `repository` values MUST be compared byte-identically
+  — no canonicalization (no stripping of `.git`, no SSH↔HTTPS normalization,
+  no host-case folding). If the operator wants two URL forms of the same
+  underlying repo permitted, they MUST declare two entries.
 - **FR-009**: A role-carrying entry MUST implicitly permit its own
   reference. No separate permission-only entry is required to authorize
   a role entry's exact reference.
@@ -268,7 +299,11 @@ identify the field and the constraint violated.
   device-specific paths or secrets.
 - **FR-014**: Multiple opted-in repos on the same device MUST share
   one cache entry per external repository. Deduplication is by stable
-  repository-URL hash.
+  hash of the byte-identical `repository` value from the reference
+  (matching FR-008's exact-match rule). Two different URL forms of the
+  same underlying repo therefore produce two separate cache directories
+  — accepted duplication cost, in exchange for zero canonicalization
+  ambiguity.
 - **FR-015**: Deleting the cache directory MUST NOT corrupt any
   opted-in repo's state; the next resolver invocation MUST repopulate
   it from remotes.
@@ -282,7 +317,11 @@ identify the field and the constraint violated.
 - **FR-017**: The resolver MUST validate every loaded `.haex-hive.json`
   against the same constraints the schema expresses. When the schema
   and resolver disagree on any curated valid/invalid sample, the
-  system MUST be considered non-conforming until they agree.
+  system MUST be considered non-conforming until they agree. Any
+  validation error (whether whole-file such as malformed JSON or missing
+  required top-level key, or per-entry such as unknown role or forbidden
+  field combination) MUST cause the resolver to reject the entire config
+  — no partial acceptance, no "valid subset" mode.
 - **FR-018**: Extending the `role` enum in a future phase MUST be a
   PATCH-level change to the constitution (widening only, never
   removing values).
@@ -312,6 +351,11 @@ identify the field and the constraint violated.
   reachable, the snippet MUST run `spec-resolve prefetch` before
   proceeding; if a reference is unresolvable with no network, the
   snippet MUST refuse to start harness work and surface the failure.
+  If `.haex-hive.json` itself fails validation (FR-017), the snippet
+  MUST refuse the entire session's harness-governed work — no partial
+  degradation, no "load what you can". The operator sees a clear
+  message naming the offending entry and MUST fix the file before any
+  harness enforcement resumes.
 - **FR-023**: The staleness indicator emitted by the snippet at
   session start MUST be drawn from cache metadata only. No network
   call at session start is permitted for the staleness display.
