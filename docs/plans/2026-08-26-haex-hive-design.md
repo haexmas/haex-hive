@@ -460,6 +460,13 @@ generalizes it. Phases are not optional — do not skip forward.
   deferred to when a Windows satellite is real). Acceptance: the same
   `spec-ref.yaml` resolves the identical revision on both OSes without local
   path configuration.
+  _Status_: **implemented and in daily use as of 2026-08-27** via Spec 004
+  (`spec-resolve` tool at `.specify/scripts/spec-resolve`, unified
+  `harness_sources` array in `.haex-hive.json`, canonical JSON Schema at
+  `.specify/schemas/haex-hive.schema.json`, constitution v1.1.1). macOS
+  cross-OS validation still deferred per Spec 004 Assumptions; Linux is
+  live. The Phase 1 mechanism is what Phase 2 (harness registry +
+  multi-tool compiler) now builds on.
 - **Phase 2 — Harness registry + multi-tool compiler.** Central harness repo
   with global/groups/registry structure. Compiler emits per-tool artifacts
   (CLAUDE.md/AGENTS.md/GEMINI.md via symlink, settings.json/config.toml via
