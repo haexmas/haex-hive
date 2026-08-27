@@ -9,8 +9,9 @@ Three items were left open by the spec and plan. Resolved here.
 
 **Decision**: Codex CLI.
 
-**Rationale**: `codex-cli 0.147.0` is installed and runnable on this machine
-at `~/.local/bin/codex`; `codex doctor` reports a healthy install with a
+**Rationale**: `codex-cli 0.147.0` is installed and runnable on this
+machine (the exact install path is reported by `codex doctor` and is
+per-operator local); `codex doctor` reports a healthy install with a
 consistent standalone runtime. The spec's default assumption (Codex) holds
 without a substitution, so `spec.md` FR-006 is satisfied with the primary
 choice, not the fallback.

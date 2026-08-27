@@ -132,9 +132,9 @@ grading.
   [contracts/haex-hive-json.schema.md](./contracts/haex-hive-json.schema.md).
 - **Global detection snippet** per
   [contracts/global-snippet.contract.md](./contracts/global-snippet.contract.md),
-  installed by each operator in their user-level CLI config
-  (`~/.claude/CLAUDE.md` for Claude Code, `~/.codex/AGENTS.md` for Codex
-  CLI).
+  installed by each operator in their user-level CLI config (Claude
+  Code's `CLAUDE.md` under its config directory; Codex CLI's `AGENTS.md`
+  under `$CODEX_HOME`).
 - **Retirement of committed `CLAUDE.md` / `AGENTS.md`** at the haex-hive
   repo root — the pilot-era files were removed in commit `f1a7e48` of
   branch `003-config-file-based-delivery` and remain removed on merge to
@@ -157,11 +157,12 @@ grading.
 ## Assumptions
 
 - The operator installs the global snippet in their user-level config
-  themselves. There is no `~/.haex-hive/install` script.
+  themselves. There is no auto-installer or `haex-hive install` command.
 - The two supported CLIs at prototype time are Claude Code (any recent
   version) and Codex CLI 0.147.0 or newer. Codex CLI's global
-  instruction path is `~/.codex/AGENTS.md` per the binary's built-in
-  reference ("Failed to read global AGENTS.md instructions from ...").
+  instruction path is `AGENTS.md` under `$CODEX_HOME` per the binary's
+  built-in reference ("Failed to read global AGENTS.md instructions from
+  ...").
 - The `.haex-hive.json` `identity` field is a `local:<slug>` placeholder
   during the prototype phase and becomes the git remote URL once the
   repo is pushed.

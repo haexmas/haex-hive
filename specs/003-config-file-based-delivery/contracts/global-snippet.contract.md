@@ -1,10 +1,12 @@
 # Contract: global haex-hive detection snippet
 
 **Location**: the operator's user-level CLI instruction file, installed
-by the operator on each device they use. For Claude Code:
-`~/.claude/CLAUDE.md`. For Codex CLI 0.147.0+: `~/.codex/AGENTS.md`.
-Other CLIs are added as they are supported — the snippet's semantics
-transfer.
+by the operator on each device they use. For Claude Code: the
+user-level `CLAUDE.md` under Claude Code's config directory (consult the
+CLI's own documentation for the resolved path). For Codex CLI 0.147.0+:
+`AGENTS.md` under `$CODEX_HOME` (Codex CLI reports the resolved path via
+`codex doctor`). Other CLIs are added as they are supported — the
+snippet's semantics transfer.
 
 **Purpose**: Give every fresh CLI session a five-step check that runs at
 session start in any repo, keying off the presence of `.haex-hive.json`
