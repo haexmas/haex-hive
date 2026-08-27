@@ -9,16 +9,25 @@ Land the wording changes decided in ADRs
 [0002](../../docs/adr/0002-disambiguate-apply-vs-permit-external-harness.md),
 [0003](../../docs/adr/0003-agents-must-not-emit-hide-instructions.md), and
 [0004](../../docs/adr/0004-eager-checkbox-update-rule.md) into the constitution
-and the CLAUDE.md pointer block, then verify via fresh-CLI validation runs
-that Codex refuses Test 3.2b in the same shape as Claude, that no supported
-CLI emits hide-instructions on the test prompts, and that handoff Q&A stays
-clean against a freshly-ticked task list.
+and the global-snippet reference implementation, then verify via fresh-CLI
+validation runs that Codex refuses Test 3.2b in the same shape as Claude,
+that no supported CLI emits hide-instructions on the test prompts, and that
+handoff Q&A stays clean against a freshly-ticked task list.
+
+**Delivery-target note**: this spec was originally drafted against the
+committed `CLAUDE.md`/`AGENTS.md` pilot adapters. Spec 003 retired those
+in favor of a per-repo `.haex-hive.json` marker plus an operator-owned
+global snippet. This spec was rebased on the new main after spec 003
+merged; the pointer-side edit target changed accordingly, but the
+constitution-side edits and the fresh-CLI validation methodology are
+unchanged.
 
 Technical approach: pure content edits to `.specify/memory/constitution.md`,
-`CLAUDE.md`, and the `.specify/templates/tasks-template.md`. Constitution
-version bump 1.0.0 → 1.1.0 (MINOR: new principle VIII, V wording expanded).
-Then real fresh-CLI validation runs against a written quickstart.md, results
-recorded in `.validation-runs/`. No code, no services, no build step.
+`specs/003-config-file-based-delivery/contracts/global-snippet.contract.md`,
+and the `.specify/templates/tasks-template.md`. Constitution version bump
+1.0.0 → 1.1.0 (MINOR: new principle VIII, V wording expanded). Then real
+fresh-CLI validation runs against a written quickstart.md, results recorded
+in `.validation-runs/`. No code, no services, no build step.
 
 ## Technical Context
 
@@ -99,7 +108,8 @@ as spec 001, same justification.
 
 ```text
 .specify/memory/constitution.md   # V wording expanded, VIII added, version 1.0.0 → 1.1.0
-CLAUDE.md                          # SPECKIT block updated to reference amended V, VIII, and the ADR-0004 checkbox rule
+specs/003-config-file-based-delivery/contracts/global-snippet.contract.md
+                                   # Reference-implementation snippet extended to callout amended V, VIII, and the ADR-0004 checkbox rule
 .specify/templates/tasks-template.md   # preamble line documenting checkbox-freshness expectation (FR-005)
 ```
 
@@ -172,10 +182,17 @@ The quickstart is intended to run in one sitting per CLI, with the same
 
 ### Agent context update
 
-Per the plan skill's outline: update the `<!-- SPECKIT START -->…<!-- SPECKIT
-END -->` block in `CLAUDE.md` after the constitution wording lands, so the
-pointer references the amended V, VIII, and the ADR-0004 checkbox rule.
-This is a specific task in Phase 2 (`tasks.md`), not an in-plan side effect.
+Per the plan skill's outline: update the reference-implementation snippet
+in `specs/003-config-file-based-delivery/contracts/global-snippet.contract.md`
+after the constitution wording lands, so the snippet the operator installs
+in their user-level CLI instruction file references the amended V, VIII,
+and the ADR-0004 checkbox rule. This is a specific task in Phase 2
+(`tasks.md`), not an in-plan side effect. The operator then re-copies the
+updated snippet into the operator's user-level CLI instruction files
+(Claude Code's `CLAUDE.md` in its config directory; Codex CLI's
+`AGENTS.md` under `$CODEX_HOME`) on each device they use — that copy
+step is outside this feature's git scope but belongs on the release
+checklist.
 
 ### Re-evaluated Constitution Check post-design
 

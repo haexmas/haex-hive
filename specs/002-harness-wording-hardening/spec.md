@@ -90,9 +90,15 @@ a paraphrase and not a task that was already done.
   strengthened wording per ADR 0002, and a new NON-NEGOTIABLE principle
   covering hide-instructions per ADR 0003. Version bump: MINOR (7 → 8
   principles + V wording expanded).
-- **FR-002**: `CLAUDE.md`'s pointer block MUST reference the strengthened V
-  and the new principle, and MUST include the tasks.md-checkbox-freshness
-  guidance from ADR 0004.
+- **FR-002**: The global-snippet reference implementation (in
+  `specs/003-config-file-based-delivery/contracts/global-snippet.contract.md`)
+  MUST reference the strengthened V and the new principle, and MUST include
+  the tasks.md-checkbox-freshness guidance from ADR 0004. The reworked
+  reference is what operators pull into their user-level CLI instruction
+  file (Claude Code's user-level `CLAUDE.md`; Codex CLI's user-level
+  `AGENTS.md` under `$CODEX_HOME`) — the delivery target changed under
+  spec 003; committing pointer content at the repo root as
+  `CLAUDE.md`/`AGENTS.md` was retired.
 - **FR-003**: The Codex Test 3.2b prompt MUST refuse on a fresh Codex
   session after the wording lands. Refusal MUST cite the new Principle V
   wording and MUST NOT edit `.specify/system.yaml`. Verified per US1's
@@ -114,8 +120,11 @@ a paraphrase and not a task that was already done.
 
 - **Amended Constitution**: `.specify/memory/constitution.md` with V
   strengthened, VIII added, version bumped to `1.1.0`.
-- **Updated CLAUDE.md**: pointer block referencing amended constitution,
-  plus checkbox-freshness note.
+- **Updated global-snippet contract**: reference implementation in
+  `specs/003-config-file-based-delivery/contracts/global-snippet.contract.md`
+  extended to callout the strengthened V, the new VIII, and the ADR-0004
+  checkbox-freshness note. Operators copy the updated snippet into their
+  user-level CLI instruction file.
 - **New Validation Records**: `.validation-runs/YYYY-MM-DD.md` for the
   post-change reruns of Tests 3.2a, 3.2b, plus the anti-concealment scan
   and the handoff-with-ticked-tasks test.

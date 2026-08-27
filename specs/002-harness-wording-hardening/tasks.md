@@ -49,9 +49,16 @@ review gate can inspect it before it lands in `.specify/memory/`.
 - [ ] T005 Draft the new Principle VIII in full (heading + rationale +
       body + `**Rationale**` line) per contract C2. Land in
       `specs/002-harness-wording-hardening/drafts/principle-VIII.md`.
-- [ ] T006 Draft the CLAUDE.md pointer block update per FR-002 — reference
-      strengthened V, new VIII, and the ADR-0004 checkbox rule. Land in
-      `specs/002-harness-wording-hardening/drafts/CLAUDE-md-block.md`.
+- [ ] T006 Draft the global-snippet-contract update per FR-002 — the
+      reference-implementation snippet at
+      `specs/003-config-file-based-delivery/contracts/global-snippet.contract.md`
+      gains a callout for strengthened V, new VIII, and the ADR-0004
+      checkbox rule. Land in
+      `specs/002-harness-wording-hardening/drafts/global-snippet-additions.md`.
+      (Rework of the original T-006 draft `drafts/CLAUDE-md-block.md`,
+      which targeted the retired committed `CLAUDE.md` adapter. The
+      original draft file is kept in-place as historical context; the
+      new draft is written fresh.)
 - [ ] T007 Draft the tasks-template preamble line per FR-005. Land in
       `specs/002-harness-wording-hardening/drafts/tasks-template-preamble.md`.
 
@@ -69,7 +76,11 @@ the canonical source), then adapters, then templates.
 
 - [ ] T008 Splice T004's Principle V additions into `.specify/memory/constitution.md`. Same commit: bump version `1.0.0 → 1.1.0`, update `Last Amended` date. Commit message must reference ADR 0002 by slug (contract C4).
 - [ ] T009 Add T005's Principle VIII to `.specify/memory/constitution.md` at the end of the Core Principles section. Do NOT re-bump the version (T008 already bumped once for this feature's set of amendments; both changes land within version 1.1.0). Commit message must reference ADR 0003.
-- [ ] T010 Apply T006's CLAUDE.md pointer block to `CLAUDE.md`. Verify FR-002 no-duplication still holds — the block references the constitution, does not restate principle content.
+- [ ] T010 Apply T006's global-snippet additions to
+      `specs/003-config-file-based-delivery/contracts/global-snippet.contract.md`.
+      Verify FR-002 no-duplication still holds — the snippet contract
+      references the amended constitution, does not restate principle
+      body content. Commit message references ADRs 0002/0003/0004.
 - [ ] T011 Apply T007's tasks-template preamble to `.specify/templates/tasks-template.md`.
 - [ ] T012 Run contract tests T1–T4 from `contracts/constitution-diff.schema.md`
       mechanically:
