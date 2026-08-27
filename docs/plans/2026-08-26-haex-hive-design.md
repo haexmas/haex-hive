@@ -215,6 +215,102 @@ external references — it's more reproducible (SHA-pinned), cleaner across OSes
 without a full clone. Symlinks remain the mechanism only for the daemon's own
 compiled outputs (per-tool CLAUDE.md/AGENTS.md/GEMINI.md) inside a *single* repo.
 
+### Delivery model: three orthogonal instruction layers (as implemented, spec 003+)
+
+The delivery model that actually landed via spec 003 has three orthogonal
+layers, each with its own scope, load mechanism, and enforceability. This
+subsection describes what a session working in an opted-in repo actually
+sees — a refinement of the registry/groups design above, not a replacement.
+
+#### Layer 1 — Repo constitution (NON-NEGOTIABLE)
+
+- **Where**: `.specify/memory/constitution.md` in the opted-in repo.
+- **Reference**: pinned by `.haex-hive.json`'s `constitution` block with
+  `repository + revision + path` per Principle IV.
+- **Loaded by**: session start, via the operator's global detection snippet
+  (see `specs/003-config-file-based-delivery/contracts/global-snippet.contract.md`).
+- **Scope**: universal to any session working in the opted-in repo.
+- **Enforceability**: NON-NEGOTIABLE. Session refuses on violation per
+  Snippet Step 5. Conflict-pass in Snippet Step 4 raises any repo-local
+  rule that contradicts a constitutional principle to the operator with
+  both sides quoted verbatim.
+- **Sharing**: everyone who clones the opted-in repo gets the constitution.
+
+#### Layer 2 — Repo-local instructions (SHOULD, additive)
+
+- **Where**: `CLAUDE.md` / `AGENTS.md` at the repo root, plus any other
+  convention paths the specific CLI reads natively.
+- **Reference**: no explicit `.haex-hive.json` entry needed — the layer is
+  discovered by file presence.
+- **Loaded by**: session start, per Snippet Step 3. Applied additively,
+  never as a replacement for the constitution.
+- **Scope**: the specific repo — the repo owner's project-specific rules
+  for anyone contributing to that repo.
+- **Enforceability**: SHOULD-level. Direct contradictions with
+  constitutional principles are surfaced via Step 4; contradictions on
+  non-principle matters just merge additively. No automatic refusal.
+- **Sharing**: everyone who clones the repo gets these files.
+
+#### Layer 3 — Operator personal config (SHOULD, per-operator)
+
+- **Where**: the operator's user-level CLI instruction file (Claude Code's
+  `CLAUDE.md` under its config directory; Codex CLI's `AGENTS.md` under
+  `$CODEX_HOME`).
+- **Reference**: the CLI's native mechanism; no haex-hive reference needed.
+- **Loaded by**: session start, natively by the CLI in every session that
+  operator runs — in any repo, opted-in or not.
+- **Scope**: the operator, not the repo. Other developers on the same repo
+  see none of this.
+- **Enforceability**: SHOULD-level guidance, deviation-with-operator-
+  approval. Personal workflow preferences (worktree discipline, tool
+  integrations, formatting conventions) live here.
+- **Sharing**: two patterns work today:
+  - **Copy-paste**: manually move the file between devices. Simplest, no
+    infrastructure.
+  - **Personal config repo**: keep the file in a per-operator git repo
+    (e.g. `github.com/<op>/haex-personal-config`), symlink the CLI's
+    global-instructions path to a checkout in that repo, sync devices via
+    `git pull`. Other developers wanting to inspect or borrow the workflow
+    clone the repo. Sharing is git — no haex-hive-specific mechanism
+    required.
+
+#### Rule-tagging convention (recommended for layers 2 and 3)
+
+Since layers 2 and 3 are both SHOULD-level, rules within them benefit from
+explicit enforcement tags so a session knows what to do on ambiguity:
+
+- **HARD_STOP** — refuse to violate, cite the rule. Rare in layers 2/3;
+  usually means the operator has folded a constitutional-adjacent principle
+  into their personal or repo-local config.
+- **EXPECTED** — do it by default. If the operator explicitly asks to skip
+  ("commit without the changelog line this once"), skip after acknowledging
+  the deviation in the response.
+- **SHOULD** — do it unless there's a specific reason not to. Session may
+  ask "convention says X, do you want that here?" for low-friction cases,
+  or just proceed and note the deviation in a summary.
+
+The constitution's principles are all HARD_STOP by definition (that's what
+NON-NEGOTIABLE means). Repo-local and personal rules pick their own tag
+per rule.
+
+#### Why this shape
+
+- **Constitution stays universal.** haex-hive-the-project ships one
+  canonical constitution. Adding personal workflow rules into it would
+  force those on every contributor to every haex-hive-opted-in project —
+  which is exactly the "committed CLAUDE.md commandeers repo-local
+  instructions" anti-pattern spec 003 was written to retire.
+- **Repo owners keep control of their repo.** Repo-local `CLAUDE.md` /
+  `AGENTS.md` are the repo owner's territory. The harness respects them
+  additively.
+- **Operators keep control of their sessions.** Personal workflow rules
+  do not leak into any repo unless the operator deliberately commits them.
+  Cross-device sync of personal rules is a git problem, not a haex-hive
+  problem.
+- **Sharing is git.** Every layer is either in a git repo or trivially
+  put into one. Sharing = point at `repository + revision + path` per
+  Principle IV. No haex-hive-specific sharing mechanism needed.
+
 ## Execution & Dev Environment
 
 - Every satellite runs the same daemon: watches the harness repo, compiles configs,
