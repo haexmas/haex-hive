@@ -108,12 +108,14 @@ only by its matching planned owner in the successful transaction below.
 - `constitution`: `contributes.constitution` is one validated file path. It
   is copied to `.specify/memory/constitution.md`, the canonical agent-facing
   location. Spec-007 extends `spec-resolve resolve --role constitution` for a
-  v2 directory entry: it reads `<entry-path>/manifest.json`, validates
-  `type: constitution` and `contributes.constitution`, then emits that
-  validated file with `git show <sha>:<entry-path>/<contribution>`. A legacy
-  file pin retains the existing direct `git show <sha>:<path>` behavior. In
-  neither case does the resolver trust a generated copy; hydration is an
-  offline, agent-readable projection, not a second authority.
+  v2 directory entry: it first verifies that `<entry-path>/manifest.json` is
+  a regular Git-tree file, then reads and validates `type: constitution` and
+  `contributes.constitution`. Only regular-file modes `100644` and `100755`
+  may then be emitted with `git show <sha>:<entry-path>/<contribution>`; a
+  directory, symlink, or any other mode fails before extraction. A legacy file
+  pin retains the existing direct `git show <sha>:<path>` behavior. In neither
+  case does the resolver trust a generated copy; hydration is an offline,
+  agent-readable projection, not a second authority.
 - `spec`: all validated files in the manifest directory are copied to
   `.haex-hive/generated/specs/<resource-key>/`. That tree is read-only
   generated input for agents and tooling; it never overwrites a working
@@ -380,8 +382,10 @@ the URL + SHA, so the registry can vanish and everything still resolves.
    source fields are subject to the same credential-free URL validation.
 4. **Validate ownership and compatibility.** Build the planned-output map and
    reject duplicate resource keys, destination owners, type-inappropriate
-   contributions, `requires`, or `conflicts`. Fail loudly with a list; never
-   partial-install.
+   contributions, `requires`, or `conflicts`. Derive a stale-output set as
+   prior managed inventory minus current planned destinations. Only an
+   inventory-owned destination may enter this set; it is a journalled deletion
+   rather than an overwrite. Fail loudly with a list; never partial-install.
 5. **Merge config.** For each blueprint: `defaults` (from
    `config.defaults.json`) ⊕ consumer override (from the entry's
    `config` block). Validate the merged object against
@@ -400,12 +404,17 @@ the URL + SHA, so the registry can vanish and everything still resolves.
    - Copy hook scripts into
      `.haex-hive.next-<uuid>/hooks/<trigger>/NN-<resource-key>.sh` (NN =
      declared order or manifest index).
-   - Hydrate constitution and spec resources only to the dedicated per-type
-     destinations above, checking the managed-output inventory first.
+   - Stage every target in `.haex-hive.next-<uuid>/outputs/<resource-key>/`
+     rather than writing it live. The constitution contribution is staged at
+     `outputs/<resource-key>/constitution` and maps to
+     `.specify/memory/constitution.md`; spec projections, agent copies, and
+     declared native outputs use the same target-map form. Record staged hash,
+     owner, target, and any stale deletion in the transaction plan.
 7. **Compute lockfile.** Hash the staging tree deterministically →
    produce `.haex-hive.next-<uuid>/install.lock` (records: resource keys,
    display ids, canonical source/path, SHAs, effective-config hashes, and
-   output-file hashes).
+   staged-output target maps and hashes). The lockfile omits completed stale
+   outputs, while the journal retains their recovery backup until commit.
 8. **Prepare and commit one transaction.** Before any new work, `haex` reads
    a durable, fsynced journal under `.haex-hive/transactions/`. If a prior
    commit was interrupted, recovery inspects its recorded targets and backups:
@@ -414,12 +423,13 @@ the URL + SHA, so the registry can vanish and everything still resolves.
    `on-install` is not allowed to mutate a live target directly. It produces
    declared native-tool files in a staging root; `haex` records a backup for
    every managed workspace, agent skill, and external configuration target,
-   and records and fsyncs every swap in the journal before and after it. It
-   removes backups and the journal only after every swap succeeds. On a normal
-   returned failure, it restores all backups and removes every new target and
-   staging root. A hook may not make undeclared side effects; such a hook is
-   rejected. Thus the cache survives while generated state, agent copies, and
-   managed external configuration recover to one complete transaction state.
+   and records and fsyncs every swap or stale deletion in the journal before
+   and after it. It removes backups and the journal only after every operation
+   succeeds. On a normal returned failure, it restores all backups and removes
+   every new target and staging root. A hook may not make undeclared side
+   effects; such a hook is rejected. Thus the cache survives while generated
+   state, agent copies, native targets, and removed outputs recover to one
+   complete transaction state.
 9. **Diff `.haex-hive.json`** (if `haex add`, migration, or `haex update` was the
    caller): the tool leaves the diff staged but the human commits.
    Principle VI applies.
@@ -442,6 +452,7 @@ the URL + SHA, so the registry can vanish and everything still resolves.
   install.lock               # generated, gitignored
   transactions/              # durable recovery journals (gitignored)
 .haex-hive.next-<uuid>/      # sibling transaction staging root (gitignored)
+  outputs/<resource-key>/    # staged target files; never written live first
 .haex-hive.json              # the committed lockfile of pinned entries
 ```
 
@@ -563,19 +574,32 @@ an install-time native output. Each object has a safe component `id`, a
 validated contribution `script`, a canonical relative `staged` file path, and
 a safe logical `target` binding. The binding is resolved only in a per-device,
 unversioned `haex` target map; no committed manifest contains an absolute path
-or a home-directory expansion. The local mapping must resolve to a regular
-file beneath an operator-approved local root, not a symlink or directory.
+or a home-directory expansion. The local mapping must resolve beneath an
+operator-approved local root. An existing target must be a regular file, not a
+symlink or directory; an absent target is createable on first install if every
+existing parent is a non-symlink directory under that root. Parent creation is
+a journalled transaction operation, so rollback removes only directories it
+created and that remain empty.
 
 For each declaration, `haex` runs the script in an isolated staging directory
-with the pinned resource and effective config mounted read-only. It exposes
-`HAEX_STAGE_ROOT`, `HAEX_CONFIG_PATH`, and a read-only JSON file listing only
-that resource's declared output ids, staged paths, and logical targets. The
-script may write only `$HAEX_STAGE_ROOT/<staged>` for a listed declaration.
-Before commit, `haex` validates the staged paths, rejects undeclared files, and
-enumerates every target and backup from the declarations before applying them
-through the journalled transaction. The isolated runner has no write access to
-live workspace, agent, cache, or external target paths, so an undeclared side
-effect fails rather than bypassing the transaction.
+with the pinned resource and effective config mounted read-only. The runner
+enforces a deny-by-default filesystem sandbox: only `$HAEX_STAGE_ROOT` is
+writable; live workspace, agent, cache, external-target, and all other
+user/system paths are denied. The CLI provides this boundary with its bundled
+platform sandbox adapter; on a platform where it cannot enforce the adapter,
+native-output installation fails rather than falling back to an unsandboxed
+shell. It exposes `HAEX_STAGE_ROOT`, `HAEX_CONFIG_PATH`, and a read-only JSON
+file listing only that resource's declared output ids, staged paths, and
+logical targets. The script may write only `$HAEX_STAGE_ROOT/<staged>` for a
+listed declaration.
+
+Before commit, `haex` validates every staged path with an `lstat` walk: staged
+outputs must be declared regular files beneath the stage root, and any symlink,
+directory in place of a file, or undeclared file fails. It enumerates every
+target, backup, parent-directory creation, and stale deletion from the target
+map before applying them through the journalled transaction. Spec-009 includes
+acceptance tests for denied writes outside the stage root, staged-symlink
+rejection, an absent first-install target, and rollback of its created parents.
 
 **Line of responsibility.** Consumer declares intent; atom author is
 responsible for making that intent land wherever the tool actually
