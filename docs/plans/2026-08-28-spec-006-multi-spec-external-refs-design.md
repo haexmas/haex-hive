@@ -193,7 +193,7 @@ refs (aliases) to those absolute paths:
   "resolved": {
     "secana-specs:constitution": "<device-local-absolute-state-root>/repos/secana-specs/.extracts/@b2f8841.../.specify/memory/constitution.md",
     "secana-specs:plan-review-workflow": "<device-local-absolute-state-root>/repos/secana-specs/.extracts/@b2f8841.../.specify/workflows/plan-review.md",
-    "secana-specs:harness-evaluator": "<device-local-absolute-state-root>/repos/secana-specs/.extracts/@b2f8841.../tools/harness-evaluator/"
+    "secana-specs:path:tools/harness-evaluator/README.md": "<device-local-absolute-state-root>/repos/secana-specs/.extracts/@b2f8841.../tools/harness-evaluator/README.md"
   }
 }
 ```
@@ -406,11 +406,13 @@ Existing commands:
 - `spec-resolve status` — extended to summarize `.haex-hive.local.json`
   freshness (SHA of source config vs regenerated table)
 
-New commands:
+Internal operation:
 
-- `spec-resolve regenerate` — writes `.haex-hive.local.json` from
-  `.haex-hive.json` + current extracts state. No network required.
-  Called internally by `haex-init sync` after clone/fetch.
+- `regenerate` is an internal routine, not a standalone
+  `spec-resolve` CLI command. `haex-init sync` invokes it only while
+  holding the consumer-local exclusive sync lock, and it cannot publish
+  `.haex-hive.local.json` independently. Thus `sync` is the sole writer
+  and performs the final configuration-hash recheck and atomic replace.
 
 #### Compatibility and storage migration
 
@@ -535,9 +537,15 @@ plugins.
 Freshness requires both `generated_from_config` and
 `state_root_identity` to match the currently read configuration and
 active `$HAEX_HIVE_STATE`. Before `status` reports this table fresh or
-`regenerate` reuses it, it validates every `resolved` value: the target
-must exist, be a regular non-symlink file, and resolve beneath the
-active state root. A missing, out-of-root, or stale-root target is
+the internal `regenerate` routine reuses it, it derives the complete
+expected mapping from the current configuration: every producer identity,
+pinned revision, selected repo-relative file path, and resulting key
+must match the stored table exactly. It then validates every `resolved`
+value: the target must exist, be a regular non-symlink file, and resolve
+beneath the active state root. Reused extracts are byte-checked against
+the corresponding pinned Git-tree blob; a mismatch is rebuilt through
+the atomic extraction path or makes the operation fail. A missing,
+out-of-root, stale-root, unexpected, or otherwise invalid target is
 reported as stale (never fresh) and requires sync/regeneration; matching
 only the config hash is insufficient.
 
@@ -670,7 +678,8 @@ under `tests/multi-spec-external-ref/`:
   a second top-level constitution is rejected
 - `test-local-state-freshness.sh` — changing the state root, removing a
   target, or replacing it with an out-of-root/symlink target makes the
-  table stale rather than fresh
+  table stale rather than fresh; a changed producer/revision/path/key or
+  modified extract is also rebuilt or rejected against its pinned blob
 - `test-sha-bump-clean.sh` — US3 happy path
 - `test-sha-bump-rename-refuses.sh` — D9 fail-loud on rename
 - `test-add-source-fresh.sh` — US4 from-scratch mode
