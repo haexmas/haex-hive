@@ -181,10 +181,11 @@ agent unfiltered — which is every cross-tool handoff in this system.
   history.
 - All work on this repo lands on `main` through a pull request. `main` is
   branch-protected; direct commits and pushes to `main` are rejected by the
-  remote. Work happens on a topic branch (`<type>/<short-slug>`, e.g.
-  `feat/haex-init-fetch-latest`, `docs/roadmap-refresh`). Create the pull
-  request with `gh pr create --base main --head <branch>`; merge it separately
-  using an allowed method below. Docs-only changes are not exempt.
+  remote. Work happens on a topic branch. This policy does not prescribe a
+  universal branch-name format: work performed through project tooling follows
+  that tooling's configured convention. Create the pull request with
+  `gh pr create --base main --head <branch>`; merge it separately using an
+  allowed method below. Docs-only changes are not exempt.
 - Pull requests MUST be merged with **rebase-merge** (preferred) or
   **merge-commit**. Squash-merge is forbidden because it collapses the
   per-commit Conventional-Commits messages into a single auto-composed
