@@ -1,7 +1,6 @@
 {
   "haex_hive_version": "1",
-  "identity": "local:haex-hive",
-  "identity_note": "Placeholder while this repo has no git remote. Becomes the canonical remote URL (e.g. github.com/<user>/haex-hive) once the repo is pushed.",
+  "identity": "github.com/haexmas/haex-hive",
   "harness_sources": [
     {
       "role": "constitution",
