@@ -16,7 +16,7 @@ Point `XDG_CACHE_HOME` at a fresh temp directory so this smoke test
 does not touch the operator's real `~/.cache/haex-init/verify/`
 (cleanup then removes only what this run created).
 
-```
+```shell
 cd /tmp
 mkdir haex-init-real-remote-$$
 cd haex-init-real-remote-$$
@@ -30,10 +30,10 @@ git init --quiet -b main .
 
 ## Expected prompts
 
-```
+```text
 External repository URL: https://github.com/octocat/Hello-World.git
 Fetch latest HEAD SHA from remote? [y/N]:
-SHA (7-40 lowercase hex): 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d
+SHA (40 lowercase hex): 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d
 Path within repository [default: .specify/memory/constitution.md]: README
 
 Verifying reference…
@@ -59,7 +59,7 @@ Verifying reference…
 
 ## Post-condition
 
-```
+```shell
 .specify/scripts/spec-resolve resolve --role constitution
 ```
 
@@ -71,7 +71,7 @@ the octocat/Hello-World remote.
 Remove only what this smoke test created — never blow away the shared
 `~/.cache/haex-init/verify/` tree.
 
-```
+```shell
 cd ..
 rm -rf haex-init-real-remote-$$
 rm -rf "$CACHE_TMP"

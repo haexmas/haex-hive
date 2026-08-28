@@ -155,7 +155,8 @@ returns the exact bytes stored at that SHA in the external repo.
 
 1. **Given** the operator has selected external-ref mode,
    **When** they enter a valid `https://` or `ssh://` or SCP-style URL,
-   a valid SHA, and a path that exists at that SHA in the remote,
+   a full 40-character commit SHA, and a path that exists at that SHA
+   in the remote,
    **Then** haex-init verifies the reference resolves before writing
    ANY project file, user-global file, schema, IDE mapping file, or
    `.gitignore` update, then writes `.haex-hive.json` with the
@@ -163,7 +164,13 @@ returns the exact bytes stored at that SHA in the external repo.
    `.specify/memory/constitution.md`. Failed verification MUST leave
    both the project directory and `$HOME` byte-identical to their
    pre-invocation state — no `.haex-hive.json`, no schema, no
-   marker-block updates, no `~/.haex-hive/` writes.
+   marker-block updates, no `~/.haex-hive/` writes, AND no leftover
+   verification cache. The verification cache under
+   `$XDG_CACHE_HOME/haex-init/verify/<url-slug>/` (or
+   `$HOME/.cache/haex-init/verify/<url-slug>/` when `$XDG_CACHE_HOME`
+   is unset) is retained only when verification succeeds; a failing
+   run removes any cache it created and leaves cache trees from prior
+   successful runs untouched.
 2. **Given** the operator enters a URL with a rejected scheme
    (`file://`, `git://`, `http://`, or a bare local path),
    **When** haex-init validates the input,

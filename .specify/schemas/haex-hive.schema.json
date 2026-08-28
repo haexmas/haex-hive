@@ -64,9 +64,9 @@
         },
         "repository": { "$ref": "#/definitions/repository_value" },
         "revision": {
-          "description": "Full Git SHA, 7-40 lowercase hex chars. No branch or HEAD references. Must not be the literal string 'self'.",
+          "description": "Full Git SHA, exactly 40 lowercase hex chars. No branch or HEAD references. No short prefixes — a prefix that resolves locally can fail to resolve at the remote via `git fetch <sha>`.",
           "type": "string",
-          "pattern": "^[0-9a-f]{7,40}$"
+          "pattern": "^[0-9a-f]{40}$"
         },
         "path": {
           "description": "Single repo-relative path. Only used by role-carrying entries.",

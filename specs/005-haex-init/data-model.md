@@ -73,7 +73,7 @@ at the start of a `haex-init` run.
 | `is_git_repo` | bool | `git rev-parse --git-dir` succeeded. |
 | `has_haex_hive_json` | bool | `.haex-hive.json` exists at project root. |
 | `haex_hive_json_valid` | bool or None | None if absent; True/False result of JSON Schema validation against the canonical schema. |
-| `haex_hive_json_content` | dict or None | Parsed content if present and valid. May carry `managed_tools: [names]` recording the operator's persisted tool-selection intent — a prompt-free rerun (`--yes`) treats this list as the effective selection, so a tool the operator deliberately excluded on the initial run stays excluded even when it becomes newly detectable. Absent or empty = legacy scaffolding; `--yes` falls back to "all detected". |
+| `haex_hive_json_content` | dict or None | Parsed content if present and valid. May carry `managed_tools: [names]` recording the operator's persisted tool-selection intent — a prompt-free rerun (`--yes`) treats this list as the effective selection, so a tool the operator deliberately excluded on the initial run stays excluded even when it becomes newly detectable. An explicit `managed_tools: []` is schema-valid and means "select-none": on `--yes` rerun no tool is configured. Only an *absent* field is treated as legacy scaffolding (falls back to "all detected"). |
 | `has_canonical_schema_file` | bool | `.specify/schemas/haex-hive.schema.json` present. |
 | `canonical_schema_matches_embedded` | bool or None | SHA-256 comparison against tool's embedded constant. |
 | `has_constitution_file` | bool | `.specify/memory/constitution.md` present. |

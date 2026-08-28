@@ -136,6 +136,14 @@ if [[ -f "$SANDBOX_ROOT/project/.haex-hive.json" ]]; then
     echo "FAIL(3b): .haex-hive.json written despite verification failure"
     exit 1
 fi
-echo "  (3b) verification failure left no .haex-hive.json behind"
+# A failing verification MUST also clean up the cache it created —
+# the sandbox's XDG_CACHE_HOME must be byte-empty for this URL slug.
+cache_root="$XDG_CACHE_HOME/haex-init/verify"
+if [[ -d "$cache_root" ]] && [[ -n "$(ls -A "$cache_root" 2>/dev/null)" ]]; then
+    echo "FAIL(3b): verification cache not cleaned up after failure"
+    find "$cache_root" -maxdepth 2 -type d
+    exit 1
+fi
+echo "  (3b) verification failure left no .haex-hive.json and no cache behind"
 
 echo "test-external-ref: PASS"

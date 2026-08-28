@@ -107,5 +107,57 @@ assert 'key="pre-existing"' in merged_str, "pre-existing entry dropped"
 assert 'key="haex-hive"' in merged_str, "haex-hive entry not merged in"
 print("  namespaced JetBrains XML: parsed + merged + namespace preserved")
 
+# --------------------------------------------------------------------
+# 3. Symlink outside HOME → MALFORMED refusal.
+# --------------------------------------------------------------------
+outside = sandbox / "outside-of-home.md"
+outside.write_bytes(b"# somewhere outside\n")
+link = Path("$HOME") / ".claude" / "CLAUDE.md"
+link.parent.mkdir(parents=True, exist_ok=True)
+link.symlink_to(outside)
+state = m.detect_marker_block(link)
+assert state.presence is m.MarkerPresence.MALFORMED, (
+    f"symlink outside HOME should be MALFORMED, got {state.presence!r}"
+)
+assert "outside" in (state.malformed_reason or "") and "HOME" in (state.malformed_reason or ""), (
+    f"unexpected malformed reason: {state.malformed_reason!r}"
+)
+print("  symlink outside HOME: refused as MALFORMED")
+
+# --------------------------------------------------------------------
+# 4. managed_tools == [] is preserved as "select-none" (not None).
+# --------------------------------------------------------------------
+class _FakeState:
+    has_haex_hive_json = True
+    haex_hive_json_valid = True
+    haex_hive_json_content = {"managed_tools": []}
+
+result = m._read_persisted_managed_tools(_FakeState())
+assert result == set(), (
+    f"managed_tools=[] should preserve as empty set, got {result!r}"
+)
+
+class _AbsentState:
+    has_haex_hive_json = True
+    haex_hive_json_valid = True
+    haex_hive_json_content = {}  # managed_tools absent → legacy fallback
+
+assert m._read_persisted_managed_tools(_AbsentState()) is None, (
+    "absent managed_tools should read as None (legacy fallback)"
+)
+print("  managed_tools=[] preserved as select-none; absent → None")
+
+# --------------------------------------------------------------------
+# 5. validate_external_sha rejects short prefixes.
+# --------------------------------------------------------------------
+short = "0" * 39
+err = m.validate_external_sha(short)
+assert err is not None, "short SHA should be rejected"
+full = "0" * 40
+assert m.validate_external_sha(full) is None, (
+    f"full 40-char SHA should be accepted, got {m.validate_external_sha(full)!r}"
+)
+print(f"  SHA length: rejected {len(short)}-char prefix, accepted 40-char full SHA")
+
 print("test-format-regressions: PASS")
 PY

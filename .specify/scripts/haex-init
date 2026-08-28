@@ -212,9 +212,9 @@ EMBEDDED_SCHEMA_JSON = """{
         },
         "repository": { "$ref": "#/definitions/repository_value" },
         "revision": {
-          "description": "Full Git SHA, 7-40 lowercase hex chars. No branch or HEAD references. Must not be the literal string 'self'.",
+          "description": "Full Git SHA, exactly 40 lowercase hex chars. No branch or HEAD references. No short prefixes — a prefix that resolves locally can fail to resolve at the remote via `git fetch <sha>`.",
           "type": "string",
-          "pattern": "^[0-9a-f]{7,40}$"
+          "pattern": "^[0-9a-f]{40}$"
         },
         "path": {
           "description": "Single repo-relative path. Only used by role-carrying entries.",
@@ -276,7 +276,7 @@ MARKER_END_RE = re.compile(r"^<!--\s*haex-hive-block:end\s*-->$")
 
 # External-ref URL scheme allowlist (matches spec-resolve's set).
 URL_SCHEME_RE = re.compile(r"^(https://|ssh://|[^/@:\s]+@[^/@:\s]+:).+")
-SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 # Non-empty hex; used for HEAD SHA validation.
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -314,6 +314,33 @@ def detect_marker_block(target_file: Path) -> MarkerBlockState:
     inclusive 1-indexed line range, and SHA-256 of the block's byte
     range.
     """
+    # Symlink safety: an atomic write replaces the symlink itself, so
+    # a link resolving outside HOME would either escape the allowed
+    # write region or destroy the operator's link. Refuse before we
+    # read anything.
+    if target_file.is_symlink():
+        try:
+            resolved = target_file.resolve(strict=False)
+        except (OSError, RuntimeError) as exc:
+            return MarkerBlockState(
+                target_file=target_file,
+                presence=MarkerPresence.MALFORMED,
+                malformed_reason=(
+                    f"{target_file} is a symlink and cannot be resolved: {exc}"
+                ),
+            )
+        home = Path(os.environ.get("HOME", "~")).expanduser().resolve()
+        try:
+            resolved.relative_to(home)
+        except ValueError:
+            return MarkerBlockState(
+                target_file=target_file,
+                presence=MarkerPresence.MALFORMED,
+                malformed_reason=(
+                    f"{target_file} is a symlink pointing outside $HOME "
+                    f"(→ {resolved}); refuse to touch"
+                ),
+            )
     if not target_file.exists():
         return MarkerBlockState(target_file=target_file, presence=MarkerPresence.ABSENT)
     try:
@@ -796,7 +823,7 @@ def _validate_harness_source_entry(entry: object, index: int) -> list[str]:
             rv = entry["revision"]
             if not isinstance(rv, str) or not SHA_RE.match(rv):
                 errors.append(
-                    f"{prefix}.revision: expected 7-40 lowercase hex chars"
+                    f"{prefix}.revision: expected exactly 40 lowercase hex chars (full commit SHA)"
                 )
         if "path" in entry:
             p = entry["path"]
@@ -829,7 +856,7 @@ def _validate_harness_source_entry(entry: object, index: int) -> list[str]:
             rv = entry["revision"]
             if not isinstance(rv, str) or not SHA_RE.match(rv):
                 errors.append(
-                    f"{prefix}.revision: expected 7-40 lowercase hex chars"
+                    f"{prefix}.revision: expected exactly 40 lowercase hex chars (full commit SHA)"
                 )
     return errors
 
@@ -1376,7 +1403,11 @@ def validate_external_url(url: str) -> str | None:
 def validate_external_sha(sha: str) -> str | None:
     """Return an error message if sha does not match the schema, else None."""
     if not SHA_RE.match(sha):
-        return "SHA must be 7-40 lowercase hex characters."
+        return (
+            "SHA must be exactly 40 lowercase hex characters (full commit SHA). "
+            "Short prefixes are rejected because `git fetch` can fail to resolve "
+            "them at the remote."
+        )
     return None
 
 
@@ -1391,11 +1422,22 @@ def _cache_dir_for(url: str) -> Path:
 def verify_external_ref(url: str, sha: str, path: str) -> tuple[bool, str]:
     """Run the pre-write verification per research Decision 3.
 
-    Returns (ok, message). On ok the message is empty; on failure it
-    is the raw stderr from the failing git call (or an equivalent
-    explanation).
+    Returns (ok, message). On ok the message is empty and the cache
+    is kept so a retry stays fast. On failure the message is the raw
+    stderr from the failing git call (or an equivalent explanation),
+    AND — if this call was what created the cache — the cache is
+    removed so a failed run leaves the filesystem byte-identical to
+    its pre-invocation state. A pre-existing cache from an earlier
+    successful run is never removed.
     """
     cache = _cache_dir_for(url)
+    created_cache = not cache.exists()
+
+    def _fail(msg: str) -> tuple[bool, str]:
+        if created_cache and cache.exists():
+            shutil.rmtree(cache, ignore_errors=True)
+        return False, msg
+
     try:
         cache.mkdir(parents=True, exist_ok=True)
         if not (cache / "HEAD").exists():
@@ -1406,7 +1448,7 @@ def verify_external_ref(url: str, sha: str, path: str) -> tuple[bool, str]:
                 check=False,
             )
             if init.returncode != 0:
-                return False, init.stderr.strip() or "git init failed"
+                return _fail(init.stderr.strip() or "git init failed")
         fetch = subprocess.run(
             ["git", "-C", str(cache), "fetch", "--no-tags", "--depth=1", url, sha],
             capture_output=True,
@@ -1414,7 +1456,7 @@ def verify_external_ref(url: str, sha: str, path: str) -> tuple[bool, str]:
             check=False,
         )
         if fetch.returncode != 0:
-            return False, fetch.stderr.strip() or "git fetch failed"
+            return _fail(fetch.stderr.strip() or "git fetch failed")
         exists = subprocess.run(
             ["git", "-C", str(cache), "cat-file", "-e", f"{sha}:{path}"],
             capture_output=True,
@@ -1422,8 +1464,8 @@ def verify_external_ref(url: str, sha: str, path: str) -> tuple[bool, str]:
             check=False,
         )
         if exists.returncode != 0:
-            return False, exists.stderr.strip() or (
-                f"path {path} not found at {sha}"
+            return _fail(
+                exists.stderr.strip() or f"path {path} not found at {sha}"
             )
         size = subprocess.run(
             ["git", "-C", str(cache), "cat-file", "-s", f"{sha}:{path}"],
@@ -1432,16 +1474,18 @@ def verify_external_ref(url: str, sha: str, path: str) -> tuple[bool, str]:
             check=False,
         )
         if size.returncode != 0:
-            return False, size.stderr.strip() or "cat-file -s failed"
+            return _fail(size.stderr.strip() or "cat-file -s failed")
         try:
             n = int(size.stdout.strip())
         except ValueError:
-            return False, f"cat-file -s returned unparseable output: {size.stdout!r}"
+            return _fail(
+                f"cat-file -s returned unparseable output: {size.stdout!r}"
+            )
         if n == 0:
-            return False, f"path {path} at {sha} is empty (0 bytes)"
+            return _fail(f"path {path} at {sha} is empty (0 bytes)")
         return True, ""
     except FileNotFoundError:
-        return False, "git executable not found on PATH"
+        return _fail("git executable not found on PATH")
 
 
 # ---------------------------------------------------------------------------
@@ -1952,36 +1996,60 @@ def add_git_init_action(plan: ActionPlan, project_dir: Path) -> None:
 def add_git_commit_action(
     plan: ActionPlan, project_dir: Path, message: str, paths: list[Path]
 ) -> None:
-    def _apply(
-        pd: Path = project_dir,
-        msg: str = message,
-        rel_paths: list[Path] = paths,
-    ) -> None:
+    def _apply(pd: Path = project_dir, msg: str = message) -> None:
+        # Stage only Project-level actions the operator actually applied,
+        # never a target that existed pre-run whose write was declined.
+        # If GIT_INIT is in the plan and was NOT applied, we are not in
+        # a repository — skip staging and commit entirely.
+        git_init_actions = [
+            a for a in plan.actions if a.kind is ActionKind.GIT_INIT
+        ]
+        if git_init_actions and any(
+            a.outcome != "applied" for a in git_init_actions
+        ):
+            plan.git_commit_result = (
+                "git commit skipped: git init was not applied"
+            )
+            return
+        applied_paths: list[Path] = [
+            a.target
+            for a in plan.actions
+            if a.group == "Project-level" and a.outcome == "applied"
+        ]
+        if not applied_paths:
+            plan.git_commit_result = (
+                "git commit skipped: no project write was applied"
+            )
+            return
         rels: list[str] = []
-        for p in rel_paths:
-            # A declined prompt (or a skipped GIT_INIT) leaves the target
-            # off disk. Passing it to `git add` would fail with a pathspec
-            # error and mask the operator's decision. Silently skip.
+        for p in applied_paths:
             if not p.exists():
+                # An applied action whose target vanished before the
+                # commit ran (concurrent rm, tmpfile mishap) — skip
+                # rather than tripping git add with a pathspec error.
                 continue
             try:
                 rels.append(str(p.relative_to(pd)))
             except ValueError:
                 continue
-        if rels:
-            add = subprocess.run(
-                ["git", "add", "--"] + rels,
-                cwd=pd,
-                capture_output=True,
-                text=True,
-                check=False,
+        if not rels:
+            plan.git_commit_result = (
+                "git commit skipped: no applied path remains on disk"
             )
-            if add.returncode != 0:
-                print(
-                    f"haex-init: git add failed: {add.stderr.strip()}",
-                    file=sys.stderr,
-                )
-                sys.exit(EXIT_GIT)
+            return
+        add = subprocess.run(
+            ["git", "add", "--"] + rels,
+            cwd=pd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if add.returncode != 0:
+            print(
+                f"haex-init: git add failed: {add.stderr.strip()}",
+                file=sys.stderr,
+            )
+            sys.exit(EXIT_GIT)
         # If nothing is staged (rerun recreated files that already match HEAD),
         # skip the commit — this is idempotent, not a failure.
         staged = subprocess.run(
@@ -2023,7 +2091,8 @@ def add_git_commit_action(
             target=project_dir,
             preview=(
                 f"git add + git commit -m {json.dumps(message)}\n"
-                f"paths: {', '.join(str(p) for p in paths)}"
+                f"paths: {', '.join(str(p) for p in paths)}\n"
+                "(only paths whose write action was applied get staged)"
             ),
             execute=_apply,
             label=f"scaffolding commit ({message})",
@@ -2185,9 +2254,14 @@ def _prompt_field(
 def _read_persisted_managed_tools(project_state: ProjectState) -> set[str] | None:
     """Return the operator's persisted tool selection, or None if absent.
 
-    Absent means either no prior .haex-hive.json existed, or one existed
+    None means either no prior .haex-hive.json existed, or one existed
     but predates the managed_tools field (legacy). Both are treated as
     "no persisted intent" so --yes falls back to detect-all.
+
+    An explicit empty list — `managed_tools: []` — is a valid
+    schema-level record of "select-none" and returns the empty set,
+    NOT None. A --yes rerun then leaves every detected tool untouched,
+    honouring the operator's intent.
     """
     if not (
         project_state.has_haex_hive_json
@@ -2200,8 +2274,7 @@ def _read_persisted_managed_tools(project_state: ProjectState) -> set[str] | Non
         return None
     if not isinstance(val, list):
         return None
-    result = {v for v in val if isinstance(v, str) and v in ALL_TOOL_NAMES}
-    return result if result else None
+    return {v for v in val if isinstance(v, str) and v in ALL_TOOL_NAMES}
 
 
 def run_init(args: argparse.Namespace) -> int:
