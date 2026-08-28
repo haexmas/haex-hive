@@ -126,12 +126,16 @@ absolute or Windows-drive-qualified path, and platform-reserved names
 (including `CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, and `LPT1`–`LPT9`,
 case-insensitively). The default is the repository basename after
 removing an optional `.git` suffix, and it is validated by the same
-rule. A storage identity maps to one canonical repository URL: sync
-rejects two distinct URLs with the same `name`, and, before every reuse
-or fetch, verifies that `remote.origin.url` is that URL. The same URL
-may occur in multiple entries only when their storage identities are
-unambiguous (a shared `name` reuses the verified clone; distinct names
-create distinct verified clones).
+rule. Repository identity remains Spec 004's byte-identical repository
+string after syntactic validation: there is no URL normalization.
+Host casing, an optional `.git` suffix, and SSH versus HTTPS forms are
+therefore distinct identities. A storage identity maps to exactly one
+such string: sync rejects two distinct strings with the same `name`,
+and, before every reuse or fetch, compares `remote.origin.url`
+byte-for-byte with the configured string. The same string may occur in
+multiple entries only when their storage identities are unambiguous (a
+shared `name` reuses the verified clone; distinct names create distinct
+verified clones).
 
 Rationale:
 - Spec repos are small (secana-specs full history estimated < 50 MB)
@@ -312,7 +316,8 @@ and legacy fields (`path`/`paths`) are forbidden on its container.
 
 Field semantics:
 
-- **`repository`**: credential-free git remote URL (SSH or HTTPS).
+- **`repository`**: credential-free git remote URL (SSH or HTTPS),
+  compared byte-for-byte as specified in D4.
   HTTPS URLs containing userinfo — including a username, password, or
   token — are rejected before `add-source` writes config; credential-free
   SSH and HTTPS are accepted. Diagnostics direct operators to SSH keys
@@ -323,7 +328,8 @@ Field semantics:
 - **`name`**: local storage identity (default: derived from repository
   URL basename). It must satisfy D4's single-component validation and
   determines the directory under `$HAEX_HIVE_STATE/repos/`. A name cannot
-  identify two different canonical URLs; existing-clone origin is
+  identify two different byte-identical repository identities;
+  existing-clone origin is
   verified before use.
 - **`auto_include`**: either `"speckit-defaults"` (D3 preset) or `null` /
   omitted (no auto-include, only explicit items).
@@ -338,8 +344,17 @@ Field semantics:
   rather than followed or silently omitted. An unmatched glob or a path
   that is absent at the pin fails sync before publication.
 - **`items`**: array of explicit item entries with individual `role`,
-  `path`, and required `as:` alias. For content that needs a stable
-  consumer-facing name.
+  `path`, and required `as:` alias. Allowed inner roles are
+  `constitution`, `workflow`, `skill`, `document`, and `spec`; an
+  unknown role is a schema/validation error, never an ignored hint.
+  Every item is extracted identically as content. Its role is metadata
+  for consumers except `constitution`, which additionally participates
+  in the deterministic session-start selection below.
+
+An explicit `items[].path` must name a regular file in the pinned Git
+tree. Directories, Git symlinks, submodules, and every other
+non-regular entry are rejected during preflight before extraction or
+publication; use `additional_include` for a directory expansion.
 
 Multiple `external-harness` entries in `harness_sources[]` allowed —
 consumer can inherit from multiple producers.
@@ -417,29 +432,37 @@ items in the same deterministic order.
 Called by the operator after `git clone <consumer-repo>` or after
 modifying `.haex-hive.json` (SHA bump, added source, etc.). Steps:
 
-1. Read `.haex-hive.json`; validate against schema.
+1. Acquire the consumer-local exclusive sync lock, then read and hash
+   `.haex-hive.json`; hold the lock through final publication and
+   validate the schema. A lock holder rereads the config hash immediately
+   before publication and aborts if an operator edit changed it.
 2. For each `external-harness` entry:
    a. Ensure `$HAEX_HIVE_STATE/repos/<name>/` exists (clone if missing).
    b. `git fetch origin` to ensure pinned revision is reachable.
    c. Refuse loudly if pinned revision is not reachable.
 3. Preflight every expanded item: validate the complete key set, source
-   URL/name mapping, pinned-tree paths, and include expansion before
-   publishing any consumer-visible state. For each item (including
-   auto-include expansions), extract and validate content in a unique
-   temporary sibling in `.extracts/@<sha>/`, then atomically rename it
-   to `.extracts/@<sha>/<path>`. Existing valid extracts are reused.
+   URL/name mapping, and pinned-tree paths before publishing any
+   consumer-visible state. Explicit items must be regular files;
+   include expansion follows its regular-file rules. For each item
+   (including auto-include expansions), extract and validate content in
+   a unique temporary sibling in `.extracts/@<sha>/`, then atomically
+   rename it to `.extracts/@<sha>/<path>`. Existing valid extracts are
+   reused.
 4. Rename check: if any explicit item's `path:` does not exist at
    pinned revision, print structured error, refuse to write
    `.haex-hive.local.json`, exit non-zero.
 5. Serialize and validate the complete local-state document to a unique
-   same-directory temporary file, flush it, then atomically replace
-   `.haex-hive.local.json`. The final replace happens only after every
-   preflight and extraction succeeds; on failure the previous table
-   remains intact and no table can point to partial output. Unreferenced
-   temporary files are removed best-effort on failure.
-6. Append `.haex-hive.local.json` to consumer's `.gitignore` inside a
-   `haex-init`-managed marker block (per Spec 005 marker-block
-   conventions).
+   same-directory temporary file, flush it, and keep it unpublished.
+6. Install or verify the `.haex-hive.local.json` ignore-marker block in
+   `.gitignore` (per Spec 005 marker-block conventions). This update
+   must complete successfully before local-state publication; otherwise
+   abort and preserve the previous table.
+7. Recheck the configuration hash, then atomically replace
+   `.haex-hive.local.json` with the prepared file and release the lock.
+   The final replace happens only after every preflight, extraction,
+   ignore update, and hash recheck succeeds; on failure the previous
+   table remains intact and no table can point to partial output.
+   Unreferenced temporary files are removed best-effort on failure.
 
 Flags:
 
@@ -475,8 +498,8 @@ Validation:
   credentials remain in SSH/keychain/credential-manager state, never
   in `.haex-hive.json`
 - Refuses if the target repo has schema-invalid `.haex-hive.json`
-- Refuses a storage-name collision with a distinct canonical repository
-  URL, or duplicate/ambiguous resolved keys. A repeated repository URL
+- Refuses a storage-name collision with a distinct repository identity,
+  or duplicate/ambiguous resolved keys. A repeated repository URL
   is permitted only under D4's unambiguous storage-identity rules.
 
 ## `.haex-hive.local.json` shape (device-local, gitignored)
@@ -485,6 +508,8 @@ Validation:
 {
   "haex_hive_local_version": "1",
   "generated_from_config": "sha256:<hash-of-.haex-hive.json>",
+  "state_root": "<device-local-absolute-state-root>",
+  "state_root_identity": "sha256:<hash-of-state-root>",
   "generated_at": "2026-08-28T14:23:00Z",
   "device": "<hostname or persistent device id>",
   "constitutions": [
@@ -507,18 +532,30 @@ Consumers of this table:
 Not consumed by: speckit itself (D8), external CI, arbitrary editor
 plugins.
 
+Freshness requires both `generated_from_config` and
+`state_root_identity` to match the currently read configuration and
+active `$HAEX_HIVE_STATE`. Before `status` reports this table fresh or
+`regenerate` reuses it, it validates every `resolved` value: the target
+must exist, be a regular non-symlink file, and resolve beneath the
+active state root. A missing, out-of-root, or stale-root target is
+reported as stale (never fresh) and requires sync/regeneration; matching
+only the config hash is insufficient.
+
 ### Constitution selection at session start
 
-Only concrete constitution declarations are loaded: a top-level
-`role: "constitution"` entry and an explicit
+Only concrete constitution declarations are loaded: zero or one
+top-level `role: "constitution"` entry and an explicit
 `items[]` member with `role: "constitution"` inside an
 `external-harness` entry. A constitution file merely matched by
 `auto_include` or `additional_include` is available for agent-side
 reads but is **not** implicitly governing content. This keeps the
 consumer's opt-in precise.
 
-`regenerate` records the selected sources in the `constitutions` array.
-It orders first any top-level `role: "constitution"` entry, then nested
+The top-level constitution role is a singleton: schema validation
+rejects a second such entry, while zero remains valid for a consumer
+that uses only external constitutions. `regenerate` records the selected
+sources in the `constitutions` array. It orders the one top-level role,
+when present, before nested
 constitution items in `harness_sources` array order and their `items[]`
 array order. A `role` source is read through the compatible raw-byte
 `spec-resolve resolve --role constitution` path; a `resolved` source is
@@ -613,18 +650,27 @@ under `tests/multi-spec-external-ref/`:
 - `test-explicit-items-aliases.sh` — items with `as:` produce
   stable-named entries in `.haex-hive.local.json`; duplicate aliases or
   final-key collisions refuse without overwriting state
+- `test-explicit-item-types.sh` — accepts a regular-file item and
+  rejects a directory, symlink, submodule/non-regular entry, and an
+  unknown inner role before publication
 - `test-storage-identity-and-origin.sh` — rejects unsafe names and
   distinct URLs sharing a name, verifies an existing clone's origin,
   and permits unambiguous repeated URLs
 - `test-atomic-sync-publication.sh` — injected extraction or validation
   failure leaves the prior local table intact and exposes no partial
   resolved table
+- `test-concurrent-sha-bump.sh` — an older sync held at pre-publication
+  cannot replace local state after a newer config SHA is written
 - `test-legacy-cache-compatibility.sh` — a pre-existing
   `$XDG_CACHE_HOME/haex-hive/repos/` fixture still resolves raw bytes,
   discovers `specs/*/spec-ref.json`, and preserves `prefetch --dry-run`
   `OK` / `MISSING` output without migration
 - `test-constitution-order.sh` — fixture with top-level and nested
-  constitutions asserts the exact session-start labels and byte order
+  constitutions asserts the exact session-start labels and byte order;
+  a second top-level constitution is rejected
+- `test-local-state-freshness.sh` — changing the state root, removing a
+  target, or replacing it with an out-of-root/symlink target makes the
+  table stale rather than fresh
 - `test-sha-bump-clean.sh` — US3 happy path
 - `test-sha-bump-rename-refuses.sh` — D9 fail-loud on rename
 - `test-add-source-fresh.sh` — US4 from-scratch mode
