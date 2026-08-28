@@ -100,7 +100,13 @@ def _validate(schema: dict, instance, root: dict, path: str = "$") -> None:
             )
 
     if "pattern" in schema and isinstance(instance, str):
-        if not re.search(schema["pattern"], instance):
+        # fullmatch, not search: schema patterns in this repo carry
+        # explicit ^…$ anchors and are meant to constrain the whole
+        # value. Python's re.search treats those loosely and, worse,
+        # accepts a trailing `\n` before `$`. fullmatch matches how a
+        # strict Draft-07 reader interprets `^X$`, and aligns with the
+        # tool-side check in spec-resolve.
+        if not re.fullmatch(schema["pattern"], instance):
             raise ValidationError(
                 f"{path}: value {instance!r} does not match pattern {schema['pattern']!r}"
             )

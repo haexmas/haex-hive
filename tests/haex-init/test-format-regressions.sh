@@ -163,7 +163,7 @@ assert m._read_persisted_managed_tools(_AbsentState()) is None, (
 print("  managed_tools=[] preserved as select-none; absent → None")
 
 # --------------------------------------------------------------------
-# 5. validate_external_sha rejects short prefixes.
+# 5. validate_external_sha rejects short prefixes AND trailing newlines.
 # --------------------------------------------------------------------
 short = "0" * 39
 err = m.validate_external_sha(short)
@@ -172,7 +172,13 @@ full = "0" * 40
 assert m.validate_external_sha(full) is None, (
     f"full 40-char SHA should be accepted, got {m.validate_external_sha(full)!r}"
 )
-print(f"  SHA length: rejected {len(short)}-char prefix, accepted 40-char full SHA")
+# A trailing newline: Python's re.match with `^X$` accepts one before
+# the final `\n`, so any SHA_RE consumer that used .match() instead of
+# .fullmatch() would let this through and pass it to git.
+assert m.validate_external_sha(full + "\n") is not None, (
+    "SHA with trailing newline must be rejected (fullmatch guard)"
+)
+print(f"  SHA length: rejected {len(short)}-char prefix + trailing-\\n; accepted 40-char full SHA")
 
 print("test-format-regressions: PASS")
 PY

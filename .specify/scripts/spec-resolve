@@ -122,7 +122,12 @@ def normalise_sha(value: str) -> str:
 
 
 def is_valid_sha(value: str) -> bool:
-    return bool(SHA_PATTERN.match(normalise_sha(value)))
+    # fullmatch(), not match() — Python's `$` in `^X$` matches at the
+    # end of the string OR immediately before a final `\n`, so
+    # `SHA_PATTERN.match("a"*40 + "\n")` returns a Match. That would
+    # let a revision carrying a trailing newline slip through here and
+    # then be handed to git downstream. fullmatch anchors both ends.
+    return bool(SHA_PATTERN.fullmatch(normalise_sha(value)))
 
 
 def cache_dir_hash(repository: str) -> str:

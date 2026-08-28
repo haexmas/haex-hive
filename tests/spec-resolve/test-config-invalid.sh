@@ -19,6 +19,7 @@ CASES=(
     "invalid-paths-on-role"
     "invalid-bad-sha"
     "invalid-short-sha"
+    "invalid-sha-trailing-newline"
     "invalid-file-scheme"
 )
 

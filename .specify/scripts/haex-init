@@ -822,7 +822,7 @@ def _validate_harness_source_entry(entry: object, index: int) -> list[str]:
             )
         if "revision" in entry:
             rv = entry["revision"]
-            if not isinstance(rv, str) or not SHA_RE.match(rv):
+            if not isinstance(rv, str) or not SHA_RE.fullmatch(rv):
                 errors.append(
                     f"{prefix}.revision: expected exactly 40 lowercase hex chars (full commit SHA)"
                 )
@@ -855,7 +855,7 @@ def _validate_harness_source_entry(entry: object, index: int) -> list[str]:
                         )
         if "revision" in entry:
             rv = entry["revision"]
-            if not isinstance(rv, str) or not SHA_RE.match(rv):
+            if not isinstance(rv, str) or not SHA_RE.fullmatch(rv):
                 errors.append(
                     f"{prefix}.revision: expected exactly 40 lowercase hex chars (full commit SHA)"
                 )
@@ -1403,7 +1403,7 @@ def validate_external_url(url: str) -> str | None:
 
 def validate_external_sha(sha: str) -> str | None:
     """Return an error message if sha does not match the schema, else None."""
-    if not SHA_RE.match(sha):
+    if not SHA_RE.fullmatch(sha):
         return (
             "SHA must be exactly 40 lowercase hex characters (full commit SHA). "
             "Short prefixes are rejected because `git fetch` can fail to resolve "
@@ -2197,7 +2197,7 @@ def prompt_external_ref(*, allow_network: bool = True) -> dict:
         if r.returncode == 0 and r.stdout.strip():
             first_line = r.stdout.strip().split("\n")[0]
             token = first_line.split()[0]
-            if SHA_RE.match(token):
+            if SHA_RE.fullmatch(token):
                 default_sha = token
                 print(f"  ls-remote HEAD → {token}")
         else:
@@ -2466,7 +2466,7 @@ def run_pin_constitution(args: argparse.Namespace) -> int:
         return EXIT_REFUSED
 
     rc, head, _ = _run_git_capture(project_dir, ["rev-parse", "HEAD"])
-    if rc != 0 or not FULL_SHA_RE.match(head.strip()):
+    if rc != 0 or not FULL_SHA_RE.fullmatch(head.strip()):
         print(
             "haex-init --pin-constitution: repository has no commits yet",
             file=sys.stderr,
