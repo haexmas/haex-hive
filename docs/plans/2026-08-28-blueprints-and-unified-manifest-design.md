@@ -423,13 +423,20 @@ the URL + SHA, so the registry can vanish and everything still resolves.
    `on-install` is not allowed to mutate a live target directly. It produces
    declared native-tool files in a staging root; `haex` records a backup for
    every managed workspace, agent skill, and external configuration target,
-   and records and fsyncs every swap or stale deletion in the journal before
-   and after it. It removes backups and the journal only after every operation
+   and persists every operation with the durable sequence: write and sync the
+   staged file and backup; fsync their parent directories; append and fsync a
+   `prepared` journal record; perform the swap or stale deletion; fsync changed
+   file contents and every affected parent directory; then append and fsync its
+   `complete` record. The platform adapter supplies the equivalent of file and
+   directory `fsync` where needed. Recovery trusts a completed record only
+   after this sequence; a prepared-only record is restored from its durable
+   backup. It removes backups and the journal only after every operation
    succeeds. On a normal returned failure, it restores all backups and removes
    every new target and staging root. A hook may not make undeclared side
    effects; such a hook is rejected. Thus the cache survives while generated
    state, agent copies, native targets, and removed outputs recover to one
-   complete transaction state.
+   complete transaction state. Spec-008 includes crash-injection acceptance
+   tests at each pre/post-swap and stale-deletion journal boundary.
 9. **Diff `.haex-hive.json`** (if `haex add`, migration, or `haex update` was the
    caller): the tool leaves the diff staged but the human commits.
    Principle VI applies.
@@ -581,6 +588,15 @@ existing parent is a non-symlink directory under that root. Parent creation is
 a journalled transaction operation, so rollback removes only directories it
 created and that remain empty.
 
+Target validation is also target access: the platform adapter opens the
+approved root once and resolves, creates, backs up, swaps, and deletes only
+through no-follow handles relative to that root. On POSIX this is an
+`openat`/`renameat` capability walk with `O_NOFOLLOW` (or an equivalent
+`openat2` beneath-root policy); on Windows it is the equivalent root-handle
+operation rejecting reparse points. No operation re-resolves a checked string
+path. A concurrent parent replacement with a symlink therefore fails safely
+inside the rooted operation instead of escaping the approved root.
+
 For each declaration, `haex` runs the script in an isolated staging directory
 with the pinned resource and effective config mounted read-only. The runner
 enforces a deny-by-default filesystem sandbox: only `$HAEX_STAGE_ROOT` is
@@ -588,18 +604,25 @@ writable; live workspace, agent, cache, external-target, and all other
 user/system paths are denied. The CLI provides this boundary with its bundled
 platform sandbox adapter; on a platform where it cannot enforce the adapter,
 native-output installation fails rather than falling back to an unsandboxed
-shell. It exposes `HAEX_STAGE_ROOT`, `HAEX_CONFIG_PATH`, and a read-only JSON
-file listing only that resource's declared output ids, staged paths, and
-logical targets. The script may write only `$HAEX_STAGE_ROOT/<staged>` for a
-listed declaration.
+shell. Network access is likewise denied by default. It may be enabled only
+for one named resource by an explicit, interactive operator confirmation for
+that installation; no manifest, profile, or committed config can grant it,
+and non-interactive installs remain denied. It exposes `HAEX_STAGE_ROOT`,
+`HAEX_CONFIG_PATH`, and a read-only JSON file listing only that resource's
+declared output ids, staged paths, and logical targets. The script may write
+only `$HAEX_STAGE_ROOT/<staged>` for a listed declaration.
 
 Before commit, `haex` validates every staged path with an `lstat` walk: staged
 outputs must be declared regular files beneath the stage root, and any symlink,
-directory in place of a file, or undeclared file fails. It enumerates every
-target, backup, parent-directory creation, and stale deletion from the target
-map before applying them through the journalled transaction. Spec-009 includes
-acceptance tests for denied writes outside the stage root, staged-symlink
-rejection, an absent first-install target, and rollback of its created parents.
+directory in place of a file, or undeclared file fails. Every
+`nativeOutputs[].staged` declaration must resolve to exactly one such regular
+file; a hook that omits a declared output fails before target mapping or
+transaction preparation. It enumerates every target, backup, parent-directory
+creation, and stale deletion from the target map before applying them through
+the journalled transaction. Spec-009 includes acceptance tests for denied
+writes outside the stage root, denied default network access, staged-symlink
+rejection, a missing declared output, an absent first-install target, rollback
+of its created parents, and concurrent parent replacement by a symlink.
 
 **Line of responsibility.** Consumer declares intent; atom author is
 responsible for making that intent land wherever the tool actually
