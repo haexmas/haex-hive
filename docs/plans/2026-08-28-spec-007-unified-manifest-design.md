@@ -128,6 +128,23 @@ problem as soon as two publishers exist. Reverse-DNS is collision-safe
 by construction. Dots are filesystem-safe on all three target OSes; no
 URL-encoding needed for cache directory keys.
 
+**Uniqueness and collision rule**: an atom-ID is a global resolution key,
+not a source-local nickname. After expanding every direct `atoms[]` entry
+and every transitive profile, `haex install` MUST select exactly one
+`(source, full revision, atom-id)` provider for each atom-ID. A publisher's
+root-manifest key and the referenced atom manifest's `id` MUST match. The
+resolver rejects a collision when the same ID is supplied by different
+source/revision pairs, including two direct entries, and reports both entry
+indices and pins. Identical repeated occurrences from the same
+source/revision are de-duplicated.
+
+D14 is the sole exception: a direct entry for atom X deliberately shadows a
+transitive profile occurrence of X. The direct provider is the one selected
+for configuration ownership, lockfile entry, storage, and generated output;
+the shadowed provider is not hydrated or recorded as X. Any other ambiguous
+profile/direct combination is rejected rather than silently choosing a
+source.
+
 **Consequence**: existing example IDs from PR #8 (`haex-hive-constitution`,
 `graphify-integration`, `haex-personal`) must be renamed before Spec 007
 lands. Publisher registries encode the new IDs in their root `manifest.json`.
@@ -152,7 +169,7 @@ deterministic (D9).
 ascending by priority, alphabetical by atom-ID as tiebreak. Documented
 convention (not schema-enforced):
 
-```
+```text
 0    – 99   Foundational / constitutional
 100  – 299  Cross-cutting conventions
 300  – 599  Tool-specific / domain
@@ -160,8 +177,15 @@ convention (not schema-enforced):
 900  – 999  Late-binding overrides
 ```
 
-Consumer override via normal config-merge: `config.priority: <int>` in the
-consumer entry overrides the publisher's default for that atom.
+Consumer override is the reserved, atom-ID-keyed field
+`config.<atom-id>.priority: <int>`; it overrides that atom manifest's
+default priority. It is deliberately outside the publisher-defined settings
+object, so a publisher cannot accidentally redefine ordering semantics. The
+v2 consumer-entry schema defines each `config.<atom-id>` value as an object
+with only `priority` (optional integer) and `values` (optional object,
+default `{}`). `values` alone is validated against the atom's
+`config_schema`; `priority` is validated by the consumer schema. Atom
+`config_schema` files MUST NOT define a top-level `priority` property.
 
 **Rationale**: alphabetical-only ordering breaks semantic dependencies
 (`dedup-check` should come before `graphify-refresh` regardless of alphabet).
@@ -193,11 +217,26 @@ in the native format. Adapter framework is Spec 008/010 territory.
 
 ### D7. Config merge: deep-merge objects, replace arrays, strict-schema
 
-Publisher's atom manifest declares `defaults` (arbitrary JSON) and
-`config.schema.json` (JSON Schema Draft 2020-12). Consumer's per-entry
-`config` map is validated against the schema (extra keys are refused),
-then merged onto defaults via deep-object merge, arrays replaced (no
-concat).
+Publisher's atom manifest declares `defaults` (arbitrary non-secret JSON)
+and `config.schema.json` (JSON Schema Draft 2020-12). For each selected atom,
+the consumer's `config.<atom-id>.values` map is validated against that schema
+(extra keys are refused), then merged onto defaults via deep-object merge;
+arrays replace rather than concatenate. The effective settings object is the
+merge result. `config.<atom-id>.priority` is processed separately as specified
+in D5 and is not part of that effective settings object.
+
+Config is committed, so it MUST NOT contain plaintext secrets. A
+secret-dependent publisher field MUST be marked `x-haex-secret: true` in its
+`config_schema`; the haex schema meta-validator then permits only the exact
+reference object `{ "$haex_secret": "keychain:<alias>" }` for that field,
+not a string or any other literal. The alias is a device-local keychain
+reference, never secret material. Fields without that marker are non-secret
+by contract. Before writing `.haex-hive/config/<atom-id>.json`, `haex
+install` validates both the JSON Schema and this secret-reference rule, and
+refuses any plaintext value in a marked field. It preserves a valid reference
+verbatim, never dereferences it during install, rendering, locking, or
+verification; runtime consumers resolve it locally if their own contract
+requires it.
 
 Config in the consumer entry is a map keyed by atom-ID (even for
 length-1 `includes`, to keep the shape uniform):
@@ -206,7 +245,10 @@ length-1 `includes`, to keep the shape uniform):
 {
   "includes": ["com.github.haexmas.blueprints.skill-x"],
   "config": {
-    "com.github.haexmas.blueprints.skill-x": { "max_query_depth": 5 }
+    "com.github.haexmas.blueprints.skill-x": {
+      "priority": 250,
+      "values": { "max_query_depth": 5 }
+    }
   }
 }
 ```
@@ -237,10 +279,13 @@ significant work, not blocking for MVP.
 deterministic**: two runs on identical inputs produce byte-identical
 output. Rules of determinism:
 
-- Jinja2 render order stable (sort by atom-ID then priority)
+- Resolve, render, concatenate, verify, and write lock records in one
+  canonical order: ascending effective priority, then atom-ID in ascending
+  bytewise UTF-8 order. Rendering never changes the ordering key.
 - No timestamps, no random values, no environment variable leaks
-- File-byte-order deterministic (alphabetical concat, LF line endings)
-- Priority sort stable (ascending, alphabetical tiebreak)
+- Contribution paths within an atom are ascending bytewise UTF-8 order;
+  assembled text uses LF line endings. Source files are otherwise copied or
+  rendered as bytes specified by D15.
 
 `haex verify [--exit-code]` re-computes what `install` would produce and
 compares hashes against `install.lock`. A `.git/hooks/pre-commit` shim
@@ -258,7 +303,7 @@ without explicit permission.
 Schema migrations (v1→v2 of `.haex-hive.json`, and future schema evolutions)
 use a review-gated pattern:
 
-1. `haex-init migrate` reads current file, produces new-version proposal
+1. `haex migrate` reads current file, produces new-version proposal
 2. Writes proposal as `.haex-hive.json.migrated` **sidecar** (never
    overwrites the original)
 3. Prints unified diff to stdout for review
@@ -298,8 +343,9 @@ harder to break by accident.
 
 **Consequence**: haex-hive itself needs a root `manifest.json` in this
 repo mapping `com.github.haexmas.haex-hive.constitution` to
-`.specify/memory/constitution.md`. Landing this manifest is part of
-Spec 007's implementation.
+`.specify/memory/`. The atom's own `manifest.json` is located in that
+directory; it in turn declares `constitution.md` as the contributed file.
+Landing this manifest is part of Spec 007's implementation.
 
 ### D12. Consumer entry shape: uniform `includes[]`
 
@@ -314,7 +360,9 @@ Every consumer entry has the same JSON shape:
     "com.github.haexmas.blueprints.skill-x"
   ],
   "config": {
-    "com.github.haexmas.blueprints.skill-x": { }
+    "com.github.haexmas.blueprints.skill-x": {
+      "values": { }
+    }
   }
 }
 ```
@@ -381,13 +429,37 @@ symlink/hardlink) into consumer keeps Windows-portable. Consumer's
 `.haex-hive/generated/` is the single Truth agents read from — no
 "which folder wins" confusion.
 
+**Content-integrity serialization**: every `sha256-<base64>` value is the
+standard base64 encoding (with `=` padding) of SHA-256 over the following
+canonical tree serialization, named `haex-hive-tree-v1`. It starts with the
+ASCII bytes `haex-hive-tree-v1\0`. Entries follow in ascending bytewise UTF-8
+order of their normalized relative POSIX path; paths use `/`, contain no `.`
+or `..` segments, and are UTF-8 NFC. Directories are implicit and have no
+record. Each record is byte-framed as
+`<kind>\0<mode>\0<path-length>\0<path-bytes><payload-length>\0<payload-bytes>\0`,
+where `kind` is `F` for a regular file or `L` for a symlink, `mode` is exactly
+`100644`, `100755`, or `120000`, and decimal lengths are ASCII. For `F`, the
+payload is the file's bytes; for `L`, it is the symlink target's UTF-8 bytes.
+Symlinks are represented, never followed. No platform encoding, separator,
+or line-ending normalization occurs: raw trees hash checked-out raw bytes,
+while generated trees hash their final rendered/copied bytes (including their
+specified LF separators).
+
+`atoms[].content_integrity` hashes the raw, validated atom tree stored under
+`$HAEX_HIVE_STATE/store/`; `constitution.content_integrity` hashes a one-file
+tree containing the final committed `constitution.md`; and
+`generated_content_integrity` hashes the final `.haex-hive/generated/` tree.
+`haex install` and `haex verify` MUST use this exact serialization for every
+write and comparison. `install.lock` itself is not included in any of these
+trees.
+
 ### D16. `.haex-hive/` fully committed
 
 All of `.haex-hive/` is version-controlled. No gitignored subdirs. Byte
 identity across devices is guaranteed by git, not by hoping deterministic
 install produces the same bytes everywhere:
 
-```
+```text
 .haex-hive.json                          # root, source of truth
 .haex-hive/
   install.lock                           # pinned state
@@ -446,8 +518,9 @@ git/docker/kubectl convention. Verb-noun surface is small enough to
 memorize.
 
 **Consequence**: `haex-init` binary is renamed. Old `haex-init` invocations
-break at v2 boundary. Migration path (D10) covers this — one of the
-things `haex-init migrate` documents in its output.
+break at v2 boundary. Migration path (D10) is invoked as `haex migrate` and
+documents the renamed command in its output; `haex-init migrate` is not a
+supported alias.
 
 ## Consolidated model
 
@@ -481,6 +554,10 @@ Field-level notes:
   range), refuse-and-suggest-upgrade on mismatch
 - `identity`: consumer's own reverse-DNS project ID
 - `atoms[]`: replaces v1's `harness_sources[]`. Uniform shape per D12.
+- `atoms[].track`: optional, non-authoritative branch annotation; a missing
+  value means the branch is unknown and never weakens the required full SHA.
+- `atoms[].config.<atom-id>`: optional object with `priority` and `values`
+  only, as defined by D5/D7; the atom-ID must be selected by that entry.
 - `groups`, `active_feature`: carried forward from v1 (Spec 004/005)
 
 ### Publisher root `manifest.json`
@@ -610,7 +687,7 @@ Landing content:
 
 - `.haex-hive.json` v2 schema (D12, D16 layout)
 - Publisher root `manifest.json` + atom `manifest.json` schemas (D11, D13)
-- `haex-init migrate` command (D10)
+- `haex migrate` command (D10)
 - `haex constitution assemble` command (D2)
 - `haex constitution show` command
 - Root `manifest.json` for this repo (haex-hive as its own first publisher)
@@ -669,7 +746,7 @@ Existing consumers using v1 `.haex-hive.json` (Spec 004/005 shape):
 }
 ```
 
-Automatic migration produced by `haex-init migrate`:
+Automatic migration produced by `haex migrate`:
 
 ```json
 {
@@ -680,7 +757,6 @@ Automatic migration produced by `haex-init migrate`:
     {
       "source": "https://github.com/haexmas/haex-hive.git",
       "revision": "b2f884...",
-      "track": "main",
       "includes": [
         "com.github.haexmas.haex-hive.constitution"
       ],
@@ -694,15 +770,26 @@ Automatic migration produced by `haex-init migrate`:
 
 Migration rules (deterministic — same input → byte-identical output):
 
-- `identity: "github.com/<owner>/<repo>"` → `com.github.<owner>.<repo>`
-- `harness_sources[].role: "constitution"` + `repository: "self"` +
-  `path: ".specify/memory/constitution.md"` → single-include atom
-  pointing at `com.github.<owner>.<repo>.constitution`
-- `repository: "self"` resolves to the consumer's own git remote (looked
-  up from `git config --get remote.origin.url`; refuse migration if
-  absent, with clear message)
-- Other v1 shapes (Spec 006 designs that never landed) refused with
-  "cannot migrate — this v1 file uses an unsupported shape"
+| v1 input shape | Deterministic v2 result |
+|---|---|
+| `identity: "github.com/<owner>/<repo>"` | `com.github.<owner>.<repo>` |
+| `identity` already matches the v2 reverse-DNS grammar | Preserve it unchanged. |
+| Any other schema-valid `identity` | Refuse: `cannot migrate identity: not a GitHub identity or v2 reverse-DNS ID`. |
+| Every role-carrying entry (`role`, `repository`, `revision`, `path`), whether `repository` is `self` or external | Resolve `self` to the consumer's `remote.origin.url`, resolve the v1 7–40-character revision to its full 40-character commit SHA, and read that publisher's root `manifest.json` at that SHA. Select the one atom whose declared directory contains `path` and whose contribution declares that file. Emit its source, full SHA, and atom-ID in `atoms[]`. Refuse zero or multiple matching atoms with the entry index and path. |
+| Multiple role-carrying entries | Convert every entry using the preceding rule. Entries with the same source and full SHA are grouped into one `atoms[]` entry; its `includes` are bytewise atom-ID sorted. Other entries are sorted by source, full SHA, then atom-ID. `config` is `{}` and `track` is omitted because v1 has no branch annotation. |
+| Optional v1 `identity_note`, `groups`, and `active_feature` | Preserve unchanged. The v2 schema retains these optional compatibility fields. |
+| Permission-only entry with only `repository` | Refuse: `cannot migrate harness_sources[i]: permission-only repository scope has no v2 atom equivalent`. |
+| Permission-only entry with `repository` and `revision` | Refuse: `cannot migrate harness_sources[i]: permission-only repository@revision scope has no v2 atom equivalent`. |
+| Permission-only entry with `repository` and `paths` (with or without `revision`) | Refuse: `cannot migrate harness_sources[i]: permission-only paths scope has no v2 atom equivalent`. |
+
+The final three rows cover every valid v1 permission-only shape. v2's
+`atoms[]` grants concrete atom content rather than a general reference
+permission, so dropping or widening such a scope would change authorization;
+the operator must replace it with explicit v2 atom entries in a reviewed PR.
+If a `self` repository has no `remote.origin.url`, the requested commit is
+unavailable, a pin cannot be expanded to a full SHA, or the required v2
+publisher manifest is absent, migration refuses with the relevant entry index
+and leaves the original file untouched.
 
 Output written to `.haex-hive.json.migrated`. User reviews, moves manually,
 commits. `haex install` on the v2 file then reconciles.
@@ -722,9 +809,7 @@ Non-blocking for Spec 007 but must be resolved by Spec 008/009/010:
 - **Config merge semantics for length-N `includes[]`**: user's config
   map has atom-ID keys; but what if two atoms in the same includes
   share a config-key name? Currently: each atom gets its own subtree
-  under `config.<atom-id>.<key>`, no cross-atom shared keys.
-- **Rename `haex-init` → `haex`**: separate ADR before Spec 008 lands
-  (breaks the binary name that Spec 005 shipped).
+  under `config.<atom-id>.values.<key>`, no cross-atom shared keys.
 - **Multi-agent adapter framework**: agents that don't do markdown
   loading (Codex TOML, others). Framework Spec 010 territory; per-agent
   adapters ship incrementally.
@@ -737,7 +822,8 @@ Non-blocking for Spec 007 but must be resolved by Spec 008/009/010:
 All eight NON-NEGOTIABLE principles:
 
 - **I (No Secrets in Git)**: no change; content stores hold public git
-  content only.
+  content only, and D7 permits only device-local keychain references—not
+  plaintext secret values—in committed effective config.
 - **II (No Absolute Paths in Versioned Config)**: `.haex-hive/` and
   `.haex-hive.json` remain repo-relative. `$HAEX_HIVE_STATE/` is
   device-local, never in versioned config.
