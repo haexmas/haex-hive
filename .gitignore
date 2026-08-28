@@ -1,3 +1,4 @@
 *.local.log
 tests/spec-resolve/fixtures/.tmp/
+tests/haex-init/fixtures/.tmp/
 __pycache__/

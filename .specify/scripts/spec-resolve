@@ -71,7 +71,11 @@ class UsageError(SpecResolveError):
 # Validators (T012 + T028)
 # ---------------------------------------------------------------------------
 
-SHA_PATTERN = re.compile(r"^[0-9a-f]{7,40}$")
+# Full 40-character commit SHA — matches the embedded schema's `revision`
+# pattern so a value that passes spec-resolve cannot fail schema
+# validation (and vice versa). Short prefixes can resolve locally but
+# fail at `git fetch <sha>`; refuse them here too.
+SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 # URL schemes we accept. See research.md Decision 5.
 URL_PATTERN = re.compile(r"^(https://|ssh://)")
@@ -118,7 +122,12 @@ def normalise_sha(value: str) -> str:
 
 
 def is_valid_sha(value: str) -> bool:
-    return bool(SHA_PATTERN.match(normalise_sha(value)))
+    # fullmatch(), not match() — Python's `$` in `^X$` matches at the
+    # end of the string OR immediately before a final `\n`, so
+    # `SHA_PATTERN.match("a"*40 + "\n")` returns a Match. That would
+    # let a revision carrying a trailing newline slip through here and
+    # then be handed to git downstream. fullmatch anchors both ends.
+    return bool(SHA_PATTERN.fullmatch(normalise_sha(value)))
 
 
 def cache_dir_hash(repository: str) -> str:
@@ -294,7 +303,7 @@ def validate_config(data: dict[str, Any], source: str) -> None:
             if not is_valid_sha(revision):
                 raise ConfigError(
                     f"{source}: {prefix}.revision {revision!r} does not match "
-                    f"SHA pattern ^[0-9a-f]{{7,40}}$"
+                    f"SHA pattern ^[0-9a-f]{{40}}$ (full 40-char commit SHA)"
                 )
 
         if has_path:
@@ -644,7 +653,7 @@ def cmd_resolve(args: argparse.Namespace, repo_root: Path, config: dict[str, Any
             raise UsageError(f"--repository {repository!r} invalid — {reason}")
         if not is_valid_sha(sha):
             raise UsageError(
-                f"--revision {args.revision!r} does not match SHA pattern ^[0-9a-f]{{7,40}}$"
+                f"--revision {args.revision!r} does not match SHA pattern ^[0-9a-f]{{40}}$"
             )
         # Allowlist enforcement (T025).
         if find_permitting_entry(config, repository, sha, path) is None:
