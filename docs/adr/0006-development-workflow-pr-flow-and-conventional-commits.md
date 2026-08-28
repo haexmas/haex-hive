@@ -28,11 +28,12 @@ before further growth of the operator base:
 Codify three linked conventions in the constitution's Development
 Workflow section:
 
-- **PR flow.** All work lands on `main` through a pull request. Topic
-  branches use `<type>/<short-slug>` (e.g. `feat/haex-init-fetch-latest`,
-  `docs/roadmap-refresh`); the type mirrors the commit type for
-  legibility but is not enforced. Create the pull request with
-  `gh pr create --base main --head <branch>`; merging is a separate action.
+- **PR flow.** All work lands on `main` through a pull request from a topic
+  branch. This ADR deliberately does not standardize topic-branch names:
+  project tooling retains its configured naming convention. In particular,
+  SpecKit's sequential and timestamp branch modes remain supported. Create the
+  pull request with `gh pr create --base main --head <branch>`; merging is a
+  separate action.
 - **Merge strategy.** Rebase-merge OR merge-commit are permitted;
   squash-merge is forbidden because it collapses the individual
   Conventional-Commits messages into one auto-composed message and
