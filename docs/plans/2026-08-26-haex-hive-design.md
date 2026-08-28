@@ -460,13 +460,23 @@ generalizes it. Phases are not optional — do not skip forward.
   deferred to when a Windows satellite is real). Acceptance: the same
   `spec-ref.yaml` resolves the identical revision on both OSes without local
   path configuration.
-  _Status_: **implemented and in daily use as of 2026-08-27** via Spec 004
-  (`spec-resolve` tool at `.specify/scripts/spec-resolve`, unified
-  `harness_sources` array in `.haex-hive.json`, canonical JSON Schema at
-  `.specify/schemas/haex-hive.schema.json`, constitution v1.1.1). macOS
-  cross-OS validation still deferred per Spec 004 Assumptions; Linux is
-  live. The Phase 1 mechanism is what Phase 2 (harness registry +
-  multi-tool compiler) now builds on.
+  _Status_: **implemented and in daily use as of 2026-08-28** via Spec 004
+  + Spec 005. Spec 004 landed the mechanism: `spec-resolve` tool at
+  `.specify/scripts/spec-resolve`, unified `harness_sources` array in
+  `.haex-hive.json`, canonical JSON Schema at
+  `.specify/schemas/haex-hive.schema.json`, constitution v1.1.1. Spec 005
+  landed the adoption path: `haex-init` CLI at
+  `.specify/scripts/haex-init` scaffolds `.haex-hive.json` +
+  schema mapping, patches operator-global config files inside a
+  marker-wrapped block, and — via `--pin-constitution` — completes the
+  self-ref flow after `/speckit-constitution`. Shell testsuite under
+  `tests/haex-init/` covers fresh-operator, self-ref, external-ref,
+  idempotency, marker-safety, version-upgrade, and format-regression
+  paths. macOS cross-OS validation still deferred per Spec 004
+  Assumptions; Linux is live. The Phase 1 mechanism is what Phase 2
+  (harness registry + multi-tool compiler) now builds on. Public-URL
+  `--fetch-latest`, `add-source`, and multi-spec external-ref are
+  Spec 006 territory.
 - **Phase 2 — Harness registry + multi-tool compiler.** Central harness repo
   with global/groups/registry structure. Compiler emits per-tool artifacts
   (CLAUDE.md/AGENTS.md/GEMINI.md via symlink, settings.json/config.toml via
