@@ -1003,7 +1003,7 @@ Migration rules (deterministic — same input → byte-identical output):
 | `identity: "github.com/<owner>/<repo>"` | Lowercase both `<owner>` and `<repo>`, construct `com.github.<owner>.<repo>`, then validate the result against the v2 reverse-DNS grammar before writing the sidecar. |
 | `identity` already matches the v2 reverse-DNS grammar | Preserve it unchanged. |
 | Any other schema-valid `identity` | Refuse: `cannot migrate identity: not a GitHub identity or v2 reverse-DNS ID`. |
-| Every role-carrying entry (`role`, `repository`, `revision`, `path`), whether `repository` is `self` or external | Resolve `self` to the consumer's `remote.origin.url`, resolve the v1 7–40-character revision to its full 40-character commit SHA, and read that publisher's root `manifest.json` at that SHA. Select the one atom whose declared directory contains `path` and whose contribution of the type mapped from `role` declares that file using the migration glob rule below. Emit its source, full SHA, and atom-ID in `atoms[]`. Refuse zero or multiple matching atoms with the entry index and path. |
+| Every role-carrying entry (`role`, `repository`, `revision`, `path`), whether `repository` is `self` or external | Resolve `self` to the consumer's `remote.origin.url`, resolve the v1 7–40-character revision to its full 40-character commit SHA, and read that publisher's root `manifest.json` at that SHA. Validate each candidate root-manifest atom `path` before use as a non-empty repository-relative POSIX directory with no empty, `.` or `..` segments. NFC-normalize it, require its atom manifest to be the regular file exactly at `<path>/manifest.json` beneath that directory, then select the one atom whose declared directory contains `path` and whose contribution of the type mapped from `role` declares that file using the migration glob rule below. Emit its source, full SHA, and atom-ID in `atoms[]`. Refuse zero or multiple matching atoms with the entry index and path. |
 | Multiple role-carrying entries | Convert every entry using the preceding rule. Entries with the same source and full SHA are grouped into one `atoms[]` entry; its `includes` are bytewise atom-ID sorted. Other entries are sorted by source, full SHA, then atom-ID. `config` is `{}` and `track` is omitted because v1 has no branch annotation. |
 | Optional v1 `identity_note`, `groups`, and `active_feature` | Preserve unchanged. The v2 schema retains these optional compatibility fields. |
 | Permission-only entry with only `repository` | Refuse: `cannot migrate harness_sources[i]: permission-only repository scope has no v2 atom equivalent`. |
@@ -1028,9 +1028,11 @@ Before removing an atom-directory prefix, migration validates the complete v1
 repo-relative `path`: it must be non-empty, use `/` separators only, be
 non-absolute, and contain no empty, `.` or `..` segments. Failure reports the
 entry index and original path. It then NFC-normalizes that validated full path,
-removes the selected atom directory as complete path segments, and requires the
-remaining atom-relative path to name an existing regular file at the resolved
-SHA. A literal contribution matches only that exact relative path. A glob
+the validated publisher atom directory, and every literal contribution path or
+glob pattern before prefix removal and matching. It removes the normalized
+selected atom directory as complete path segments, and requires the remaining
+atom-relative path to name an existing regular file at the resolved SHA. A
+literal contribution matches only that exact normalized relative path. A glob
 contribution uses these deterministic segment rules: `/` separates segments;
 `*` matches zero or more non-`/` characters in one segment; and a segment that
 is exactly `**` matches zero or more complete path segments. `?`, character
@@ -1039,10 +1041,17 @@ invalid glob syntax and cause migration to refuse with the entry index and
 pattern. The migration matches the path only against contributions of the
 mapped role, then requires exactly one owning atom after normal atom-ID
 collision checks; it does not wait for Spec 010's general glob implementation.
-The Spec 007 migration suite MUST include a publisher
-`contributes.rules: ["rules/*.md"]` fixture and matching `role: "rules"` v1
-path, plus non-matching-path, role-mismatch, traversal-path, and
-file-plus-descendant path-collision refusal fixtures.
+
+The Spec 007 migration suite MUST include schema-valid `role: "constitution"`
+literal-path, role-mismatch, traversal-path, and composed/decomposed-NFC
+path-declaration fixtures. A future compatibility suite, enabled only when a
+released v1 schema introduces `role: "rules"`, MUST add the publisher
+`contributes.rules: ["rules/*.md"]` matching and non-matching glob fixtures.
+The file-plus-descendant collision fixture belongs to Spec 008's shared D15
+install/verify tree-validator suite; migration validates only its selected
+manifest, atom directory, contribution, and target file. Thus a migration
+cannot emit a sidecar based on an invalid selected atom path, while full-tree
+integrity remains the responsibility of install and verify.
 
 If a `self` repository has no `remote.origin.url`, the requested commit is
 unavailable, a pin cannot be expanded to a full SHA, or the required v2
