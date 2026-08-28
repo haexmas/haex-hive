@@ -124,6 +124,21 @@ assert "outside" in (state.malformed_reason or "") and "HOME" in (state.malforme
 )
 print("  symlink outside HOME: refused as MALFORMED")
 
+# Also refuse when the PARENT directory is a symlink pointing outside HOME.
+outside_dir = sandbox / "outside-config-dir"
+outside_dir.mkdir()
+(outside_dir / "AGENTS.md").write_bytes(b"# outside-of-home operator content\n")
+parent_link = Path("$HOME") / ".codex"
+parent_link.parent.mkdir(parents=True, exist_ok=True)
+if parent_link.exists() or parent_link.is_symlink():
+    parent_link.unlink()
+parent_link.symlink_to(outside_dir)
+state = m.detect_marker_block(parent_link / "AGENTS.md")
+assert state.presence is m.MarkerPresence.MALFORMED, (
+    f"parent-symlink outside HOME should be MALFORMED, got {state.presence!r}"
+)
+print("  parent-symlink outside HOME: refused as MALFORMED")
+
 # --------------------------------------------------------------------
 # 4. managed_tools == [] is preserved as "select-none" (not None).
 # --------------------------------------------------------------------

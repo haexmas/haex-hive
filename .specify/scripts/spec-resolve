@@ -71,7 +71,11 @@ class UsageError(SpecResolveError):
 # Validators (T012 + T028)
 # ---------------------------------------------------------------------------
 
-SHA_PATTERN = re.compile(r"^[0-9a-f]{7,40}$")
+# Full 40-character commit SHA — matches the embedded schema's `revision`
+# pattern so a value that passes spec-resolve cannot fail schema
+# validation (and vice versa). Short prefixes can resolve locally but
+# fail at `git fetch <sha>`; refuse them here too.
+SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 # URL schemes we accept. See research.md Decision 5.
 URL_PATTERN = re.compile(r"^(https://|ssh://)")
@@ -294,7 +298,7 @@ def validate_config(data: dict[str, Any], source: str) -> None:
             if not is_valid_sha(revision):
                 raise ConfigError(
                     f"{source}: {prefix}.revision {revision!r} does not match "
-                    f"SHA pattern ^[0-9a-f]{{7,40}}$"
+                    f"SHA pattern ^[0-9a-f]{{40}}$ (full 40-char commit SHA)"
                 )
 
         if has_path:

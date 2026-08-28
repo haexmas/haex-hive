@@ -13,11 +13,12 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 SPEC_RESOLVE="$REPO_ROOT/.specify/scripts/spec-resolve"
 SAMPLES="$HERE/fixtures/config-samples"
 
-# Four malformations covering the load-bearing error paths.
+# Malformations covering the load-bearing error paths.
 CASES=(
     "invalid-unknown-role"
     "invalid-paths-on-role"
     "invalid-bad-sha"
+    "invalid-short-sha"
     "invalid-file-scheme"
 )
 

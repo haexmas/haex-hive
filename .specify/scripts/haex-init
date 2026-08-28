@@ -314,11 +314,13 @@ def detect_marker_block(target_file: Path) -> MarkerBlockState:
     inclusive 1-indexed line range, and SHA-256 of the block's byte
     range.
     """
-    # Symlink safety: an atomic write replaces the symlink itself, so
-    # a link resolving outside HOME would either escape the allowed
-    # write region or destroy the operator's link. Refuse before we
-    # read anything.
-    if target_file.is_symlink():
+    # Symlink safety: an atomic write replaces the symlink itself (or
+    # follows a symlinked parent directory), so any link on the path
+    # that resolves outside HOME either escapes the allowed write
+    # region or destroys the operator's link. Check both the target
+    # itself and its parent directory before we read anything.
+    home = Path(os.environ.get("HOME", "~")).expanduser().resolve()
+    if target_file.is_symlink() or target_file.parent.is_symlink():
         try:
             resolved = target_file.resolve(strict=False)
         except (OSError, RuntimeError) as exc:
@@ -329,7 +331,6 @@ def detect_marker_block(target_file: Path) -> MarkerBlockState:
                     f"{target_file} is a symlink and cannot be resolved: {exc}"
                 ),
             )
-        home = Path(os.environ.get("HOME", "~")).expanduser().resolve()
         try:
             resolved.relative_to(home)
         except ValueError:
@@ -337,8 +338,8 @@ def detect_marker_block(target_file: Path) -> MarkerBlockState:
                 target_file=target_file,
                 presence=MarkerPresence.MALFORMED,
                 malformed_reason=(
-                    f"{target_file} is a symlink pointing outside $HOME "
-                    f"(→ {resolved}); refuse to touch"
+                    f"{target_file} is a symlink (or its parent is) pointing "
+                    f"outside $HOME (→ {resolved}); refuse to touch"
                 ),
             )
     if not target_file.exists():
