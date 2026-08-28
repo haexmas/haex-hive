@@ -112,18 +112,14 @@ After the operator then runs `/speckit-constitution` and
    **When** the operator sees the multi-select prompt and picks only the
    IDE (not the LLM),
    **Then** `~/.claude/CLAUDE.md` is not touched at all; only the IDE
-   mapping file is written.
-
-   **Known limitation (US1 scope)**: the initial run's *selection intent*
-   is not persisted. On a prompt-free rerun (`--yes`) the tool re-detects
-   every installed integration and re-configures whatever it finds, so
-   a tool the operator deliberately skipped here can be re-added by a
-   later `--yes` rerun. Callers who need deterministic exclusion in
-   automation MUST either run without `--yes` (to reselect) or restrict
-   detection with `--include`. Persisting selection intent to
-   `.haex-hive.json` (or a sidecar) so `--yes` reruns honour prior
-   omissions is tracked as follow-up work — see the CodeRabbit finding
-   on PR #1 (spec.md L110-115).
+   mapping file is written, AND the selection is persisted to
+   `.haex-hive.json.managed_tools` so a later prompt-free rerun (`--yes`)
+   reconfigures only the tools the operator originally chose. A tool
+   the operator deliberately excluded here MUST stay untouched by a
+   subsequent `--yes` rerun even if new tool executables appear on
+   PATH between runs. To re-open the selection, the operator either
+   deletes `managed_tools` from `.haex-hive.json` or runs without
+   `--yes`.
 4. **Given** any run of Story 1,
    **When** the operator declines a specific prompt's Y/N,
    **Then** that specific action is skipped, subsequent independent

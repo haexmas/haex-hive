@@ -64,5 +64,98 @@ assert sha_emb == sha_canon, (
 )
 print(f"(c) OK: sha256(EMBEDDED_SCHEMA_JSON) == sha256(canonical schema) == {sha_emb}")
 
-print("test-embedded-content-sync: all 3 assertions passed")
+# (d) Version-bump discipline (FR-033 + marker-block.format.md).
+# When CANONICAL_SESSION_INSTRUCTIONS content changes on this branch
+# vs. its parent commit, INSTRUCTIONS_VERSION MUST also change. This
+# catches the "silently updated the hash without bumping the version"
+# regression that (a)+(b) alone cannot detect.
+import subprocess
+def _extract_constant(source, name):
+    """Return the value literal for the named constant, or None."""
+    import re
+    if name == "CANONICAL_SESSION_INSTRUCTIONS":
+        mobj = re.search(
+            r'CANONICAL_SESSION_INSTRUCTIONS\s*=\s*"""(.*?)"""',
+            source,
+            re.DOTALL,
+        )
+        return mobj.group(1) if mobj else None
+    if name == "INSTRUCTIONS_VERSION":
+        mobj = re.search(r'INSTRUCTIONS_VERSION\s*=\s*"([^"]+)"', source)
+        return mobj.group(1) if mobj else None
+    if name == "INSTRUCTIONS_SHA256":
+        mobj = re.search(r'INSTRUCTIONS_SHA256\s*=\s*"([0-9a-f]+)"', source)
+        return mobj.group(1) if mobj else None
+    return None
+
+# Find the parent revision to compare against. Prefer origin/main; fall
+# back to HEAD^ inside a checked-out branch. On a fresh clone or CI shallow
+# clone with no parent to compare, the check is skipped with a printed note
+# rather than failing — the (a)+(b) hash-sync assertions above still hold.
+inside_git = subprocess.run(
+    ["git", "-C", str(repo_root), "rev-parse", "--is-inside-work-tree"],
+    capture_output=True, text=True, check=False,
+).stdout.strip() == "true"
+if not inside_git:
+    print("(d) SKIP: not inside a git working tree")
+else:
+    ref_probe = subprocess.run(
+        ["git", "-C", str(repo_root), "merge-base", "HEAD", "origin/main"],
+        capture_output=True, text=True, check=False,
+    )
+    parent = ref_probe.stdout.strip() if ref_probe.returncode == 0 else ""
+    if not parent:
+        alt = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD^"],
+            capture_output=True, text=True, check=False,
+        )
+        parent = alt.stdout.strip() if alt.returncode == 0 else ""
+    if not parent:
+        print("(d) SKIP: no parent commit to compare against")
+    else:
+        prior = subprocess.run(
+            ["git", "-C", str(repo_root), "show", f"{parent}:.specify/scripts/haex-init"],
+            capture_output=True, text=True, check=False,
+        )
+        if prior.returncode != 0:
+            # merge-base predates haex-init; fall back to the direct parent
+            # of HEAD (which does have haex-init once the initial landing
+            # commit exists on this branch).
+            alt = subprocess.run(
+                ["git", "-C", str(repo_root), "rev-parse", "HEAD^"],
+                capture_output=True, text=True, check=False,
+            )
+            fallback_parent = alt.stdout.strip() if alt.returncode == 0 else ""
+            if fallback_parent and fallback_parent != parent:
+                prior = subprocess.run(
+                    ["git", "-C", str(repo_root), "show",
+                     f"{fallback_parent}:.specify/scripts/haex-init"],
+                    capture_output=True, text=True, check=False,
+                )
+                if prior.returncode == 0:
+                    parent = fallback_parent
+        if prior.returncode != 0:
+            print(f"(d) SKIP: haex-init not present at any reachable parent revision")
+        else:
+            prior_src = prior.stdout
+            prior_canon = _extract_constant(prior_src, "CANONICAL_SESSION_INSTRUCTIONS")
+            prior_ver = _extract_constant(prior_src, "INSTRUCTIONS_VERSION")
+            cur_canon = m.CANONICAL_SESSION_INSTRUCTIONS
+            cur_ver = m.INSTRUCTIONS_VERSION
+            if prior_canon is None or prior_ver is None:
+                print("(d) SKIP: parent revision predates versioned canonical constants")
+            elif prior_canon == cur_canon:
+                print(f"(d) OK: canonical text unchanged since {parent[:8]}; version bump not required")
+            else:
+                assert cur_ver != prior_ver, (
+                    f"(d) FAIL: CANONICAL_SESSION_INSTRUCTIONS changed vs {parent[:8]} "
+                    f"but INSTRUCTIONS_VERSION is still {prior_ver!r}. "
+                    "Bump INSTRUCTIONS_VERSION (semver: PATCH wording, MINOR new "
+                    "instruction line, MAJOR breaking rewrite) alongside the hash "
+                    "update. See specs/005-haex-init/contracts/marker-block.format.md "
+                    "\"Version Bump Semantics\"."
+                )
+                print(f"(d) OK: canonical changed vs {parent[:8]}, version bumped {prior_ver} → {cur_ver}")
+
+print("test-embedded-content-sync: assertions passed")
 PY

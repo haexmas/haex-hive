@@ -68,6 +68,7 @@ d = json.load(open(".haex-hive.json"))
 assert d["haex_hive_version"] == "1", f"(A) FAIL haex_hive_version: {d['haex_hive_version']!r}"
 assert d["harness_sources"] == [], f"(A) FAIL harness_sources: {d['harness_sources']!r}"
 assert isinstance(d["identity"], str) and len(d["identity"]) > 0, "(A) FAIL identity"
+assert d.get("managed_tools") == ["claude-code", "vscode"], f"(A) FAIL managed_tools: {d.get('managed_tools')!r}"
 print("(A) .haex-hive.json shape OK")
 PY
 
@@ -206,6 +207,21 @@ if ! grep -q '"fileMatch"' .vscode/settings.json; then
     echo "FAIL(B): .vscode/settings.json missing entry"
     exit 1
 fi
+
+# Selection intent must persist so a later --yes rerun stays IDE-only.
+python3 - <<'PY'
+import json
+d = json.load(open(".haex-hive.json"))
+mt = d.get("managed_tools")
+assert mt == ["vscode"], f"(B) FAIL managed_tools should be ['vscode'], got {mt!r}"
+print("(B) managed_tools persisted as ['vscode']")
+PY
+
+# Rerun --yes and confirm CLAUDE.md still untouched (the persisted
+# managed_tools list is what --yes now honours).
+"$HAEX_INIT" --yes >/dev/null
+sha_after2=$(sha256sum "$HOME/.claude/CLAUDE.md" | awk '{print $1}')
+assert_eq "(B) CLAUDE.md byte-identical after --yes rerun (managed_tools honoured)" "$sha_before" "$sha_after2"
 
 echo "-- (B) OK"
 teardown_sandbox

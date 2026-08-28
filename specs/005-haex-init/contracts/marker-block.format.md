@@ -105,20 +105,24 @@ All writes to user-global config files follow:
   `1.1`).
 - `INSTRUCTIONS_SHA256` is the exact hex-lowered SHA-256 of the
   embedded `CANONICAL_SESSION_INSTRUCTIONS` string.
-- CI-enforced coupling (three assertions, Decision 9): `SHA256(embedded_string) ==
-  INSTRUCTIONS_SHA256`, `SHA256(read_file(template.md)) ==
-  INSTRUCTIONS_SHA256`, and generated markers stamp
-  `INSTRUCTIONS_VERSION`.
-- A content change without matching updates to both hash constants fails
-  the sync test.
-- Version-bump enforcement (below) is a code-review discipline: the
-  three sync assertions detect content/hash drift, but they do NOT
-  compare `INSTRUCTIONS_VERSION` against its prior value on `main`
-  and therefore do NOT flag an updated `INSTRUCTIONS_SHA256` shipped
-  without a corresponding version bump. Reviewers MUST check for that
-  themselves, or the sync test MUST be extended with a diff-aware
-  check (`git show HEAD~1:.specify/scripts/haex-init` → compare the
-  prior version) before the enforcement claim can be strengthened.
+- CI-enforced coupling (Decision 9): the sync test
+  (`tests/haex-init/test-embedded-content-sync.sh`) asserts
+  `SHA256(embedded_string) == INSTRUCTIONS_SHA256`,
+  `SHA256(read_file(template.md)) == INSTRUCTIONS_SHA256`,
+  `SHA256(EMBEDDED_SCHEMA_JSON) == SHA256(read_file(schema.json))`,
+  AND a diff-aware assertion (d): if the current
+  `CANONICAL_SESSION_INSTRUCTIONS` differs from its value at the
+  merge-base against `origin/main` (falling back to `HEAD^`), then
+  `INSTRUCTIONS_VERSION` MUST also differ. A tool-code-only change is
+  therefore allowed to leave `INSTRUCTIONS_VERSION` intact; a canonical
+  content change without a matching version bump fails the test with a
+  named diagnostic.
+- A content change without matching updates to both hash constants
+  fails assertions (a)/(b) with a hash-mismatch diagnostic. A hash
+  change without a matching version bump fails assertion (d) with a
+  version-bump diagnostic. The test SKIPs (d) — but leaves the hash
+  assertions in force — when no parent revision is available (fresh
+  clone / shallow CI checkout without `origin/main`).
 
 **Bump rules**:
 

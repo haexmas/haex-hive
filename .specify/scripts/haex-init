@@ -180,6 +180,24 @@ EMBEDDED_SCHEMA_JSON = """{
     "active_feature": {
       "description": "Optional active-feature pointer for spec-kit workflows.",
       "type": ["string", "null"]
+    },
+    "managed_tools": {
+      "description": "Names of tools haex-init has been asked to manage in this project. If present, prompt-free reruns (--yes) reconfigure exactly these tools and skip any detected-but-unlisted tool. Absent = first-time run or legacy scaffolding: --yes falls back to detecting every installed integration.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "claude-code",
+          "codex",
+          "gemini",
+          "vscode",
+          "vscode-insiders",
+          "cursor",
+          "windsurf",
+          "jetbrains"
+        ]
+      }
     }
   },
   "definitions": {
@@ -677,6 +695,7 @@ def validate_haex_hive_config(cfg: object) -> list[str]:
         "harness_sources",
         "groups",
         "active_feature",
+        "managed_tools",
     }
     for k in cfg.keys():
         if k not in allowed:
@@ -706,6 +725,27 @@ def validate_haex_hive_config(cfg: object) -> list[str]:
         v = cfg["active_feature"]
         if v is not None and not isinstance(v, str):
             errors.append("active_feature: expected string or null")
+
+    if "managed_tools" in cfg:
+        v = cfg["managed_tools"]
+        if not isinstance(v, list):
+            errors.append("managed_tools: expected array")
+        else:
+            seen: set[str] = set()
+            for i, item in enumerate(v):
+                if not isinstance(item, str):
+                    errors.append(f"managed_tools[{i}]: expected string")
+                    continue
+                if item not in ALL_TOOL_NAMES:
+                    errors.append(
+                        f"managed_tools[{i}]: {item!r} is not a known tool name "
+                        f"(valid: {', '.join(sorted(ALL_TOOL_NAMES))})"
+                    )
+                if item in seen:
+                    errors.append(
+                        f"managed_tools[{i}]: duplicate entry {item!r}"
+                    )
+                seen.add(item)
 
     if "harness_sources" in cfg:
         hs = cfg["harness_sources"]
@@ -1056,30 +1096,63 @@ def _idea_entry_present(xml_path: Path) -> bool:
     return False
 
 
+def _localname(tag: str) -> str:
+    """Strip any {namespace} prefix ElementTree stamps on element tags."""
+    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
+
+
+def _find_child_by_localname(parent: ET.Element, local: str) -> ET.Element | None:
+    for child in parent:
+        if _localname(child.tag) == local:
+            return child
+    return None
+
+
+def _find_children_by_localname(parent: ET.Element, local: str) -> list[ET.Element]:
+    return [c for c in parent if _localname(c.tag) == local]
+
+
 def compose_idea_xml(existing_bytes: bytes | None) -> bytes:
-    """Return merged .idea/jsonSchemas.xml bytes."""
+    """Return merged .idea/jsonSchemas.xml bytes.
+
+    Matches every element by local name so IntelliJ-style documents that
+    stamp a namespace on the root (or any subordinate element) still
+    parse; the original namespace is preserved on re-serialize because
+    we mutate the parsed tree in place rather than rewriting tag names.
+    """
     if existing_bytes is None:
         return IDEA_CANONICAL_XML.encode("utf-8")
     root = ET.fromstring(existing_bytes.decode("utf-8"))
-    if root.tag != "project":
+    if _localname(root.tag) != "project":
         raise ValueError("unexpected XML root element in .idea/jsonSchemas.xml")
+    # Preserve the root's default namespace on re-serialize. ET would
+    # otherwise emit a synthesized `ns0:` prefix for a namespaced input;
+    # registering the URI with the empty prefix keeps the original
+    # `xmlns="…"` shape and lets us mutate the tree in place.
+    root_ns = root.tag[1:].split("}", 1)[0] if root.tag.startswith("{") else ""
+    if root_ns:
+        ET.register_namespace("", root_ns)
+    def _tag(local: str) -> str:
+        return f"{{{root_ns}}}{local}" if root_ns else local
+
     component = None
-    for c in root.findall("component"):
+    for c in _find_children_by_localname(root, "component"):
         if c.get("name") == "JsonSchemaMappingsProjectConfiguration":
             component = c
             break
     if component is None:
         component = ET.SubElement(
-            root, "component", {"name": "JsonSchemaMappingsProjectConfiguration"}
+            root, _tag("component"),
+            {"name": "JsonSchemaMappingsProjectConfiguration"},
         )
-    state = component.find("state")
+    state = _find_child_by_localname(component, "state")
     if state is None:
-        state = ET.SubElement(component, "state")
-    _map = state.find("map")
+        state = ET.SubElement(component, _tag("state"))
+    _map = _find_child_by_localname(state, "map")
     if _map is None:
-        _map = ET.SubElement(state, "map")
+        _map = ET.SubElement(state, _tag("map"))
     existing_entry = None
-    for entry in _map.findall("entry"):
+    for entry in _find_children_by_localname(_map, "entry"):
         if entry.get("key") == "haex-hive":
             existing_entry = entry
             break
@@ -1089,6 +1162,17 @@ def compose_idea_xml(existing_bytes: bytes | None) -> bytes:
     )
     if canonical_entry is None:
         raise RuntimeError("canonical IDEA XML is corrupt")
+    if root_ns:
+        # Rebuild the canonical entry's subtree under the document's
+        # namespace so the merged file stays namespace-consistent.
+        def _rens(el: ET.Element) -> ET.Element:
+            new = ET.Element(_tag(_localname(el.tag)), dict(el.attrib))
+            new.text = el.text
+            new.tail = el.tail
+            for child in el:
+                new.append(_rens(child))
+            return new
+        canonical_entry = _rens(canonical_entry)
     if existing_entry is not None:
         _map.remove(existing_entry)
     _map.append(canonical_entry)
@@ -1500,7 +1584,13 @@ def plan_project_level(
     is the {url, sha, path} triple already verified.
     """
     _plan_haex_hive_json(
-        plan, project_dir, project_state, mode, external_ref, identity_value
+        plan,
+        project_dir,
+        project_state,
+        mode,
+        external_ref,
+        identity_value,
+        selected_tool_names=sorted(t.name for t in selected),
     )
     _plan_schema_file(plan, project_dir, project_state)
     families_selected = {t.family for t in selected}
@@ -1518,6 +1608,8 @@ def _plan_haex_hive_json(
     mode: str,
     external_ref: dict | None,
     identity_value: str,
+    *,
+    selected_tool_names: list[str],
 ) -> None:
     target = project_dir / ".haex-hive.json"
     # Preserve pre-existing valid content (identity, harness_sources) as far
@@ -1541,6 +1633,13 @@ def _plan_haex_hive_json(
     else:
         # Fresh: prompt-derived identity_value stays.
         pass
+
+    # Persist the operator's selection intent (see spec.md US1 §3). On a
+    # subsequent --yes rerun this list is what run_init consults instead
+    # of "all detected tools", so a tool the operator deliberately
+    # excluded here stays excluded even if it starts appearing in
+    # detection later.
+    base["managed_tools"] = list(selected_tool_names)
 
     if mode == "external-ref" and external_ref is not None:
         # In external-ref mode we set harness_sources to a single-entry
@@ -2083,6 +2182,28 @@ def _prompt_field(
 # ---------------------------------------------------------------------------
 
 
+def _read_persisted_managed_tools(project_state: ProjectState) -> set[str] | None:
+    """Return the operator's persisted tool selection, or None if absent.
+
+    Absent means either no prior .haex-hive.json existed, or one existed
+    but predates the managed_tools field (legacy). Both are treated as
+    "no persisted intent" so --yes falls back to detect-all.
+    """
+    if not (
+        project_state.has_haex_hive_json
+        and project_state.haex_hive_json_valid
+        and isinstance(project_state.haex_hive_json_content, dict)
+    ):
+        return None
+    val = project_state.haex_hive_json_content.get("managed_tools")
+    if val is None:
+        return None
+    if not isinstance(val, list):
+        return None
+    result = {v for v in val if isinstance(v, str) and v in ALL_TOOL_NAMES}
+    return result if result else None
+
+
 def run_init(args: argparse.Namespace) -> int:
     home = _resolve_home()
     project_dir = Path.cwd().resolve()
@@ -2119,18 +2240,8 @@ def run_init(args: argparse.Namespace) -> int:
         )
         return EXIT_REFUSED
 
-    # Detection.
-    detected = detect_tools(home, include_set)
-
-    # Prompt tool selection unless --yes (auto = all detected).
-    if args.yes:
-        selected = detected
-    else:
-        selected = prompt_tool_selection(detected)
-
-    selected_llms = [t for t in selected if t.category == "llm"]
-
-    # Snapshot state.
+    # Snapshot project state early so tool selection can honour a persisted
+    # `managed_tools` list from a prior run (see spec.md US1 §3).
     project_state = snapshot_project(project_dir)
     if project_state.has_haex_hive_json and project_state.haex_hive_json_valid is False:
         errors = validate_haex_hive_config(project_state.haex_hive_json_content or {})
@@ -2140,6 +2251,34 @@ def run_init(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return EXIT_REFUSED
+
+    # Detection.
+    detected = detect_tools(home, include_set)
+
+    # Prompt tool selection unless --yes.
+    #   With --yes and a persisted `managed_tools`: reuse that list
+    #   verbatim (respects deliberate omissions across reruns).
+    #   With --yes and no persisted list: all detected tools (legacy).
+    #   Without --yes: multi-select prompt.
+    persisted_managed = _read_persisted_managed_tools(project_state)
+    if args.yes:
+        if persisted_managed is not None:
+            selected = [t for t in detected if t.name in persisted_managed]
+            missing = persisted_managed - {t.name for t in selected}
+            if missing:
+                print(
+                    "haex-init: persisted managed_tools include names that "
+                    "are no longer detected: " + ", ".join(sorted(missing))
+                    + " — reconfiguring the remainder only.",
+                    file=sys.stderr,
+                )
+        else:
+            selected = detected
+    else:
+        selected = prompt_tool_selection(detected)
+
+    selected_llms = [t for t in selected if t.category == "llm"]
+
     user_state = snapshot_user_global(home, selected_llms)
 
     # Constitution mode resolution:

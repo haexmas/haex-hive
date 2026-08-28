@@ -32,6 +32,24 @@
     "active_feature": {
       "description": "Optional active-feature pointer for spec-kit workflows.",
       "type": ["string", "null"]
+    },
+    "managed_tools": {
+      "description": "Names of tools haex-init has been asked to manage in this project. If present, prompt-free reruns (--yes) reconfigure exactly these tools and skip any detected-but-unlisted tool. Absent = first-time run or legacy scaffolding: --yes falls back to detecting every installed integration.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "claude-code",
+          "codex",
+          "gemini",
+          "vscode",
+          "vscode-insiders",
+          "cursor",
+          "windsurf",
+          "jetbrains"
+        ]
+      }
     }
   },
   "definitions": {
