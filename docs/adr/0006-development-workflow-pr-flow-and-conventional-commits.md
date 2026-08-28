@@ -31,7 +31,8 @@ Workflow section:
 - **PR flow.** All work lands on `main` through a pull request. Topic
   branches use `<type>/<short-slug>` (e.g. `feat/haex-init-fetch-latest`,
   `docs/roadmap-refresh`); the type mirrors the commit type for
-  legibility but is not enforced.
+  legibility but is not enforced. Create the pull request with
+  `gh pr create --base main --head <branch>`; merging is a separate action.
 - **Merge strategy.** Rebase-merge OR merge-commit are permitted;
   squash-merge is forbidden because it collapses the individual
   Conventional-Commits messages into one auto-composed message and
@@ -39,7 +40,13 @@ Workflow section:
   Rebase-merge is the preferred default for its linear history and
   cleaner `git bisect`; merge-commit is a defensible choice when
   PR-boundary visibility in `git log --graph` is wanted for a specific
-  PR.
+  PR. When using merge-commit, the maintainer replaces GitHub's generated
+  `Merge pull request ...` subject with a Conventional-Commits header before
+  merging (for example, `feat(init): add config validation`). With the GitHub
+  CLI, use `gh pr merge <number> --merge --subject "<type>[optional
+  scope][!]: <description>"`. Commit-message validation and changelog tooling
+  must validate and process merge commits rather than exempt generated merge
+  subjects.
 - **Conventional Commits v1.0.0** (https://www.conventionalcommits.org/en/v1.0.0/)
   as the commit-message standard. Breaking changes are marked with `!`
   after the type/scope (e.g. `feat(api)!: ...`) and — when a written
