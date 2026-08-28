@@ -96,19 +96,24 @@ types loudly.
 ### Per-type hydration contract
 
 Acquisition is uniform; the following destinations and conflict rules are
-not. Before hydration, `haex` creates a managed-output inventory from the
-previous `install.lock`. A destination not owned by that inventory is never
-overwritten: installation fails with the conflicting path and remediation
-instructions. A previously managed destination may be replaced only as part
-of the successful transaction described below.
+not. Before hydration, `haex` creates both a managed-output inventory from the
+previous `install.lock` and a planned-output map from every current flattened
+entry. Each canonical destination has exactly one owner: a resource key plus
+its contribution. Duplicate resource keys and multiple planned owners of any
+destination fail before rendering, including two constitutions targeting
+`.specify/memory/constitution.md`. A destination not owned by the prior
+inventory is never overwritten; a prior managed destination may be replaced
+only by its matching planned owner in the successful transaction below.
 
 - `constitution`: `contributes.constitution` is one validated file path. It
   is copied to `.specify/memory/constitution.md`, the canonical agent-facing
-  location. The existing `spec-resolve resolve --role constitution` contract
-  remains source-of-truth based: it resolves the accepted pinned entry with
-  `git show <sha>:<path>` and does not trust a generated copy. The hydrated
-  copy is therefore an offline, agent-readable projection, not a second
-  authority.
+  location. Spec-007 extends `spec-resolve resolve --role constitution` for a
+  v2 directory entry: it reads `<entry-path>/manifest.json`, validates
+  `type: constitution` and `contributes.constitution`, then emits that
+  validated file with `git show <sha>:<entry-path>/<contribution>`. A legacy
+  file pin retains the existing direct `git show <sha>:<path>` behavior. In
+  neither case does the resolver trust a generated copy; hydration is an
+  offline, agent-readable projection, not a second authority.
 - `spec`: all validated files in the manifest directory are copied to
   `.haex-hive/generated/specs/<resource-key>/`. That tree is read-only
   generated input for agents and tooling; it never overwrites a working
@@ -168,7 +173,13 @@ Blueprint:
     "rules":  ["rules/before-writing-code.md", "rules/graphify-query-conventions.md"],
     "skills": ["skills/check-duplicates.md",   "skills/graphify-refresh.md"],
     "hooks":  [{"trigger": "feature.start",   "script": "hooks/on-feature-start.sh"}],
-    "config": {"schema": "config.schema.json", "defaults": "config.defaults.json"}
+    "config": {"schema": "config.schema.json", "defaults": "config.defaults.json"},
+    "nativeOutputs": [{
+      "id": "graphify-config",
+      "script": "hooks/on-install.sh",
+      "staged": "native/graphify/config.toml",
+      "target": "graphify.config"
+    }]
   },
   "requires":  ["graphify >= 0.4"],
   "conflicts": []
@@ -237,11 +248,20 @@ two shapes. The Spec-007 migration renames `repository` to `source` on every
 existing permission-only entry without adding a revision or path, preserving
 its scope verbatim; it never turns an empty array into a permission grant.
 
+Every explicit `paths` item is a non-empty canonical POSIX-relative prefix
+validated by the same rules as an entry `path` before authorization; it rejects
+absolute paths, backslashes, NUL, drive-qualified paths, empty components,
+`.`, and `..` (so `../` is invalid). It authorizes a candidate only when it is
+identical to the prefix or starts with `prefix + "/"`; `src/app` therefore
+does not authorize `src/apple`. Omitting `paths` deliberately grants the
+source's full repository scope.
+
 - `source: "self"` — the consuming repo is also the producer of this entry.
-  It is resolved locally with `git show <revision>:<path>` after validating
-  that both objects exist; it has no cache entry and never goes through
-  `haex add` or remote fetch. This retains the existing `spec-resolve`
-  self-reference contract.
+  It is resolved locally from the pinned tree after validating both objects;
+  a v2 resource reads its manifest then its declared contribution with
+  `git show`, while a legacy pin reads its file directly. It has no cache
+  entry and never goes through `haex add` or remote fetch. This retains the
+  existing `spec-resolve` self-reference contract.
 - `track` — remembered so `haex update` knows what ref to re-resolve
   against. Without `track`, an entry is frozen.
 - `as` — refuse to install if `manifest.type` differs. Prevents the
@@ -259,7 +279,9 @@ based, so no key material reaches `.haex-hive.json`.
 
 ```text
 haex add <git-url>[#<ref>] [--path <subpath>] [--as <expected-type>]
-    - Fetches the given URL at <ref> (default: repo default branch).
+    - Canonicalises and validates the URL before cache lookup or any network
+      access; rejects userinfo credentials.
+    - Fetches the validated URL at <ref> (default: repo default branch).
     - Reads manifest.json at <subpath> (default: repo root).
     - Pins the resolved SHA into revision; stores <ref> as track.
     - Asserts manifest.type == <expected-type> if --as given.
@@ -287,15 +309,18 @@ haex install --check
 haex update [<resource-key> ...]
     - For each entry with a `track` field: re-fetch <track>, bump
       `revision` to the new HEAD SHA, re-run install.
-    - Without <resource-key>: updates all trackable entries.
+    - Targets only top-level persisted resource keys. Without a key, updates
+      all trackable top-level entries.
 
 haex remove <resource-key>
-    - Deletes the entry from .haex-hive.json; re-runs install so
+    - Accepts only a top-level persisted resource key, deletes that entry from
+      .haex-hive.json, and re-runs install so
       hydration drops the removed content.
 
 haex list
     - Shows installed entries: display id, resource key, type, version, SHA,
-      track.
+      track, and owner. A profile member shows its owning top-level profile
+      key and can be updated or removed only through that profile.
 ```
 
 `resource-key` is the validated, stable qualified identity
@@ -329,27 +354,34 @@ the URL + SHA, so the registry can vanish and everything still resolves.
 1. **Validate `.haex-hive.json`.** Schema check. A concrete entry must
    carry `source + revision + path`; a permission-only entry grants scope but
    is not an install target. Reject branch or `HEAD` refs in `revision`
-   (Principle IV), embedded credentials, unsafe ids, triggers, and paths, and
-   legacy/v2 field mixing.
+   (Principle IV), embedded credentials, unsafe paths, and legacy/v2 field
+   mixing. Canonicalise and validate every external source before deriving a
+   cache key, opening a cache, or using the network.
 2. **Fetch direct entries to cache.** For each external concrete entry, ensure
-   `.haex-hive/cache/<source-revision-key>/` exists. If missing, fetch then
-   checkout the SHA and verify the checked-out SHA matches. `self` is resolved
-   only by local `git show <sha>:<path>` and has no cache. Never network again
-   for an already-cached SHA.
+   `.haex-hive/cache/<source-revision-key>/` is a valid checkout. On every
+   cache hit, verify the repository object and checked-out SHA against the
+   pinned revision before use. Quarantine an interrupted, stale, or locally
+   mutated cache entry, then fetch, check out, and verify a replacement; an
+   invalid entry when offline fails rather than being used. `self` is resolved
+   only from the local pinned tree and has no cache. No network is used for a
+   valid cached SHA.
 3. **Flatten profiles and fetch members.** Normalize every profile
-   `includes[].repository` to the canonical `source` field before identity
-   checks. For each member, validate its pin and paths; resolve it from the
-   pinned cache, fetching and SHA-verifying it first on a cache miss (or use
-   the local `git show` path for `self`), then recurse if it is a profile.
+   `includes[].repository` to the canonical `source` field before identity,
+   cache, or network work. Reject embedded credentials and validate each
+   member's pin and paths before cache lookup; only the validated canonical
+   source is fetched or stored. Resolve each member from its pinned cache,
+   fetching and SHA-verifying it first on a cache miss (or use the local
+   pinned tree for `self`), then recurse if it is a profile.
    Cycle detection and a configured max depth apply to the full recursion;
    order is preserved. Direct pins for the same canonical `(source, path)`
    shadow profile-provided pins and log the shadow.
    Before the first compatibility check or hydration, validate every fetched
    manifest id, trigger, and contribution path with the rules above; profile
    source fields are subject to the same credential-free URL validation.
-4. **Validate compatibility.** Walk the flattened set; check each
-   atom's `requires` and `conflicts` fields. Fail loudly with a list;
-   never partial-install.
+4. **Validate ownership and compatibility.** Build the planned-output map and
+   reject duplicate resource keys, destination owners, type-inappropriate
+   contributions, `requires`, or `conflicts`. Fail loudly with a list; never
+   partial-install.
 5. **Merge config.** For each blueprint: `defaults` (from
    `config.defaults.json`) ⊕ consumer override (from the entry's
    `config` block). Validate the merged object against
@@ -374,16 +406,20 @@ the URL + SHA, so the registry can vanish and everything still resolves.
    produce `.haex-hive.next-<uuid>/install.lock` (records: resource keys,
    display ids, canonical source/path, SHAs, effective-config hashes, and
    output-file hashes).
-8. **Prepare and commit one transaction.** `on-install` is not allowed to
-   mutate a live target directly. It produces declared native-tool files in a
-   staging root; `haex` records a backup for every managed workspace, agent
-   skill, and external configuration target, atomically swaps each staged
-   file or directory into its target, and removes backups only after every
-   swap succeeds. If preparation or any swap fails, it restores all backups
-   and removes every new target and staging root. A hook may not make
-   undeclared side effects; such a hook is rejected. Thus the cache survives
-   while generated state, agent copies, and managed external configuration
-   either commit together or roll back together.
+8. **Prepare and commit one transaction.** Before any new work, `haex` reads
+   a durable, fsynced journal under `.haex-hive/transactions/`. If a prior
+   commit was interrupted, recovery inspects its recorded targets and backups:
+   a fully swapped set is completed by finalising it; any partial set is
+   restored from backups. Ambiguous state fails closed for operator recovery.
+   `on-install` is not allowed to mutate a live target directly. It produces
+   declared native-tool files in a staging root; `haex` records a backup for
+   every managed workspace, agent skill, and external configuration target,
+   and records and fsyncs every swap in the journal before and after it. It
+   removes backups and the journal only after every swap succeeds. On a normal
+   returned failure, it restores all backups and removes every new target and
+   staging root. A hook may not make undeclared side effects; such a hook is
+   rejected. Thus the cache survives while generated state, agent copies, and
+   managed external configuration recover to one complete transaction state.
 9. **Diff `.haex-hive.json`** (if `haex add`, migration, or `haex update` was the
    caller): the tool leaves the diff staged but the human commits.
    Principle VI applies.
@@ -394,6 +430,7 @@ the URL + SHA, so the registry can vanish and everything still resolves.
 .haex-hive/
   cache/                     # pinned checkouts (gitignored)
     <source-revision-key>/
+    quarantine/              # invalid cache entries, never hydrated
   config/                    # per-atom effective config (generated, gitignored)
     <safe-display-id>--<resource-key>.json
   hooks/                     # dispatcher-managed hook scripts (generated, gitignored)
@@ -403,6 +440,7 @@ the URL + SHA, so the registry can vanish and everything still resolves.
     skills/                  # canonical skill sources; agents get copies
     specs/<resource-key>/    # generated, read-only spec bundles
   install.lock               # generated, gitignored
+  transactions/              # durable recovery journals (gitignored)
 .haex-hive.next-<uuid>/      # sibling transaction staging root (gitignored)
 .haex-hive.json              # the committed lockfile of pinned entries
 ```
@@ -518,6 +556,27 @@ atom applies its config to the target tool:
    target mapping is device-local and unversioned. Escape hatch only;
    preferred paths are (1) and (2).
 
+### Native-tool output contract
+
+The `contributes.nativeOutputs` manifest array is the complete declaration for
+an install-time native output. Each object has a safe component `id`, a
+validated contribution `script`, a canonical relative `staged` file path, and
+a safe logical `target` binding. The binding is resolved only in a per-device,
+unversioned `haex` target map; no committed manifest contains an absolute path
+or a home-directory expansion. The local mapping must resolve to a regular
+file beneath an operator-approved local root, not a symlink or directory.
+
+For each declaration, `haex` runs the script in an isolated staging directory
+with the pinned resource and effective config mounted read-only. It exposes
+`HAEX_STAGE_ROOT`, `HAEX_CONFIG_PATH`, and a read-only JSON file listing only
+that resource's declared output ids, staged paths, and logical targets. The
+script may write only `$HAEX_STAGE_ROOT/<staged>` for a listed declaration.
+Before commit, `haex` validates the staged paths, rejects undeclared files, and
+enumerates every target and backup from the declarations before applying them
+through the journalled transaction. The isolated runner has no write access to
+live workspace, agent, cache, or external target paths, so an undeclared side
+effect fails rather than bypassing the transaction.
+
 **Line of responsibility.** Consumer declares intent; atom author is
 responsible for making that intent land wherever the tool actually
 looks. If an atom can't wire a config key to anything real, it
@@ -627,9 +686,10 @@ stays as historical record.
 ### Spec-005 (`haex init`)
 
 Its `--pin-constitution` flag writes a validated `source: "self"` concrete
-entry directly; it does not call `haex add`. Resolution remains the existing
-local `git show <sha>:<path>` contract, including SHA and path validation. A
-patch-scope change; no rewrite.
+entry directly; it does not call `haex add`. The v2 resolver follows the
+manifest-to-contribution read described above; a legacy file pin retains direct
+`git show <sha>:<path>`, including SHA and path validation. A patch-scope
+change; no rewrite.
 
 ### Constitution — location & shape
 
@@ -647,11 +707,18 @@ Migration is explicit and reviewable: `haex migrate constitution
 the directory manifest and `type: constitution`, then proposes the single
 `.haex-hive.json` diff replacing `repository`/`role` with
 `source`/`as`, and the old file path with the manifest directory path. The
-human reviews and commits that pin change before installation. Existing
-consumers retain their old SHA until they perform this migration; no command
-silently upgrades a pin. The release after the documented transition window
-removes the legacy schema branch and `spec-resolve` support, making legacy
-entries a validation error before hydration.
+human reviews and commits that pin change before installation. If the legacy
+`.specify/memory/constitution.md` is not in `install.lock`, migration may
+adopt it only in that immediate transaction: it must be a regular file whose
+bytes exactly match `git show <old-sha>:<old-path>`. A mismatch, symlink, or
+missing old pin fails and requires the operator to back up or remove the file;
+no ordinary install adopts unmanaged content. The verified adoption is recorded
+in the transaction journal and replaced by normal lock ownership only after a
+successful commit. Existing consumers retain their old SHA until they perform
+this migration; no command silently upgrades a pin. The release after the
+documented transition window removes the legacy schema branch and
+`spec-resolve` support, making legacy entries a validation error before
+hydration.
 
 **Constitution amendment**: **minor version bump (→ 1.3.0)**.
 Principles I–VIII unchanged. Principle IV's `path` semantics expand
