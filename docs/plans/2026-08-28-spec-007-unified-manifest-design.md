@@ -54,6 +54,27 @@ its successors as currently planned:
   convention. No central lookup catches collisions.
 - **Windows-native GUI installer**. Distribution is pip-installable for
   v1. Native single-file binaries are Post-MVP (Option C for v2).
+- **Publisher install-time native/build outputs**. PR #8 sketched an
+  `on-install.sh` style publisher hook that produces native
+  build-artifacts during `haex install`. Spec 007 drops that surface
+  and does not restore it in Spec 008/009/010. Only the deterministic
+  hydration paths defined by D2/D13 (constitution merge, `contributes.*`
+  file/glob copies with Jinja2 rendering) are permitted producers of
+  `.haex-hive/` bytes. Any future spec that re-introduces publisher
+  install-time execution MUST specify, before landing: (a) an isolated
+  staging root per hook (never a target-adjacent temp file);
+  (b) target-path identity checks (device+inode) both before opening
+  and after reading each declared output, plus no-follow reads;
+  (c) explicit post-execution validation that every declared output
+  exists and is a regular file (no missing outputs, no untyped outputs);
+  (d) sealed byte snapshots (hash under the install lock; do not
+  re-read from the target after sealing); (e) the network-isolation
+  stance (offline-by-default is the working assumption, but the
+  operator's trust model needs an explicit answer, not silence);
+  (f) allow-missing-target semantics on first install (the target
+  path does not yet exist and MUST NOT be a precondition); (g)
+  `install.lock` computed after every such output is sealed, so the
+  lockfile hash covers the final bytes.
 
 ## Relationship to PR #8
 
@@ -149,6 +170,20 @@ for configuration ownership, lockfile entry, storage, and generated output;
 the shadowed provider is not hydrated or recorded as X. Any other ambiguous
 profile/direct combination is rejected rather than silently choosing a
 source.
+
+**Canonical `source` normalization**: before de-duplication, cache-key
+derivation, profile expansion, or any network access, `haex add`, `haex
+install`, and `haex verify` normalize every `source` URL identically. The
+normalization: (1) lowercase the scheme and host; (2) strip a single trailing
+`.git` suffix from the path; (3) strip trailing `/` from the path; (4) reject
+any URL that carries userinfo (a `user[:token]@host` component) with the
+error `source URL must not embed credentials; use SSH or a Git credential
+helper`; (5) reject any non-`https`, non-`ssh`, or non-`git` scheme. The
+normalized URL is what appears in `.haex-hive.json`, `install.lock`, and
+`(source, full revision, atom-id)` collision keys. Consumer-supplied
+credentials never round-trip through the manifest, and rejection precedes
+every cache lookup, git clone, and profile-expansion step (including
+transitive `includes[]` from profile atoms).
 
 **Consequence**: existing example IDs from PR #8 (`haex-hive-constitution`,
 `graphify-integration`, `haex-personal`) must be renamed before Spec 007
@@ -391,6 +426,27 @@ repo mapping `com.github.haexmas.haex-hive.constitution` to
 directory; it in turn declares `constitution.md` as the contributed file.
 Landing this manifest is part of Spec 007's implementation.
 
+**v2 `spec-resolve` contract**: Spec 004's `spec-resolve` operator resolves a
+single pinned file. In the v2 model, the resolver is a two-step lookup at the
+pinned `source_sha`:
+
+1. `git show <sha>:<publisher-manifest-path>` (the repo-root `manifest.json`),
+   parse it, and take `atoms[<atom-id>].path` as the atom directory.
+2. `git show <sha>:<atom-dir>/manifest.json`, parse it, and read the target
+   file path from the requested contribution member (`contributes.constitution`
+   for constitution atoms, `contributes.spec` for spec atoms, etc.).
+3. `git show <sha>:<atom-dir>/<contributes.constitution|spec>` returns the
+   resolved bytes.
+
+The resolver never dereferences any path outside `<atom-dir>` at that SHA,
+never follows symlinks, and applies the D15 traversal-refusal rules
+(`.`/`..`/absolute/`glob` metacharacters in the resolved contribution path
+are refused). Spec 004's contract file
+(`specs/004-cross-repo-refs/contracts/spec-resolve.cli.md`) is updated in
+lockstep with Spec 007 to describe this two-step lookup and to point at
+`manifest.json` as the entry-point instead of the historic direct-file
+`path`.
+
 ### D12. Consumer entry shape: uniform `includes[]`
 
 Every consumer entry has the same JSON shape:
@@ -599,6 +655,17 @@ break at v2 boundary. Migration path (D10) is invoked as `haex migrate` and
 documents the renamed command in its output; `haex-init migrate` is not a
 supported alias.
 
+**Ownership semantics for profile-included atoms**: `haex remove <atom-id>`
+and `haex update <atom-id>` operate only on `.haex-hive.json` top-level
+`atoms[]` entries. If `<atom-id>` is not present as a direct entry (i.e.,
+it is only reachable transitively through a profile atom's `includes`), the
+command refuses with `atom <id> is provided by profile <profile-id>; edit or
+remove <profile-id> instead`. `haex list` prints every resolved atom-ID and,
+for atoms visible only through a profile, appends ` (via <profile-id>)` so
+the ownership chain is auditable without hidden state. This applies before
+D14's shadowing rule: shadowing only takes effect once the operator has
+added an explicit direct entry.
+
 ## Consolidated model
 
 ### Consumer `.haex-hive.json` v2
@@ -787,6 +854,60 @@ store admin, publisher-side hydration of blueprint atoms. Those are Spec
 - `haex store prune`, `haex store status`
 - `haex add`, `haex update`, `haex remove` verbs
 
+**Install-transaction requirements (Spec 008 MUST specify)**. The following
+rules are load-bearing for correctness under concurrency and interruption and
+are non-negotiable for the Spec 008 landing:
+
+- **Repository lock ordering**. Acquire an exclusive advisory lock at
+  `.haex-hive/install.mutex` (or per-OS equivalent) **before** reading
+  `.haex-hive.json`, cloning, resolving, or building the install plan. Hold
+  it through recovery, staging, commit, rollback, and cleanup. Concurrent
+  invocations wait or fail with the lock owner's PID, hostname, and start
+  time. `haex verify` acquires a shared/read lock so a concurrent install
+  cannot present it a torn view.
+- **Journal + startup recovery**. Every filesystem mutation step is recorded
+  in a `.haex-hive/install.journal` before it is executed, and the next
+  `haex install` (or `haex verify --recover`) replays or rolls back an
+  incomplete journal before any new plan is built. Journal state
+  transitions fsync the journal file and its parent directory before
+  advancing.
+- **Sibling staging root + atomic swap**. All new bytes are written to a
+  staging root next to the target (same filesystem), fsynced, and moved
+  into place through `rename(2)` (POSIX) or the platform-atomic equivalent
+  (`ReplaceFile`/`MoveFileEx` on Windows). Directories are fsynced after
+  the swap.
+- **Stable staged-input reads through commit**. `.haex-hive.json`, every
+  publisher manifest, and every atom manifest read during plan-build is
+  copied into the staging root under the lock and re-hashed at commit
+  time. If any input digest changed since plan-build, the install aborts
+  before publishing outputs.
+- **Every side effect through the transaction**. The following outputs
+  MUST be produced through the same staging-root+journal transaction:
+  `.haex-hive/constitution.md` (D2), `.haex-hive/config/<atom-id>.json`
+  (D7), every file under `.haex-hive/generated/`, and any device-local
+  agent-facing copy under `.claude/`, `.codex/`, etc. that Spec 010's
+  adapters emit. `install.lock` is written last, after every other output
+  in the transaction has been sealed (including any deferred publisher-hook
+  outputs — see the "Publisher install-time outputs" clarifier below).
+- **Delete-orphans in-transaction**. The plan computes the delta between
+  the previous `install.lock` output set and the current planned output
+  set. Files owned by removed resources are staged for deletion through
+  the same transaction as new outputs; a partial state where deleted
+  files reappear after rollback (or new files persist after rollback)
+  is not allowed.
+- **`install.lock` computed last**. The lockfile records
+  `generated_content_integrity` and every `atoms[].content_integrity`
+  over the final sealed bytes actually swapped into place. Its own
+  fsync and swap are the final journal step. Any output that could
+  still mutate (native-tool outputs when they return — see the
+  Non-Goals clarifier) is sealed before `install.lock` is computed.
+
+Spec 008's conformance suite MUST cover: concurrent `haex install`
+invocations (one wins, the other waits or fails with owner detail), crash
+recovery from every journal state, mid-install `.haex-hive.json` mutation
+(aborted at commit-time re-hash), and rollback of a partially-applied
+delete-orphans plan.
+
 ### Spec 009 — Hook dispatcher (Python-only)
 
 - `haex hook run <trigger>` (D1)
@@ -795,6 +916,34 @@ store admin, publisher-side hydration of blueprint atoms. Those are Spec
 - Hook error semantics (fail-fast vs. warn-continue — TBD)
 - Timeout/env-isolation contract
 - Consumer-side hook install (git-hooks wiring, pre-commit dispatcher)
+
+**Hook-boundary requirements (Spec 009 MUST specify)**. `haex hook run`
+is the sole consumer-side execution surface for publisher-authored code
+and is therefore load-bearing for the operator's trust model:
+
+- **Filesystem cwd + allowlist**. The subprocess cwd is the consumer repo
+  root. A hook's readable and writable paths are enumerated in the
+  dispatcher contract; at minimum, reads are restricted to the consumer
+  repo tree and `.haex-hive/generated/`, writes to a per-invocation
+  scratch directory. Attempts outside the allowlist are refused, not
+  silently allowed.
+- **Environment isolation**. The subprocess starts from an explicit
+  allow-list of environment variables (`PATH`, `HOME`, `LANG`, plus a
+  named `HAEX_HOOK_*` set); the caller's other environment does not
+  leak in, and the hook cannot read the operator's shell state.
+- **Process-group reaping**. The dispatcher runs each hook in its own
+  process group (`setsid` / `CREATE_NEW_PROCESS_GROUP`), enforces the
+  timeout by killing the group, and reaps every descendant before
+  returning. A hook cannot leave stray processes behind after failure.
+- **No-follow reads of hook outputs**. When a hook writes to a
+  pre-declared output path, the dispatcher reads it back through
+  no-follow file handles (`O_NOFOLLOW` on POSIX, equivalent on
+  Windows), verifies the target's device+inode identity both before
+  and after the read, and rejects the result if identity changed
+  during the read. This is the TOCTOU-closure rule.
+- **Timeout contract**. Every trigger declares a max wall-clock
+  duration; exceeding it kills the hook's process group and marks the
+  invocation as failed. No hook can hang the dispatcher indefinitely.
 
 ### Spec 010 — Publisher manifest contract + Blueprint atoms
 
@@ -900,6 +1049,17 @@ unavailable, a pin cannot be expanded to a full SHA, or the required v2
 publisher manifest is absent, migration refuses with the relevant entry index
 and leaves the original file untouched; it also removes any temporary or
 previous migration sidecar as required by D10.
+
+**Adoption of an unmanaged legacy output**: if a pre-existing
+`.specify/memory/constitution.md` (or any other file that v2 hydration would
+own under `.haex-hive/`) is present in the working tree before migration,
+`haex migrate` MUST NOT silently claim ownership. It reads the resolved v1
+constitution bytes at the pinned SHA, compares them byte-for-byte to the
+unmanaged file, and only records the file as adopted when the two are
+identical (after LF normalization). On mismatch it refuses with `unmanaged
+<path> differs from resolved v1 <role>; move or delete the file, or restate
+the v1 pin`, and leaves the original tree untouched. The same rule applies
+to every other role the v1 file names.
 
 Output written to `.haex-hive.json.migrated`. User reviews, moves manually,
 commits. `haex install` on the v2 file then reconciles.
