@@ -439,9 +439,16 @@ modifying `.haex-hive.json` (SHA bump, added source, etc.). Steps:
    validate the schema. A lock holder rereads the config hash immediately
    before publication and aborts if an operator edit changed it.
 2. For each `external-harness` entry:
-   a. Ensure `$HAEX_HIVE_STATE/repos/<name>/` exists (clone if missing).
-   b. `git fetch origin` to ensure pinned revision is reachable.
-   c. Refuse loudly if pinned revision is not reachable.
+   a. Acquire a producer-scoped exclusive lock at
+      `$HAEX_HIVE_STATE/locks/repos/<sha256(repository-identity)>.lock`
+      **before** checking for the shared clone. Hold it while creating or
+      opening `$HAEX_HIVE_STATE/repos/<name>/`, verifying its origin,
+      fetching, and creating/validating that producer's extracts.
+   b. Ensure `$HAEX_HIVE_STATE/repos/<name>/` exists (clone if missing)
+      and verify `remote.origin.url`.
+   c. `git fetch origin` to ensure pinned revision is reachable.
+   d. Refuse loudly if pinned revision is not reachable, then release
+      the producer lock after this source's extract work completes.
 3. Preflight every expanded item: validate the complete key set, source
    URL/name mapping, and pinned-tree paths before publishing any
    consumer-visible state. Explicit items must be regular files;
@@ -543,11 +550,19 @@ pinned revision, selected repo-relative file path, and resulting key
 must match the stored table exactly. It then validates every `resolved`
 value: the target must exist, be a regular non-symlink file, and resolve
 beneath the active state root. Reused extracts are byte-checked against
-the corresponding pinned Git-tree blob; a mismatch is rebuilt through
-the atomic extraction path or makes the operation fail. A missing,
-out-of-root, stale-root, unexpected, or otherwise invalid target is
-reported as stale (never fresh) and requires sync/regeneration; matching
-only the config hash is insufficient.
+the corresponding pinned Git-tree blob.
+
+`haex-init sync` is the sole operator-facing stale-state recovery
+command. `status` only reports `STALE` and never writes. For a missing,
+out-of-root, stale-root, symlink/non-regular, unexpected, or
+mapping-mismatched target, `sync` recreates the complete expected table
+and atomically rebuilds each missing or invalid extract from its pinned
+blob. For an extract whose bytes differ from its pinned blob, `sync`
+atomically replaces that extract before publishing the new table. If the
+pin cannot be read, validation fails, or any rebuild fails, `sync` exits
+non-zero and preserves the prior local-state table. Thus none of these
+states is reported fresh, and matching only the config hash is
+insufficient.
 
 ### Constitution selection at session start
 
@@ -669,6 +684,9 @@ under `tests/multi-spec-external-ref/`:
   resolved table
 - `test-concurrent-sha-bump.sh` — an older sync held at pre-publication
   cannot replace local state after a newer config SHA is written
+- `test-concurrent-consumer-sync.sh` — two consumers sharing one
+  producer serialize clone creation, origin verification, fetch, and
+  extract access through the producer-scoped lock
 - `test-legacy-cache-compatibility.sh` — a pre-existing
   `$XDG_CACHE_HOME/haex-hive/repos/` fixture still resolves raw bytes,
   discovers `specs/*/spec-ref.json`, and preserves `prefetch --dry-run`
@@ -678,8 +696,9 @@ under `tests/multi-spec-external-ref/`:
   a second top-level constitution is rejected
 - `test-local-state-freshness.sh` — changing the state root, removing a
   target, or replacing it with an out-of-root/symlink target makes the
-  table stale rather than fresh; a changed producer/revision/path/key or
-  modified extract is also rebuilt or rejected against its pinned blob
+  table stale rather than fresh; `status` does not write, while `sync`
+  rebuilds all recoverable expected targets and preserves the previous
+  table if a pin or rebuild fails
 - `test-sha-bump-clean.sh` — US3 happy path
 - `test-sha-bump-rename-refuses.sh` — D9 fail-loud on rename
 - `test-add-source-fresh.sh` — US4 from-scratch mode
