@@ -415,11 +415,19 @@ the URL + SHA, so the registry can vanish and everything still resolves.
    display ids, canonical source/path, SHAs, effective-config hashes, and
    staged-output target maps and hashes). The lockfile omits completed stale
    outputs, while the journal retains their recovery backup until commit.
-8. **Prepare and commit one transaction.** Before any new work, `haex` reads
-   a durable, fsynced journal under `.haex-hive/transactions/`. If a prior
-   commit was interrupted, recovery inspects its recorded targets and backups:
-   a fully swapped set is completed by finalising it; any partial set is
-   restored from backups. Ambiguous state fails closed for operator recovery.
+8. **Prepare and commit one transaction.** Before journal recovery or any
+   input/output mutation, `haex install`, `update`, `add`, and `remove` acquire
+   the repository-scoped exclusive advisory lock at
+   `.haex-hive/transactions/install.mutex`. The invocation holds its open lock
+   handle through recovery, staging, commit, rollback, and journal cleanup;
+   it records PID and start time only for diagnostics, never as a stale-lock
+   override. The operating system releases the handle on process exit. A
+   waiting invocation reports the current owner and honours an explicit timeout
+   rather than operating concurrently. Once locked, `haex` reads a durable,
+   fsynced journal under `.haex-hive/transactions/`. If a prior commit was
+   interrupted, recovery inspects its recorded targets and backups: a fully
+   swapped set is completed by finalising it; any partial set is restored from
+   backups. Ambiguous state fails closed for operator recovery.
    `on-install` is not allowed to mutate a live target directly. It produces
    declared native-tool files in a staging root; `haex` records a backup for
    every managed workspace, agent skill, and external configuration target,
@@ -436,7 +444,8 @@ the URL + SHA, so the registry can vanish and everything still resolves.
    effects; such a hook is rejected. Thus the cache survives while generated
    state, agent copies, native targets, and removed outputs recover to one
    complete transaction state. Spec-008 includes crash-injection acceptance
-   tests at each pre/post-swap and stale-deletion journal boundary.
+   tests at each pre/post-swap and stale-deletion journal boundary, plus a
+   concurrent-install test with an injected swap delay proving serialization.
 9. **Diff `.haex-hive.json`** (if `haex add`, migration, or `haex update` was the
    caller): the tool leaves the diff staged but the human commits.
    Principle VI applies.
@@ -458,6 +467,7 @@ the URL + SHA, so the registry can vanish and everything still resolves.
     specs/<resource-key>/    # generated, read-only spec bundles
   install.lock               # generated, gitignored
   transactions/              # durable recovery journals (gitignored)
+    install.mutex            # repository-scoped advisory install lock
 .haex-hive.next-<uuid>/      # sibling transaction staging root (gitignored)
   outputs/<resource-key>/    # staged target files; never written live first
 .haex-hive.json              # the committed lockfile of pinned entries
@@ -617,12 +627,20 @@ outputs must be declared regular files beneath the stage root, and any symlink,
 directory in place of a file, or undeclared file fails. Every
 `nativeOutputs[].staged` declaration must resolve to exactly one such regular
 file; a hook that omits a declared output fails before target mapping or
-transaction preparation. It enumerates every target, backup, parent-directory
-creation, and stale deletion from the target map before applying them through
-the journalled transaction. Spec-009 includes acceptance tests for denied
-writes outside the stage root, denied default network access, staged-symlink
-rejection, a missing declared output, an absent first-install target, rollback
-of its created parents, and concurrent parent replacement by a symlink.
+transaction preparation. After the hook exits, the sandbox adapter terminates
+and reaps its process group/job before validation. `haex` then opens every
+declared file through a no-follow, stage-root-relative handle; verifies its
+identity before and after reading; and copies its bytes into a fsynced sealed
+transaction output. Hashes, `install.lock` records, and target copies are made
+only from that sealed handle/copy, never by reopening the hook-writable path.
+It enumerates every target, backup, parent-directory creation, and stale
+deletion from the target map before applying them through the journalled
+transaction. Spec-009 includes acceptance tests for denied writes outside the
+stage root, denied default network access, staged-symlink rejection, a missing
+declared output, an absent first-install target, rollback of its created
+parents, concurrent parent replacement by a symlink, and bounded replacement
+of a hook output after validation; the latter must not alter sealed or copied
+bytes.
 
 **Line of responsibility.** Consumer declares intent; atom author is
 responsible for making that intent land wherever the tool actually
