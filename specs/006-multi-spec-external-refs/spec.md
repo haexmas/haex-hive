@@ -8,6 +8,14 @@ in [`docs/plans/2026-08-28-spec-006-multi-spec-external-refs-design.md`](../../d
 Builds on Spec 004 (single-item cross-repo references) and Spec 005
 (`haex-init` CLI). Closes Phase 1 of the roadmap.
 
+## Clarifications
+
+### Session 2026-08-28
+
+- Q: Welches Exit-Code-Schema soll `haex-init sync` nutzen? → A: Spec 005's 0–4 Schema wiederverwenden, semantisch für Sync-Fälle interpretiert. Kein neues Schema. Granulare Programmatic-Differenzierung kommt erst bei realer Anforderung (nicht spekulativ).
+- Q: Welche Grammatik gilt für den `as:`-Alias in `items[]`? → A: Kebab-case ASCII slug `[a-z0-9][a-z0-9-]*` — kleinbuchstaben, ziffern, bindestriche; muss mit Buchstaben/Ziffer beginnen. Kein `path:`, kein `:`, kein `/`, kein Unicode, kein Whitespace. Case-Fold-Konflikte über Filesystems hinweg werden per Konstruktion vermieden.
+- Q: Welche Permission-Policy soll `haex-init sync` für den Extract-Subtree auf Unix-Systems anwenden? → A: Owner-only (`0700` Directories, `0600` Files). Content aus privaten Producer-Repos leaked so nicht an andere lokale User auf demselben System, ohne dass der Operator etwas konfigurieren muss. Windows-Semantik: äquivalente ACL-Restriktion (nur der aktuelle User hat Read/Write) oder der Default falls ACL-Setting nicht portable.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — Fresh consumer inherits Constitution from a producer (Priority: P1) 🎯 MVP
@@ -266,7 +274,14 @@ the copied entry, and a subsequent `haex-init sync` succeeds.
 - **FR-006**: An `external-harness` entry's `items[]` MUST require
   every explicit item to carry an `as: "<alias>"` field, forming the
   stable consumer-facing key `<name>:<alias>`. The alias grammar
-  MUST exclude the reserved prefix `path:`.
+  MUST match the regular expression `^[a-z0-9][a-z0-9-]*$` (ASCII
+  kebab-case slug: lowercase letters, digits, and hyphens; first
+  character alphanumeric). This grammar is strictly a subset of what
+  is safe in any path component or JSON key on Linux, macOS, and
+  Windows, and eliminates case-fold ambiguity across
+  case-insensitive filesystems. The reserved prefix `path:` cannot
+  form under this grammar (colon excluded), so no additional
+  reserved-word exclusion is needed.
 - **FR-007**: An entry's `repository` field MUST reject HTTPS URLs
   that carry embedded userinfo (username, password, or token) before
   writing the config, so that no credential material enters
@@ -377,6 +392,18 @@ the copied entry, and a subsequent `haex-init sync` succeeds.
   extract paths) without touching disk beyond read operations, and
   MUST exit with an exit code discriminating between "nothing to do"
   and "action would be taken".
+- **FR-027a**: `haex-init sync` MUST use the same exit-code scheme as
+  the parent `haex-init` CLI (established in Spec 005): **0** =
+  success (everything applied cleanly, or `--dry-run` had no pending
+  actions); **1** = `--dry-run` found pending actions; **2** =
+  refused (bad CLI, malformed marker block, schema-invalid config,
+  or preconditions unmet — includes FR-026 cases b, c, d, e, f, g);
+  **3** = external-ref verification failed (FR-026 case a: pinned
+  revision unreachable, or any auth/reachability failure per FR-037);
+  **4** = git subprocess failed unexpectedly. The structured
+  diagnostic on stderr identifies the specific sub-case within the
+  code. No sub-command-specific exit codes are introduced; `sync`
+  reuses `haex-init`'s established contract.
 
 #### `haex-init add-source` command
 
@@ -441,6 +468,23 @@ the copied entry, and a subsequent `haex-init sync` succeeds.
   operator's likely remediation (SSH key configuration, credential
   manager state, network / VPN). The system MUST NOT attempt any
   automated credential provisioning.
+
+#### File permissions and privacy
+
+- **FR-038**: On Unix-like systems (Linux, macOS, WSL2), `haex-init
+  sync` MUST create the device-local state area root, per-producer
+  clone directories, and every extract file with owner-only
+  permissions: `0700` for directories, `0600` for regular files.
+  This prevents content extracted from private producer repositories
+  from being readable by other local users on the same machine
+  without any operator configuration. On native Windows (out of the
+  Spec 006 mechanical target but supported in principle), the
+  equivalent posture is an ACL granting read/write only to the
+  current user; where a portable equivalent is not available, the
+  system MUST fall back to the platform default and MUST NOT fail
+  the sync on that basis. Existing directories and files whose
+  permissions are already tighter than the required minimum MUST be
+  left unchanged.
 
 ### Key Entities *(include if feature involves data)*
 

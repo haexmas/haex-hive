@@ -33,4 +33,8 @@
 
 - Items marked incomplete require spec updates before `/speckit.clarify` or `/speckit.plan`
 - **Validation iteration 1 (2026-08-28)**: All items pass on first pass. Spec is derived from a 608→810-line design doc that already resolved every major clarification during the brainstorming session, so `[NEEDS CLARIFICATION]` markers were unnecessary.
-- **Notes for the sharpening phase (`/speckit-clarify`)**: The design doc identifies a small set of underspecified detail-level questions that may surface in clarify — JSON Schema field-level required/optional split for `external-harness`; exact ref-name grammar beyond `<name>:<alias>`; precise `haex-init sync` exit codes (align with Spec 005's 0–4 scheme). These are detail-level and do not block planning if clarify does not exercise them.
+- **`/speckit-clarify` session (2026-08-28)**: three questions asked and answered; all three integrated into the spec. Sections touched: Clarifications (added), FR-006 (alias grammar sharpened), FR-027a (added, exit-code scheme), FR-038 (added, file permissions).
+  1. **Exit codes**: `haex-init sync` reuses the parent CLI's 0–4 scheme from Spec 005; no sync-specific codes. FR-027a.
+  2. **Alias grammar**: `^[a-z0-9][a-z0-9-]*$` ASCII kebab-case slug — subset-safe across all filesystems, case-fold-agnostic. FR-006.
+  3. **File permissions**: owner-only (`0700`/`0600`) on Unix-like; ACL equivalent on Windows with fallback to platform default. FR-038.
+- **Detail-level items deferred to `/speckit-plan`** (do not block planning): JSON Schema field-level required/optional split for `external-harness`; exact glob-syntax choice for `additional_include`; Constitution multi-source label format for session-start emission.
