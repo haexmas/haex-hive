@@ -179,6 +179,28 @@ agent unfiltered — which is every cross-tool handoff in this system.
 - Design decisions that materially affect any of the 7 principles above MUST be
   captured as ADRs under `docs/adr/`, not left in commit messages or chat
   history.
+- All work on this repo lands on `main` through a pull request. `main` is
+  branch-protected; direct commits and pushes to `main` are rejected by the
+  remote. Work happens on a topic branch (`<type>/<short-slug>`, e.g.
+  `feat/haex-init-fetch-latest`, `docs/roadmap-refresh`) and is merged via
+  `gh pr create --base main --head <branch>`. Docs-only changes are not
+  exempt.
+- Pull requests MUST be merged with **rebase-merge** (preferred) or
+  **merge-commit**. Squash-merge is forbidden because it collapses the
+  per-commit Conventional-Commits messages into a single auto-composed
+  message and destroys the type information that changelog and version-bump
+  tooling reads. Rebase is the default for its linear history; merge-commit
+  is a legitimate choice when PR-boundary visibility in `git log --graph` is
+  wanted for a specific PR.
+- All commit messages MUST follow **Conventional Commits v1.0.0**
+  (https://www.conventionalcommits.org/en/v1.0.0/): header shape
+  `<type>[optional scope][!]: <description>`, optional body, optional
+  footer(s). Breaking changes MUST be marked with `!` before the colon (e.g.
+  `feat(api)!: ...`) and SHOULD include a `BREAKING CHANGE:` footer
+  explaining what breaks and how to migrate. The spec's standard types
+  apply: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `perf`,
+  `build`, `ci`, `style`, `revert`. No custom `break:` type — breakage is an
+  orthogonal marker, not a type.
 
 ## Governance
 
@@ -197,4 +219,4 @@ agent unfiltered — which is every cross-tool handoff in this system.
   Phase 7) validates that no committed file violates Principles I, II, or IV
   mechanically.
 
-**Version**: 1.1.1 | **Ratified**: 2026-08-26 | **Last Amended**: 2026-08-27
+**Version**: 1.2.0 | **Ratified**: 2026-08-26 | **Last Amended**: 2026-08-28
