@@ -258,7 +258,7 @@ EMBEDDED_SCHEMA_JSON = """{
         {
           "type": "string",
           "description": "URL with accepted scheme: https://, ssh://, or SCP-style user@host:path.",
-          "pattern": "^(https://|ssh://|[^/@:\\\\s]+@[^/@:\\\\s]+:).+"
+          "pattern": "^(https://|ssh://|[^/@:\\\\s]+@[^/@:\\\\s]+:).+$"
         }
       ]
     }
@@ -2206,7 +2206,7 @@ def prompt_external_ref(*, allow_network: bool = True) -> dict:
                 file=sys.stderr,
             )
     sha = _prompt_field(
-        "SHA (7-40 lowercase hex)",
+        "SHA (40 lowercase hex)",
         validator=validate_external_sha,
         default=default_sha,
     )
@@ -2666,7 +2666,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--constitution-sha",
         default=None,
-        help="External-ref: 7-40 lowercase hex SHA to pin.",
+        help="External-ref: 40 lowercase hex SHA to pin.",
     )
     p.add_argument(
         "--constitution-path",

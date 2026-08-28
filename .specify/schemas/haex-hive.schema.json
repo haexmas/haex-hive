@@ -110,7 +110,7 @@
         {
           "type": "string",
           "description": "URL with accepted scheme: https://, ssh://, or SCP-style user@host:path.",
-          "pattern": "^(https://|ssh://|[^/@:\\s]+@[^/@:\\s]+:).+"
+          "pattern": "^(https://|ssh://|[^/@:\\s]+@[^/@:\\s]+:).+$"
         }
       ]
     }

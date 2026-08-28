@@ -188,7 +188,7 @@ Choose [1/2]: 2
 External repository URL: https://example.gitlab.com/team/specs.git
 Fetch latest HEAD SHA from remote? [y/N]: y
   ls-remote HEAD → 4c8e9a2f1b3d6e0a … (offering)
-SHA (7-40 lowercase hex) [4c8e9a2f]: 4c8e9a2f
+SHA (40 lowercase hex) [4c8e9a2f1b3d6e0a2f7c9b4d8e0a1f3c5d7b9e2a]: 4c8e9a2f1b3d6e0a2f7c9b4d8e0a1f3c5d7b9e2a
 Path within repository [default: .specify/memory/constitution.md]:
 
 Verifying reference…

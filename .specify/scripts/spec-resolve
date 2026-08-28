@@ -653,7 +653,7 @@ def cmd_resolve(args: argparse.Namespace, repo_root: Path, config: dict[str, Any
             raise UsageError(f"--repository {repository!r} invalid — {reason}")
         if not is_valid_sha(sha):
             raise UsageError(
-                f"--revision {args.revision!r} does not match SHA pattern ^[0-9a-f]{{7,40}}$"
+                f"--revision {args.revision!r} does not match SHA pattern ^[0-9a-f]{{40}}$"
             )
         # Allowlist enforcement (T025).
         if find_permitting_entry(config, repository, sha, path) is None:

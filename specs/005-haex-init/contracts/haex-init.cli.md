@@ -92,7 +92,7 @@ Choose [1/2]:
 ```
 External repository URL: <input>
 Fetch latest HEAD SHA from remote? [y/N]: <input>
-SHA (7-40 lowercase hex): <input>
+SHA (40 lowercase hex): <input>
 Path within repository [default: .specify/memory/constitution.md]: <input>
 ```
 
