@@ -47,8 +47,8 @@ Explicitly out of scope for Spec 006:
 
 - **Live catalog / spec browsing from consumer.** No feature like
   "from `secure-web-frontend`, list which specs in `secana-specs` are
-  open." If the operator wants to browse, they `cd
-  ~/.haex-hive/repos/secana-specs/` or into the producer clone
+  open." If the operator wants to browse, they `cd` into the
+  device-local producer clone
   directly. Deferred to a future spec (candidate Spec 008 territory).
 - **Spec creation from the consumer landing in the producer.** No
   feature like "from `secure-web-frontend`, run `/speckit-specify`
@@ -111,12 +111,27 @@ infrastructure (like `haex-init` and `spec-resolve` inside haex-hive
 itself); they run on the operator's machine, they are not consumer-shared
 content by design.
 
-### D4. Full clone at `~/.haex-hive/repos/<name>/`
+### D4. Full clone at the device-local haex-hive state root
 
 Producer repos are cloned in full (no `--depth=1`) to
-`~/.haex-hive/repos/<producer-name>/`. This location is
-**state**, not cache — semantically distinct from `~/.cache/` (which
-OS cleanup tools may wipe).
+`$HAEX_HIVE_STATE/repos/<producer-name>/`, where
+`$HAEX_HIVE_STATE` is resolved per device outside version control. This
+location is **state**, not cache — semantically distinct from the
+platform cache location (which OS cleanup tools may wipe).
+
+`<producer-name>` is a validated storage identity, not a path supplied
+by the operator: it is exactly one non-empty platform-safe path
+component. Validation rejects a separator (`/` or `\\`), `.` or `..`, an
+absolute or Windows-drive-qualified path, and platform-reserved names
+(including `CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, and `LPT1`–`LPT9`,
+case-insensitively). The default is the repository basename after
+removing an optional `.git` suffix, and it is validated by the same
+rule. A storage identity maps to one canonical repository URL: sync
+rejects two distinct URLs with the same `name`, and, before every reuse
+or fetch, verifies that `remote.origin.url` is that URL. The same URL
+may occur in multiple entries only when their storage identities are
+unambiguous (a shared `name` reuses the verified clone; distinct names
+create distinct verified clones).
 
 Rationale:
 - Spec repos are small (secana-specs full history estimated < 50 MB)
@@ -131,12 +146,12 @@ tree is **NOT** what consumers read — they read via extracts (see D5).
 
 ### D5. Content-addressed extracts per pinned SHA
 
-Under `~/.haex-hive/repos/<name>/.extracts/@<sha>/…`, `spec-resolve`
+Under `$HAEX_HIVE_STATE/repos/<name>/.extracts/@<sha>/…`, `spec-resolve`
 writes the extracted file content for pinned SHAs on first access.
 Subsequent reads follow the stable filesystem path. Structure:
 
 ```
-~/.haex-hive/repos/secana-specs/
+$HAEX_HIVE_STATE/repos/secana-specs/
 ├── .git/                              # full history
 ├── .specify/…                          # working tree at HEAD (browse only)
 ├── specs/…
@@ -155,8 +170,12 @@ subtree.
 
 ### D6. Path-Return via `.haex-hive.local.json` (device-local, gitignored)
 
-`spec-resolve resolve <ref>` returns absolute filesystem paths into
-`~/.haex-hive/repos/<name>/.extracts/@<sha>/…`.
+The new extract/path-resolution API used by `haex-init sync` returns
+absolute filesystem paths into
+`$HAEX_HIVE_STATE/repos/<name>/.extracts/@<sha>/…`. The existing
+`spec-resolve resolve` command is deliberately **not** that API: it
+continues to return the requested file's raw bytes unchanged (see the
+compatibility contract below).
 
 The consumer repo has a device-local `.haex-hive.local.json`
 (gitignored), populated by `haex-init sync`, which maps consumer-facing
@@ -168,9 +187,9 @@ refs (aliases) to those absolute paths:
   "generated_at": "2026-08-28T14:23:00Z",
   "device": "haex-linux-desktop",
   "resolved": {
-    "secana-specs:constitution": "/home/haex/.haex-hive/repos/secana-specs/.extracts/@b2f8841.../.specify/memory/constitution.md",
-    "secana-specs:plan-review-workflow": "/home/haex/.haex-hive/repos/secana-specs/.extracts/@b2f8841.../.specify/workflows/plan-review.md",
-    "secana-specs:harness-evaluator": "/home/haex/.haex-hive/repos/secana-specs/.extracts/@b2f8841.../tools/harness-evaluator/"
+    "secana-specs:constitution": "<device-local-absolute-state-root>/repos/secana-specs/.extracts/@b2f8841.../.specify/memory/constitution.md",
+    "secana-specs:plan-review-workflow": "<device-local-absolute-state-root>/repos/secana-specs/.extracts/@b2f8841.../.specify/workflows/plan-review.md",
+    "secana-specs:harness-evaluator": "<device-local-absolute-state-root>/repos/secana-specs/.extracts/@b2f8841.../tools/harness-evaluator/"
   }
 }
 ```
@@ -216,10 +235,11 @@ sync` refuses to overwrite `.haex-hive.local.json` and prints:
 For `auto_include` (glob-based), renames are absorbed transparently —
 new SHA's file listing is the new set, no config action required.
 
-Best-practice: consumer-side wiring uses `as: "<alias>"` on explicit
-items. Consumer code references the alias (`secana-specs:plan-review`),
-NOT the raw path. When the producer renames, the operator updates
-`path:` once; the alias stays and downstream code is unaffected.
+Every explicit item MUST declare `as: "<alias>"`; it is not optional.
+Consumer code references the resulting key
+(`secana-specs:plan-review`), NOT the raw path. When the producer
+renames, the operator updates `path:` once; the alias stays and
+downstream code is unaffected.
 
 ### D10. Auth failures surface with actionable errors
 
@@ -241,12 +261,27 @@ alongside the success paths.
 ### JSON Schema outline
 
 The `harness_sources[]` entry evolves to a discriminated shape by
-`role`:
+`role` while retaining every Spec-004 entry shape:
 
 - **`role: "constitution"`** — the Spec 004 single-item shape;
   backwards-compatible. Still valid.
 - **`role: "external-harness"`** — new. Multi-item container per
   producer repo (see below).
+- **No `role` (permission-only)** — still a permission scope, not a
+  concrete item. The existing repository-only, repository + revision,
+  and repository + revision + non-empty `paths[]` forms remain valid;
+  their existing `repository: "self"` prohibition remains in force.
+  An empty `harness_sources` array remains an explicit opt-in that
+  grants no permission at all. Spec 006 must extend the schema and
+  targeted validator additively, so these role-less entries neither
+  acquire extracts nor lose their allowlist effect.
+
+Validation first selects the entry shape. A role-less entry permits
+only according to its existing scope; a `constitution` entry remains a
+self-permitting concrete pointer; an `external-harness` entry permits
+only the concrete items it expands. `external-harness` fields
+(`name`, includes, and `items`) are forbidden on the two legacy shapes,
+and legacy fields (`path`/`paths`) are forbidden on its container.
 
 ### `role: "external-harness"` entry
 
@@ -277,30 +312,54 @@ The `harness_sources[]` entry evolves to a discriminated shape by
 
 Field semantics:
 
-- **`repository`**: git remote URL (SSH or HTTPS). Determines the
-  clone target under `~/.haex-hive/repos/<name>/`.
+- **`repository`**: credential-free git remote URL (SSH or HTTPS).
+  HTTPS URLs containing userinfo — including a username, password, or
+  token — are rejected before `add-source` writes config; credential-free
+  SSH and HTTPS are accepted. Diagnostics direct operators to SSH keys
+  or their ambient credential manager. Determines the clone target under
+  `$HAEX_HIVE_STATE/repos/<name>/`.
 - **`revision`**: full 40-character git commit SHA. Immutable per
   Principle IV.
-- **`name`**: local storage name (default: derived from repository URL
-  basename). Determines the directory name under
-  `~/.haex-hive/repos/`. Allows multiple entries for the same URL if
-  needed (rare).
+- **`name`**: local storage identity (default: derived from repository
+  URL basename). It must satisfy D4's single-component validation and
+  determines the directory under `$HAEX_HIVE_STATE/repos/`. A name cannot
+  identify two different canonical URLs; existing-clone origin is
+  verified before use.
 - **`auto_include`**: either `"speckit-defaults"` (D3 preset) or `null` /
   omitted (no auto-include, only explicit items).
 - **`additional_include`**: array of paths / globs OUTSIDE the
-  speckit-defaults set. Each entry is a directory or file path
-  relative to the producer repo root.
+  speckit-defaults set. Each entry is a repo-relative POSIX path or
+  glob, with no absolute path or `..` traversal. A literal directory,
+  or a glob that matches a directory, recursively selects its regular
+  files; a literal file selects that file. Matches are enumerated from
+  the pinned Git tree (never the working tree), sorted lexicographically
+  by repo-relative path, deduplicated across all include sources, and
+  must be non-empty. Git symlinks and non-regular entries are rejected
+  rather than followed or silently omitted. An unmatched glob or a path
+  that is absent at the pin fails sync before publication.
 - **`items`**: array of explicit item entries with individual `role`,
-  `path`, and optional `as:` alias. For content that needs a stable
+  `path`, and required `as:` alias. For content that needs a stable
   consumer-facing name.
 
 Multiple `external-harness` entries in `harness_sources[]` allowed —
 consumer can inherit from multiple producers.
 
-## Storage layout — `~/.haex-hive/`
+### Resolved keys and collision validation
+
+Every extracted item has one deterministic consumer-facing key. An
+explicit item uses `<name>:<as>`. Files expanded by `auto_include` or
+`additional_include` use `<name>:path:<repo-relative-path>`; if both
+include mechanisms select the same file it is extracted once and has
+that one key. The `as` grammar excludes the reserved `path:` prefix.
+Before extraction, sync builds the complete key set and rejects a
+duplicate explicit alias, a duplicate final key, or an alias/path-key
+collision. It never lets JSON object assignment overwrite a previous
+resolution.
+
+## Storage layout — device-local haex-hive state
 
 ```
-~/.haex-hive/
+$HAEX_HIVE_STATE/
 ├── repos/
 │   ├── secana-specs/
 │   │   ├── .git/                              # full history clone
@@ -313,8 +372,8 @@ consumer can inherit from multiple producers.
 └── (future: registry, config, etc.)
 ```
 
-`~/.haex-hive/` semantically is "haex-hive persistent state". OS
-cleanup tools targeting `~/.cache/` leave it alone. If manually
+`$HAEX_HIVE_STATE/` semantically is "haex-hive persistent state". OS
+cleanup tools targeting the platform cache leave it alone. If manually
 deleted, `haex-init sync` on next run regenerates it.
 
 ## Command surface
@@ -323,10 +382,12 @@ deleted, `haex-init sync` on next run regenerates it.
 
 Existing commands:
 
-- `spec-resolve resolve <ref>` — returns absolute path (unchanged
-  contract, now includes `.extracts/@<sha>/…` under the hood)
-- `spec-resolve prefetch` — populates the local store; extended to
-  handle multi-item entries and `auto_include`
+- `spec-resolve resolve <ref>` — continues to write raw file bytes to
+  stdout, byte-for-byte, with no path-return change
+- `spec-resolve prefetch` — continues to discover every
+  `specs/*/spec-ref.json` and report the established `OK` / `MISSING`
+  results under `--dry-run`; extended to plan concrete
+  `external-harness` items and `auto_include`
 - `spec-resolve status` — extended to summarize `.haex-hive.local.json`
   freshness (SHA of source config vs regenerated table)
 
@@ -336,6 +397,21 @@ New commands:
   `.haex-hive.json` + current extracts state. No network required.
   Called internally by `haex-init sync` after clone/fetch.
 
+#### Compatibility and storage migration
+
+The Spec-004 object cache at
+`$XDG_CACHE_HOME/haex-hive/repos/<repository-hash>/` remains the
+authoritative store for all legacy role-carrying and permission-only
+references and for discovered `specs/*/spec-ref.json` references.
+`resolve` reads it and emits raw bytes exactly as before. The new
+`$HAEX_HIVE_STATE/repos/<safe-name>/` full-clone state is used only for
+`external-harness` expansion and its extracts. Therefore upgrades are
+dual-read by construction: no existing cache is moved or invalidated,
+and a consumer with only legacy entries behaves exactly as before.
+`prefetch --dry-run` performs no migration, fetch, or write; it still
+prints the legacy `OK` / `MISSING` lines, plus planned external-harness
+items in the same deterministic order.
+
 ### `haex-init sync` (new sub-command)
 
 Called by the operator after `git clone <consumer-repo>` or after
@@ -343,16 +419,24 @@ modifying `.haex-hive.json` (SHA bump, added source, etc.). Steps:
 
 1. Read `.haex-hive.json`; validate against schema.
 2. For each `external-harness` entry:
-   a. Ensure `~/.haex-hive/repos/<name>/` exists (clone if missing).
+   a. Ensure `$HAEX_HIVE_STATE/repos/<name>/` exists (clone if missing).
    b. `git fetch origin` to ensure pinned revision is reachable.
    c. Refuse loudly if pinned revision is not reachable.
-3. For each item (including auto-include expansions), extract content
-   to `.extracts/@<sha>/<path>` if not present.
+3. Preflight every expanded item: validate the complete key set, source
+   URL/name mapping, pinned-tree paths, and include expansion before
+   publishing any consumer-visible state. For each item (including
+   auto-include expansions), extract and validate content in a unique
+   temporary sibling in `.extracts/@<sha>/`, then atomically rename it
+   to `.extracts/@<sha>/<path>`. Existing valid extracts are reused.
 4. Rename check: if any explicit item's `path:` does not exist at
    pinned revision, print structured error, refuse to write
    `.haex-hive.local.json`, exit non-zero.
-5. Write `.haex-hive.local.json` (device-local, gitignored, replaces
-   in place).
+5. Serialize and validate the complete local-state document to a unique
+   same-directory temporary file, flush it, then atomically replace
+   `.haex-hive.local.json`. The final replace happens only after every
+   preflight and extraction succeeds; on failure the previous table
+   remains intact and no table can point to partial output. Unreferenced
+   temporary files are removed best-effort on failure.
 6. Append `.haex-hive.local.json` to consumer's `.gitignore` inside a
    `haex-init`-managed marker block (per Spec 005 marker-block
    conventions).
@@ -387,9 +471,13 @@ Post-add: automatically triggers `haex-init sync` (unless
 
 Validation:
 - Refuses if `revision` is not a full 40-character SHA
+- Refuses an HTTPS URL with any embedded userinfo before writing it;
+  credentials remain in SSH/keychain/credential-manager state, never
+  in `.haex-hive.json`
 - Refuses if the target repo has schema-invalid `.haex-hive.json`
-- Refuses if an entry with the same `repository` already exists
-  (operator uses `--replace` or manually edits)
+- Refuses a storage-name collision with a distinct canonical repository
+  URL, or duplicate/ambiguous resolved keys. A repeated repository URL
+  is permitted only under D4's unambiguous storage-identity rules.
 
 ## `.haex-hive.local.json` shape (device-local, gitignored)
 
@@ -399,21 +487,48 @@ Validation:
   "generated_from_config": "sha256:<hash-of-.haex-hive.json>",
   "generated_at": "2026-08-28T14:23:00Z",
   "device": "<hostname or persistent device id>",
+  "constitutions": [
+    { "source": "role", "role": "constitution" },
+    { "source": "resolved", "key": "secana-specs:constitution" }
+  ],
   "resolved": {
-    "<producer-name>:<alias>": "<absolute path in ~/.haex-hive/repos/…/.extracts/@<sha>/…>"
+    "<producer-name>:<alias>": "<absolute path in device-local state>/repos/…/.extracts/@<sha>/…>"
   }
 }
 ```
 
 Consumers of this table:
 
-- Session-start snippet (in `~/.claude/CLAUDE.md`, `~/.codex/…`,
-  `~/.gemini/…`) — reads the constitution ref, injects into session
+- Session-start snippet (at each tool's device-local instruction
+  location) — reads the constitution ref, injects into session
 - Agent-side reads (any code that needs an inherited file)
 - Future haex-hive-aware tooling
 
 Not consumed by: speckit itself (D8), external CI, arbitrary editor
 plugins.
+
+### Constitution selection at session start
+
+Only concrete constitution declarations are loaded: a top-level
+`role: "constitution"` entry and an explicit
+`items[]` member with `role: "constitution"` inside an
+`external-harness` entry. A constitution file merely matched by
+`auto_include` or `additional_include` is available for agent-side
+reads but is **not** implicitly governing content. This keeps the
+consumer's opt-in precise.
+
+`regenerate` records the selected sources in the `constitutions` array.
+It orders first any top-level `role: "constitution"` entry, then nested
+constitution items in `harness_sources` array order and their `items[]`
+array order. A `role` source is read through the compatible raw-byte
+`spec-resolve resolve --role constitution` path; a `resolved` source is
+read through its local-state key. The session-start snippet emits the
+raw bytes of each listed file in that sequence, with a fixed source
+label between documents; no entry is overwritten or silently dropped.
+Later documents are more specific only where their wording conflicts
+with an earlier document. A fixture containing both a self constitution
+and an external nested constitution must assert the exact source array,
+labels, and emitted byte ordering.
 
 ## User stories (P1 → P3, mirrors Spec 005 pattern)
 
@@ -421,7 +536,8 @@ plugins.
 
 **As** an operator with a not-yet-haex-hive-managed project
 **I want** to run `haex-init` once, add secana-specs as an
-`external-harness` source with only its constitution referenced, and
+`external-harness` source with one explicit `role: "constitution"`
+item, and
 **expect** agent sessions in this project to see secana-specs'
 constitution as their governing rules.
 
@@ -475,7 +591,7 @@ across consumer repos is low-friction.
 
 **Independent test**: two consumers on the device — one already
 configured (`secure-web-frontend`), one fresh (`fresh-consumer`).
-Run `haex-init add-source --from-repo ~/Projekte/secure-web-frontend`
+Run `haex-init add-source --from-repo <neighbor-consumer-repo>`
 in the fresh consumer. Interactive prompt offers to copy the
 `secana-specs` entry. Post-accept, `.haex-hive.json` in the fresh
 consumer contains the same entry (repository, revision, includes) as
@@ -491,8 +607,24 @@ under `tests/multi-spec-external-ref/`:
 - `test-auto-include-speckit-defaults.sh` — the preset produces the
   documented set at SHA X, mutates on SHA-bump
 - `test-additional-include.sh` — arbitrary paths flow correctly
+- `test-additional-include-expansion.sh` — directory and glob inputs
+  expand recursively from the pinned tree, sort and deduplicate paths,
+  reject empty matches and symlinks/non-regular entries
 - `test-explicit-items-aliases.sh` — items with `as:` produce
-  stable-named entries in `.haex-hive.local.json`
+  stable-named entries in `.haex-hive.local.json`; duplicate aliases or
+  final-key collisions refuse without overwriting state
+- `test-storage-identity-and-origin.sh` — rejects unsafe names and
+  distinct URLs sharing a name, verifies an existing clone's origin,
+  and permits unambiguous repeated URLs
+- `test-atomic-sync-publication.sh` — injected extraction or validation
+  failure leaves the prior local table intact and exposes no partial
+  resolved table
+- `test-legacy-cache-compatibility.sh` — a pre-existing
+  `$XDG_CACHE_HOME/haex-hive/repos/` fixture still resolves raw bytes,
+  discovers `specs/*/spec-ref.json`, and preserves `prefetch --dry-run`
+  `OK` / `MISSING` output without migration
+- `test-constitution-order.sh` — fixture with top-level and nested
+  constitutions asserts the exact session-start labels and byte order
 - `test-sha-bump-clean.sh` — US3 happy path
 - `test-sha-bump-rename-refuses.sh` — D9 fail-loud on rename
 - `test-add-source-fresh.sh` — US4 from-scratch mode
@@ -534,13 +666,10 @@ validation in a follow-up (`.validation-runs/` document).
 ## Open questions (deferrable, not blocking Spec 006 MVP)
 
 - **Q1**: Should `haex-init sync` warn (not refuse) if
-  `~/.haex-hive/repos/<name>/` has un-fetched newer HEAD than what's
+  `$HAEX_HIVE_STATE/repos/<name>/` has un-fetched newer HEAD than what's
   pinned? Rationale: signals "producer has moved forward, review
   before bumping" without forcing action. Deferrable to sharpening
   phase.
-- **Q2**: Ref-name namespacing. Currently `secana-specs:<alias>`. If
-  two producers have overlapping alias names, is that a hard error or
-  a warning? Probably hard error at `sync`. Sharpening detail.
 - **Q3**: `.haex-hive.local.json` conflict detection. If two
   simultaneous shells on the device edit it (unlikely but possible),
   what happens? File-lock during write in `haex-init sync`;
@@ -559,9 +688,6 @@ the `/speckit-specify` session should surface them as clarifications:
   entry (which fields required, which optional)
 - Exact ref-name convention beyond `<producer-name>:<alias>` (path
   characters allowed? colon collisions?)
-- Behavior when a `harness_sources[]` array mixes v1.1.1-style
-  `role: constitution` entries with new `role: external-harness`
-  entries — implicit or explicit ordering
 - Precise `haex-init sync` exit codes (align with Spec 005's 0–4
   scheme)
 - Whether `sync` should be triggered automatically by any other
