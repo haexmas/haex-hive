@@ -447,16 +447,18 @@ modifying `.haex-hive.json` (SHA bump, added source, etc.). Steps:
    b. Ensure `$HAEX_HIVE_STATE/repos/<name>/` exists (clone if missing)
       and verify `remote.origin.url`.
    c. `git fetch origin` to ensure pinned revision is reachable.
-   d. Refuse loudly if pinned revision is not reachable, then release
-      the producer lock after this source's extract work completes.
-3. Preflight every expanded item: validate the complete key set, source
-   URL/name mapping, and pinned-tree paths before publishing any
-   consumer-visible state. Explicit items must be regular files;
-   include expansion follows its regular-file rules. For each item
-   (including auto-include expansions), extract and validate content in
-   a unique temporary sibling in `.extracts/@<sha>/`, then atomically
-   rename it to `.extracts/@<sha>/<path>`. Existing valid extracts are
-   reused.
+   d. Refuse loudly if pinned revision is not reachable. **While the
+      same producer lock remains held**, preflight every item expanded
+      from this source: validate its source mapping and pinned-tree path;
+      explicit items must be regular files and include expansion follows
+      its regular-file rules. Extract and validate each item in a unique
+      temporary sibling in `.extracts/@<sha>/`, then atomically rename
+      it to `.extracts/@<sha>/<path>`. Existing extracts are byte-checked
+      against the pinned blob before reuse.
+   e. Release the producer lock only after all extraction and validation
+      work for this source has completed.
+3. Validate the complete aggregate key set across all sources before
+   publishing any consumer-visible state.
 4. Rename check: if any explicit item's `path:` does not exist at
    pinned revision, print structured error, refuse to write
    `.haex-hive.local.json`, exit non-zero.
@@ -686,7 +688,7 @@ under `tests/multi-spec-external-ref/`:
   cannot replace local state after a newer config SHA is written
 - `test-concurrent-consumer-sync.sh` — two consumers sharing one
   producer serialize clone creation, origin verification, fetch, and
-  extract access through the producer-scoped lock
+  extraction/validation through the producer-scoped lock
 - `test-legacy-cache-compatibility.sh` — a pre-existing
   `$XDG_CACHE_HOME/haex-hive/repos/` fixture still resolves raw bytes,
   discovers `specs/*/spec-ref.json`, and preserves `prefetch --dry-run`
