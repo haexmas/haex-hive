@@ -282,6 +282,7 @@ class MarkerBlockState:
     presence: MarkerPresence
     existing_version: str | None = None
     existing_line_range: tuple[int, int] | None = None
+    existing_byte_range: tuple[int, int] | None = None
     existing_body_sha256: str | None = None
     malformed_reason: str | None = None
 
@@ -309,10 +310,18 @@ def detect_marker_block(target_file: Path) -> MarkerBlockState:
             ),
         )
 
-    lines = text.split("\n")
+    # Keep physical line endings so CRLF files are recognised correctly and
+    # replacement can preserve every byte outside the managed block.
+    lines = text.splitlines(keepends=True)
     begins: list[tuple[int, str]] = []
     ends: list[int] = []
+    byte_offsets: list[int] = []
+    offset = 0
     for i, line in enumerate(lines, start=1):
+        byte_offsets.append(offset)
+        offset += len(line.encode("utf-8"))
+        # Regexes describe marker content, not its transport line ending.
+        line = line.rstrip("\r\n")
         mb = MARKER_BEGIN_RE.match(line)
         if mb:
             begins.append((i, mb.group(1)))
@@ -372,8 +381,9 @@ def detect_marker_block(target_file: Path) -> MarkerBlockState:
                 f"marker at line {e_line} in {target_file}"
             ),
         )
-    block_lines = lines[b_line - 1 : e_line]
-    block_bytes = "\n".join(block_lines).encode("utf-8")
+    block_start = byte_offsets[b_line - 1]
+    block_end = byte_offsets[e_line - 1] + len(lines[e_line - 1].encode("utf-8"))
+    block_bytes = raw[block_start:block_end]
     body_sha = hashlib.sha256(block_bytes).hexdigest()
     presence = (
         MarkerPresence.PRESENT_MATCHING_VERSION
@@ -385,6 +395,7 @@ def detect_marker_block(target_file: Path) -> MarkerBlockState:
         presence=presence,
         existing_version=version,
         existing_line_range=(b_line, e_line),
+        existing_byte_range=(block_start, block_end),
         existing_body_sha256=body_sha,
     )
 
@@ -438,18 +449,9 @@ def compose_replaced_block(old_bytes: bytes, state: MarkerBlockState) -> bytes:
     Preserves every byte strictly outside the marker block's inclusive
     line range (byte-safety per SC-002).
     """
-    assert state.existing_line_range is not None, "REPLACE requires a present block"
-    b_line, e_line = state.existing_line_range
-    text = old_bytes.decode("utf-8")
-    lines = text.split("\n")
-    # `split('\n')` yields N+1 elements when the file ends with a
-    # trailing LF (the last element is ''). We reconstruct with the
-    # same '\n'.join to preserve boundaries.
-    prefix_lines = lines[: b_line - 1]
-    suffix_lines = lines[e_line:]
-    new_block_lines = canonical_block_text().rstrip("\n").split("\n")
-    joined_lines = prefix_lines + new_block_lines + suffix_lines
-    return "\n".join(joined_lines).encode("utf-8")
+    assert state.existing_byte_range is not None, "REPLACE requires a present block"
+    start, end = state.existing_byte_range
+    return old_bytes[:start] + canonical_block_text().encode("utf-8") + old_bytes[end:]
 
 
 # ---------------------------------------------------------------------------
@@ -1432,27 +1434,10 @@ def _plan_marker_action(
 ) -> None:
     target = marker.target_file
     if marker.presence is MarkerPresence.MALFORMED:
-        # Refusal is a runtime effect via execute; the planner emits an
-        # action so operators can see it in the report, but execute raises
-        # SystemExit(2) — the runner catches and surfaces.
-        def _refuse(t: Path = target, msg: str = marker.malformed_reason or "") -> None:
-            print(f"haex-init: {msg}", file=sys.stderr)
-            sys.exit(EXIT_REFUSED)
-
-        plan.add(
-            Action(
-                kind=ActionKind.APPEND_BLOCK,
-                target=target,
-                preview=(
-                    f"REFUSE: {marker.malformed_reason}\n"
-                    f"(no change would be made to {target})"
-                ),
-                execute=_refuse,
-                label=f"refused to touch {target} (malformed marker block)",
-                group="Operator-level",
-            )
-        )
-        return
+        # Refuse before any Action has run so partial state cannot accumulate,
+        # and so an operator declining a prompt cannot mask exit 2.
+        print(f"haex-init: {marker.malformed_reason}", file=sys.stderr)
+        sys.exit(EXIT_REFUSED)
     if marker.presence is MarkerPresence.PRESENT_MATCHING_VERSION:
         return
     if marker.presence is MarkerPresence.ABSENT:
@@ -1875,6 +1860,11 @@ def add_git_commit_action(
     ) -> None:
         rels: list[str] = []
         for p in rel_paths:
+            # A declined prompt (or a skipped GIT_INIT) leaves the target
+            # off disk. Passing it to `git add` would fail with a pathspec
+            # error and mask the operator's decision. Silently skip.
+            if not p.exists():
+                continue
             try:
                 rels.append(str(p.relative_to(pd)))
             except ValueError:
@@ -1967,7 +1957,47 @@ def derive_identity(project_dir: Path) -> str:
 # ---------------------------------------------------------------------------
 
 
-def prompt_external_ref() -> dict:
+def _validate_external_path(p: str) -> str | None:
+    if not p:
+        return "path must be non-empty"
+    return None
+
+
+def resolve_external_ref_from_flags(args: argparse.Namespace) -> dict:
+    """Build the external-ref triple from CLI flags (non-interactive).
+
+    Called when --constitution-mode=external-ref is passed (typically with
+    --yes) so external-ref mode can run without prompting. Exits
+    EXIT_REFUSED if any field is missing or fails validation.
+    """
+    url = args.constitution_url
+    sha = args.constitution_sha
+    path = args.constitution_path or ".specify/memory/constitution.md"
+    missing = [
+        name
+        for name, val in (("--constitution-url", url), ("--constitution-sha", sha))
+        if not val
+    ]
+    if missing:
+        print(
+            "haex-init: --constitution-mode=external-ref requires "
+            + " and ".join(missing),
+            file=sys.stderr,
+        )
+        sys.exit(EXIT_REFUSED)
+    for label, value, validator in (
+        ("--constitution-url", url, validate_external_url),
+        ("--constitution-sha", sha, validate_external_sha),
+        ("--constitution-path", path, _validate_external_path),
+    ):
+        err = validator(value)
+        if err:
+            print(f"haex-init: {label}: {err}", file=sys.stderr)
+            sys.exit(EXIT_REFUSED)
+    return {"url": url, "sha": sha, "path": path}
+
+
+def prompt_external_ref(*, allow_network: bool = True) -> dict:
     """Prompt for {url, sha, path}, validating each pre-network.
 
     Bounded to 3 attempts per field to prevent runaway.
@@ -1978,10 +2008,14 @@ def prompt_external_ref() -> dict:
         validator=validate_external_url,
         default=None,
     )
-    # Optional ls-remote assist.
-    try:
-        fetch_latest = input("Fetch latest HEAD SHA from remote? [y/N]: ").strip().lower()
-    except EOFError:
+    # Optional ls-remote assist. Skipped in --dry-run so the plan is built
+    # without touching the network.
+    if allow_network:
+        try:
+            fetch_latest = input("Fetch latest HEAD SHA from remote? [y/N]: ").strip().lower()
+        except EOFError:
+            fetch_latest = ""
+    else:
         fetch_latest = ""
     default_sha = None
     if fetch_latest in ("y", "yes"):
@@ -2108,27 +2142,47 @@ def run_init(args: argparse.Namespace) -> int:
         return EXIT_REFUSED
     user_state = snapshot_user_global(home, selected_llms)
 
-    # Prompt constitution mode (skipped for --yes: default is self-ref).
-    if args.yes:
+    # Constitution mode resolution:
+    #   1. --constitution-mode flag wins (self-ref or external-ref).
+    #   2. Otherwise --yes forces self-ref (no interactive fallback).
+    #   3. Otherwise ask.
+    external_ref: dict | None = None
+    if args.constitution_mode:
+        mode = args.constitution_mode
+        if mode == "external-ref":
+            external_ref = resolve_external_ref_from_flags(args)
+    elif args.yes:
         mode = "self-ref"
-        external_ref = None
     else:
         mode = prompt_constitution_mode()
         if mode == "external-ref":
-            triple = prompt_external_ref()
+            external_ref = prompt_external_ref(allow_network=not args.dry_run)
+
+    if mode == "external-ref":
+        assert external_ref is not None
+        if args.dry_run:
+            # Contract: --dry-run never touches the network. Persist the
+            # triple in the plan without verifying it.
+            print("")
+            print(
+                f"(dry-run) skipping external-ref verification for "
+                f"{external_ref['sha']}:{external_ref['path']}"
+            )
+        else:
             print("")
             print("Verifying reference…")
-            ok, message = verify_external_ref(triple["url"], triple["sha"], triple["path"])
+            ok, message = verify_external_ref(
+                external_ref["url"], external_ref["sha"], external_ref["path"]
+            )
             if not ok:
                 print(
                     f"haex-init: external-ref verification failed:\n  {message}",
                     file=sys.stderr,
                 )
                 return EXIT_EXTERNAL_REF
-            print(f"  ✓ reference verified at {triple['sha']}:{triple['path']}")
-            external_ref = triple
-        else:
-            external_ref = None
+            print(
+                f"  ✓ reference verified at {external_ref['sha']}:{external_ref['path']}"
+            )
 
     identity_value = (
         project_state.haex_hive_json_content.get("identity")
@@ -2207,14 +2261,17 @@ def run_pin_constitution(args: argparse.Namespace) -> int:
         return EXIT_REFUSED
     head_sha = head.strip()
 
+    # ls-files --error-unmatch matches on the index, so a staged-but-uncommitted
+    # constitution would satisfy it and we'd then pin a revision at which the
+    # blob does not exist. Check the committed tree at HEAD instead.
     tracked = subprocess.run(
         [
             "git",
             "-C",
             str(project_dir),
-            "ls-files",
-            "--error-unmatch",
-            ".specify/memory/constitution.md",
+            "cat-file",
+            "-e",
+            f"{head_sha}:.specify/memory/constitution.md",
         ],
         capture_output=True,
         text=True,
@@ -2376,6 +2433,34 @@ def build_parser() -> argparse.ArgumentParser:
             "Run the post-/speckit-constitution wiring step: read HEAD SHA, "
             "add role: constitution entry, offer commit. Mutually exclusive "
             "with --dry-run."
+        ),
+    )
+    p.add_argument(
+        "--constitution-mode",
+        choices=["self-ref", "external-ref"],
+        default=None,
+        help=(
+            "Select constitution mode non-interactively. With --yes this is "
+            "the only way to run external-ref. With external-ref, "
+            "--constitution-url and --constitution-sha are required."
+        ),
+    )
+    p.add_argument(
+        "--constitution-url",
+        default=None,
+        help="External-ref: repository URL (https://, ssh://, user@host:path).",
+    )
+    p.add_argument(
+        "--constitution-sha",
+        default=None,
+        help="External-ref: 7-40 lowercase hex SHA to pin.",
+    )
+    p.add_argument(
+        "--constitution-path",
+        default=None,
+        help=(
+            "External-ref: path within the referenced repo "
+            "(defaults to .specify/memory/constitution.md)."
         ),
     )
     p.add_argument(

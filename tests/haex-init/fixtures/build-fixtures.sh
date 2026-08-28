@@ -5,17 +5,16 @@
 #
 #   family-spec-repo/          — synthetic non-bare git repo with a committed
 #                                .specify/memory/constitution.md at a stable
-#                                SHA. `file://` URL to this repo is used by
-#                                external-ref negative-scheme tests; the bare
-#                                mirror family-spec-repo.git/ is used with an
-#                                `ssh://`-shaped URL by the happy-path test
-#                                (via GIT_SSH_COMMAND redirection is out of
-#                                scope; happy-path in T038 uses `file://` +
-#                                a documented `--test-allow-file-url` shim
-#                                is NOT the choice — we redirect via
-#                                `file://` and the test asserts BOTH the
-#                                scheme-rejection code path AND the
-#                                verification code path in isolation).
+#                                SHA. Seeds the SHA and path that the tests
+#                                pin against.
+#   family-spec-repo.git/      — bare mirror of the same repo.
+#                                Consumed via file://$BARE by both the
+#                                verify_external_ref() happy path and the
+#                                unreachable-SHA case (URL scheme is
+#                                validated separately: the scheme-rejection
+#                                test drives validate_external_url() with
+#                                file://, git://, http://, and bare-path
+#                                inputs).
 #
 #   seeded-claude-md.txt       — byte-known payload for marker-safety tests.
 #

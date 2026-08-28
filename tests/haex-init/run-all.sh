@@ -20,6 +20,7 @@ fi
 # then idempotency + partial + version-upgrade + dry-run; then marker-safety.
 tests=(
     test-embedded-content-sync.sh
+    test-non-tty-refusal.sh
     test-fresh-operator.sh
     test-self-ref.sh
     test-pin-constitution.sh

@@ -12,10 +12,16 @@ path.
 
 ## Invocation
 
+Point `XDG_CACHE_HOME` at a fresh temp directory so this smoke test
+does not touch the operator's real `~/.cache/haex-init/verify/`
+(cleanup then removes only what this run created).
+
 ```
 cd /tmp
 mkdir haex-init-real-remote-$$
 cd haex-init-real-remote-$$
+export CACHE_TMP="$(mktemp -d -t haex-init-verify-cache-XXXXXX)"
+export XDG_CACHE_HOME="$CACHE_TMP"
 git init --quiet -b main .
 ../<path-to>/haex-init
 # Choose all tools (or none), then choose external-ref (2).
@@ -62,10 +68,14 @@ the octocat/Hello-World remote.
 
 ## Cleanup
 
+Remove only what this smoke test created — never blow away the shared
+`~/.cache/haex-init/verify/` tree.
+
 ```
 cd ..
 rm -rf haex-init-real-remote-$$
-rm -rf ~/.cache/haex-init/verify/
+rm -rf "$CACHE_TMP"
+unset CACHE_TMP XDG_CACHE_HOME
 ```
 
 ## Actual run log

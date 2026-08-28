@@ -43,8 +43,13 @@ BEGIN_RE = re.compile(r'^<!--\s*haex-hive-block:begin\s+v=([^\s>]+)\s*-->$')
 END_RE   = re.compile(r'^<!--\s*haex-hive-block:end\s*-->$')
 ```
 
-Applied line-by-line to the file's contents (split on newline
-without discarding the newline). Case-sensitive. UTF-8 assumed.
+Applied line-by-line to the file's contents. The scanner splits with
+`str.splitlines(keepends=True)` (so every physical line ending is
+preserved for byte-accurate range calculations) and strips only the
+trailing `\r?\n` from each line before matching. This means CRLF and
+LF files are both recognised without the regex needing to describe
+its own transport. Case-sensitive. UTF-8 assumed. Regression fixtures
+MUST cover both LF-only and CRLF files.
 
 ## Presence States
 
@@ -100,11 +105,20 @@ All writes to user-global config files follow:
   `1.1`).
 - `INSTRUCTIONS_SHA256` is the exact hex-lowered SHA-256 of the
   embedded `CANONICAL_SESSION_INSTRUCTIONS` string.
-- CI-enforced coupling: `SHA256(embedded_string) ==
-  INSTRUCTIONS_SHA256` AND `SHA256(read_file(template.md)) ==
-  INSTRUCTIONS_SHA256`.
-- A content change without matching updates to both constants fails
-  the sync test (Decision 9's three assertions).
+- CI-enforced coupling (three assertions, Decision 9): `SHA256(embedded_string) ==
+  INSTRUCTIONS_SHA256`, `SHA256(read_file(template.md)) ==
+  INSTRUCTIONS_SHA256`, and generated markers stamp
+  `INSTRUCTIONS_VERSION`.
+- A content change without matching updates to both hash constants fails
+  the sync test.
+- Version-bump enforcement (below) is a code-review discipline: the
+  three sync assertions detect content/hash drift, but they do NOT
+  compare `INSTRUCTIONS_VERSION` against its prior value on `main`
+  and therefore do NOT flag an updated `INSTRUCTIONS_SHA256` shipped
+  without a corresponding version bump. Reviewers MUST check for that
+  themselves, or the sync test MUST be extended with a diff-aware
+  check (`git show HEAD~1:.specify/scripts/haex-init` → compare the
+  prior version) before the enforcement claim can be strengthened.
 
 **Bump rules**:
 

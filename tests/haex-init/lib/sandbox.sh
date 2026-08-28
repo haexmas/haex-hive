@@ -105,9 +105,11 @@ checksum_tree() {
         return 1
     fi
     (
-        cd "$root"
-        # Include hidden files, sort deterministically.
-        find . -type f -print0 | LC_ALL=C sort -z | while IFS= read -r -d '' f; do
+        cd "$root" || return 1
+        # Include hidden files, sort deterministically. Skip .git/ — git
+        # rewrites its index and packs on ordinary reads, which would make
+        # cross-run checksums flaky without changing any managed artifact.
+        find . -name .git -prune -o -type f -print0 | LC_ALL=C sort -z | while IFS= read -r -d '' f; do
             local sz sha
             sz=$(stat -c '%s' -- "$f" 2>/dev/null || stat -f '%z' -- "$f")
             sha=$(sha256sum -- "$f" | awk '{print $1}')

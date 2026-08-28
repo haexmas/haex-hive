@@ -163,7 +163,7 @@ EOF
 sha_pre=$(sha256sum "$HOME/.claude/CLAUDE.md" | awk '{print $1}')
 
 set +e
-"$HAEX_INIT" --yes >/tmp/haex-stdout 2>/tmp/haex-stderr
+"$HAEX_INIT" --yes >"$SANDBOX_ROOT/haex-stdout" 2>"$SANDBOX_ROOT/haex-stderr"
 rc=$?
 set -e
 
@@ -171,9 +171,9 @@ sha_post=$(sha256sum "$HOME/.claude/CLAUDE.md" | awk '{print $1}')
 
 assert_eq "(D) exit code MALFORMED" "2" "$rc"
 assert_eq "(D) CLAUDE.md unchanged after refusal" "$sha_pre" "$sha_post"
-if ! grep -q 'no matching end marker' /tmp/haex-stderr; then
+if ! grep -q 'no matching end marker' "$SANDBOX_ROOT/haex-stderr"; then
     echo "FAIL(D): stderr did not name the malformed inconsistency"
-    cat /tmp/haex-stderr
+    cat "$SANDBOX_ROOT/haex-stderr"
     exit 1
 fi
 

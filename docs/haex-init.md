@@ -228,6 +228,10 @@ locally:
 bash tests/haex-init/run-all.sh
 ```
 
-Every test runs in a `HOME=$TMPDIR/…` sandbox — the developer's real
-`~/.claude/`, `~/.codex/`, `~/.gemini/`, and `~/.haex-hive/` are
-never touched (verified by SC-006).
+Every test runs in a `HOME=$TMPDIR/…` sandbox with
+`XDG_CACHE_HOME=$SANDBOX_ROOT/home/.cache` — the developer's real
+`~/.claude/`, `~/.codex/`, `~/.gemini/`, `~/.haex-hive/`, and
+`~/.cache/haex-init/verify/` are never touched (verified by SC-006).
+The manual real-remote smoke test in `.validation-runs/haex-init-real-remote.md`
+uses the same isolation via a temp `XDG_CACHE_HOME` so its cleanup
+removes only its own cache tree.

@@ -113,6 +113,17 @@ After the operator then runs `/speckit-constitution` and
    IDE (not the LLM),
    **Then** `~/.claude/CLAUDE.md` is not touched at all; only the IDE
    mapping file is written.
+
+   **Known limitation (US1 scope)**: the initial run's *selection intent*
+   is not persisted. On a prompt-free rerun (`--yes`) the tool re-detects
+   every installed integration and re-configures whatever it finds, so
+   a tool the operator deliberately skipped here can be re-added by a
+   later `--yes` rerun. Callers who need deterministic exclusion in
+   automation MUST either run without `--yes` (to reselect) or restrict
+   detection with `--include`. Persisting selection intent to
+   `.haex-hive.json` (or a sidecar) so `--yes` reruns honour prior
+   omissions is tracked as follow-up work — see the CodeRabbit finding
+   on PR #1 (spec.md L110-115).
 4. **Given** any run of Story 1,
    **When** the operator declines a specific prompt's Y/N,
    **Then** that specific action is skipped, subsequent independent
@@ -150,8 +161,13 @@ returns the exact bytes stored at that SHA in the external repo.
    **When** they enter a valid `https://` or `ssh://` or SCP-style URL,
    a valid SHA, and a path that exists at that SHA in the remote,
    **Then** haex-init verifies the reference resolves before writing
-   any file, then writes `.haex-hive.json` with the external triple
-   and does not create a local `.specify/memory/constitution.md`.
+   ANY project file, user-global file, schema, IDE mapping file, or
+   `.gitignore` update, then writes `.haex-hive.json` with the
+   external triple and does not create a local
+   `.specify/memory/constitution.md`. Failed verification MUST leave
+   both the project directory and `$HOME` byte-identical to their
+   pre-invocation state — no `.haex-hive.json`, no schema, no
+   marker-block updates, no `~/.haex-hive/` writes.
 2. **Given** the operator enters a URL with a rejected scheme
    (`file://`, `git://`, `http://`, or a bare local path),
    **When** haex-init validates the input,

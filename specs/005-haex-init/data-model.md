@@ -123,8 +123,8 @@ runs. `--dry-run` prints the plan and exits without executing.
 | Invariant | Enforced by |
 |-----------|-------------|
 | `haex-init` writes to a user-global config file only via a `MarkerBlockState` transition to `PRESENT_MATCHING_VERSION`. | FR-009 + Decision 1. |
-| Every `Action.execute` in the plan corresponds to a state transition that moves either `UserGlobalState` or `ProjectState` strictly forward toward the tool's expected end state (idempotency). | FR-026 + FR-027. |
-| No `Action` in the plan writes to a path that resolves outside `$HOME` or the project directory. | Path allow-list check at Action construction. |
+| Every filesystem `Action.execute` (CREATE_FILE, MERGE_JSON, MERGE_XML, APPEND_BLOCK, REPLACE_BLOCK, APPEND_GITIGNORE_LINES, PATCH_HAEX_HIVE_JSON) in the plan corresponds to a state transition that moves either `UserGlobalState` or `ProjectState` strictly forward toward the tool's expected end state (idempotency). `GIT_INIT` and `GIT_COMMIT` are VCS-shaped actions and do not participate in this invariant — their idempotency is enforced by the git tool itself (no-op init on an existing repo; `git commit` skipped when the index is clean). | FR-026 + FR-027. |
+| No `Action` in the plan writes to a path that resolves outside `$HOME`, the project directory, or `$XDG_CACHE_HOME/haex-init/verify/` (the external-ref verification cache; same path-safety and cleanup rules apply). | Path allow-list check at Action construction. |
 | No `Action` in the plan writes to `.haex-hive.json` in a way that adds an entry the operator did not explicitly confirm (self-ref → empty array; external-ref → exactly the confirmed triple; `--pin-constitution` → exactly the `role: constitution` entry). | Constitution Principle V. |
 | For every `PATCH_HAEX_HIVE_JSON` action, the resulting JSON MUST validate against the embedded schema before being written. | Fail-fast schema check inside `execute`. |
 
@@ -134,8 +134,8 @@ runs. `--dry-run` prints the plan and exits without executing.
 
 ```json
 {
-  "haex_hive_version": "1.0",
-  "identity": {"kind": "git-remote-or-id", "value": "<operator input or derived>"},
+  "haex_hive_version": "1",
+  "identity": "<derived git remote URL or local:<name>>",
   "harness_sources": []
 }
 ```
@@ -144,8 +144,8 @@ runs. `--dry-run` prints the plan and exits without executing.
 
 ```json
 {
-  "haex_hive_version": "1.0",
-  "identity": {"kind": "git-remote-or-id", "value": "…"},
+  "haex_hive_version": "1",
+  "identity": "<derived git remote URL or local:<name>>",
   "harness_sources": [
     {
       "role": "constitution",
@@ -161,8 +161,8 @@ runs. `--dry-run` prints the plan and exits without executing.
 
 ```json
 {
-  "haex_hive_version": "1.0",
-  "identity": {"kind": "git-remote-or-id", "value": "…"},
+  "haex_hive_version": "1",
+  "identity": "<derived git remote URL or local:<name>>",
   "harness_sources": [
     {
       "role": "constitution",

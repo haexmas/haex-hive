@@ -116,8 +116,15 @@ shape:
   ```
 
 - File exists → parse with `xml.etree.ElementTree`:
-  - No `project` root → refuse, print "unexpected XML root element
-    in .idea/jsonSchemas.xml".
+  - Match the root and every subordinate element by **local name**
+    (i.e. the element's tag after any `{namespace}` prefix `ET` may
+    have stamped). Concretely: `tag.rsplit("}", 1)[-1] == "project"`,
+    same for `component`, `state`, `map`, `entry`. This is how
+    IntelliJ-style tools that stamp a namespace on the root still
+    match. Unrecognised namespaces produce a warning (per Failure
+    modes below) but the parse proceeds.
+  - No `project` local-name root → refuse, print "unexpected XML
+    root element in .idea/jsonSchemas.xml".
   - `project` root but no `JsonSchemaMappingsProjectConfiguration`
     component → add the component.
   - Component exists but no `entry key="haex-hive"` under
@@ -127,7 +134,11 @@ shape:
     - `relativePathToSchema` value differs → offer diff-preview update.
 - Re-serialize with `ET.tostring(root, encoding="utf-8",
   xml_declaration=True)`. If `ET.indent` is available (Python 3.9+),
-  use it with 2-space indent.
+  use it with 2-space indent. Preserve any `xmlns` attributes present
+  on the input root so a namespaced document round-trips with its
+  original namespace intact. A regression fixture covering a
+  namespaced `<project xmlns="…">` root MUST accompany the
+  local-name matching change.
 
 ### Gitignore warning (FR-013)
 

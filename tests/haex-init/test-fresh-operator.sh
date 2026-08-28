@@ -28,7 +28,13 @@ create_fake_config_dir claude-code
 create_fake_config_dir vscode
 git init --quiet -b main .
 
-out=$("$HAEX_INIT" --yes 2>&1 || true)
+rc=0
+out=$("$HAEX_INIT" --yes 2>&1) || rc=$?
+if [[ $rc -ne 0 ]]; then
+    echo "FAIL(A): haex-init exited $rc"
+    echo "$out" >&2
+    exit 1
+fi
 
 if [[ ! -f "$HOME/.haex-hive/haex-hive.md" ]]; then
     echo "FAIL(A): ~/.haex-hive/haex-hive.md was not created"
@@ -132,6 +138,10 @@ sha_before=$(sha256sum "$HOME/.claude/CLAUDE.md" | awk '{print $1}')
 # ALSO passing --yes AND scripting stdin — --yes short-circuits any Y/N,
 # but tool-selection is a free-form prompt that --yes does NOT bypass in
 # the "no auto-answer" path. Instead: use a Python pty wrapper.
+# `set -e` would abort before the exit code is captured on failure, so
+# lift errexit around the heredoc and turn a non-zero exit into a
+# named FAIL(B) diagnostic.
+set +e
 python3 - <<PY
 import os, pty, subprocess, sys, time, select
 
@@ -183,6 +193,7 @@ print(f"exit={rc}")
 sys.exit(0 if rc == 0 else rc)
 PY
 rc=$?
+set -e
 if [[ $rc -ne 0 ]]; then
     echo "FAIL(B): haex-init exited $rc"
     exit 1

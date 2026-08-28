@@ -25,8 +25,8 @@ git init --quiet -b main .
 # (a) up-to-date → --dry-run exit 0.
 proj_before=$(checksum_tree "$SANDBOX_ROOT/project")
 home_before=$(checksum_tree "$SANDBOX_ROOT/home")
-out=$("$HAEX_INIT" --dry-run --yes)
-rc=$?
+rc=0
+out=$("$HAEX_INIT" --dry-run --yes) || rc=$?
 proj_after=$(checksum_tree "$SANDBOX_ROOT/project")
 home_after=$(checksum_tree "$SANDBOX_ROOT/home")
 

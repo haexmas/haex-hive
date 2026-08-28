@@ -28,9 +28,8 @@ if ! grep -q 'v=1.0' "$HOME/.claude/CLAUDE.md"; then
     exit 1
 fi
 
-# Snapshot the file bytes and the marker-excised content.
-pre_full=$(sha256sum "$HOME/.claude/CLAUDE.md" | awk '{print $1}')
-# Bytes excluding the marker block (from begin marker line to end marker line inclusive).
+# Snapshot the marker-excised content. Bytes excluding the marker block
+# (from begin marker line to end marker line inclusive).
 pre_excised=$(python3 - <<'PY'
 import re, hashlib, os
 p = os.path.expanduser("~/.claude/CLAUDE.md")
@@ -63,15 +62,20 @@ sha_new = hashlib.sha256(newer.encode("utf-8")).hexdigest()
 # so backslashes in 'newer' are not interpreted as re.sub backreferences.
 def _repl(_m):
     return "CANONICAL_SESSION_INSTRUCTIONS = " + repr(newer)
-s = re.sub(
+# re.subn so a missed substitution surfaces as a named failure here rather
+# than as an unrelated hash mismatch later.
+s, n = re.subn(
     r'CANONICAL_SESSION_INSTRUCTIONS = """.*?"""',
     _repl,
     s,
     count=1,
     flags=re.DOTALL,
 )
-s = re.sub(r'INSTRUCTIONS_VERSION = "1\.0"', 'INSTRUCTIONS_VERSION = "1.1"', s, count=1)
-s = re.sub(r'INSTRUCTIONS_SHA256 = "[0-9a-f]+"', 'INSTRUCTIONS_SHA256 = "' + sha_new + '"', s, count=1)
+assert n == 1, "patch failed: CANONICAL_SESSION_INSTRUCTIONS literal not found in haex-init"
+s, n = re.subn(r'INSTRUCTIONS_VERSION = "1\.0"', 'INSTRUCTIONS_VERSION = "1.1"', s, count=1)
+assert n == 1, 'patch failed: INSTRUCTIONS_VERSION = "1.0" not found in haex-init'
+s, n = re.subn(r'INSTRUCTIONS_SHA256 = "[0-9a-f]+"', 'INSTRUCTIONS_SHA256 = "' + sha_new + '"', s, count=1)
+assert n == 1, "patch failed: INSTRUCTIONS_SHA256 not found in haex-init"
 open(p, "w").write(s)
 PY
 chmod +x "$SCRATCH"
