@@ -182,16 +182,22 @@ agent unfiltered — which is every cross-tool handoff in this system.
 - All work on this repo lands on `main` through a pull request. `main` is
   branch-protected; direct commits and pushes to `main` are rejected by the
   remote. Work happens on a topic branch (`<type>/<short-slug>`, e.g.
-  `feat/haex-init-fetch-latest`, `docs/roadmap-refresh`) and is merged via
-  `gh pr create --base main --head <branch>`. Docs-only changes are not
-  exempt.
+  `feat/haex-init-fetch-latest`, `docs/roadmap-refresh`). Create the pull
+  request with `gh pr create --base main --head <branch>`; merge it separately
+  using an allowed method below. Docs-only changes are not exempt.
 - Pull requests MUST be merged with **rebase-merge** (preferred) or
   **merge-commit**. Squash-merge is forbidden because it collapses the
   per-commit Conventional-Commits messages into a single auto-composed
   message and destroys the type information that changelog and version-bump
   tooling reads. Rebase is the default for its linear history; merge-commit
   is a legitimate choice when PR-boundary visibility in `git log --graph` is
-  wanted for a specific PR.
+  wanted for a specific PR. For merge-commits, the maintainer MUST replace
+  GitHub's auto-generated `Merge pull request ...` subject with a
+  Conventional-Commits header (for example, `feat(init): add config
+  validation`) before merging. With the GitHub CLI, use `gh pr merge <number>
+  --merge --subject "<type>[optional scope][!]: <description>"`. Commit-message
+  validation and changelog tooling MUST validate and process merge commits;
+  they MUST NOT exempt auto-generated merge subjects.
 - All commit messages MUST follow **Conventional Commits v1.0.0**
   (https://www.conventionalcommits.org/en/v1.0.0/): header shape
   `<type>[optional scope][!]: <description>`, optional body, optional
@@ -200,7 +206,9 @@ agent unfiltered — which is every cross-tool handoff in this system.
   explaining what breaks and how to migrate. The spec's standard types
   apply: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `perf`,
   `build`, `ci`, `style`, `revert`. No custom `break:` type — breakage is an
-  orthogonal marker, not a type.
+  orthogonal marker, not a type. This requirement applies from version 1.2.0
+  onward; commits made before its adoption are grandfathered and are not policy
+  violations.
 
 ## Governance
 
