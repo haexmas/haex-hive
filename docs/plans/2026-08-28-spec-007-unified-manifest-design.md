@@ -1097,18 +1097,23 @@ Non-blocking for Spec 007 but must be resolved by Spec 008/009/010:
   later add-source-focused mini-spec.
 - **`install.mutex` / `install.journal` placement** (raised by
   CodeRabbit on PR #9, 2026-08-29): these transaction artifacts carry
-  device-local state (PID, hostname, recovery cursor) that MUST NOT be
-  synchronized across devices, but Spec 007's committed-`.haex-hive/`
+  device-local state (owner token, hostname, recovery cursor) that MUST
+  NOT be synchronized across devices, but Spec 007's committed-`.haex-hive/`
   model would otherwise pull them in through git. Two candidate
   resolutions for Spec 008 to decide between: (a) locate them under an
   ignored runtime subpath (e.g. `.haex-hive/run/` gitignored) with a
-  stale-owner detection rule (PID no longer alive OR hostname mismatch
-  OR mtime older than threshold triggers auto-recovery), or (b) move
+  **fenced lease** contract — a unique owner token stamped at
+  acquisition, a heartbeat/renewal cadence while the install runs,
+  atomic revalidation of ownership before any recovery action, and
+  recovery only when the lease has demonstrably expired past its safety
+  margin (mtime alone is insufficient because a live install can be
+  paused, swapped out, or otherwise starved without dying); or (b) move
   them to a device-local state root (e.g.
   `$HAEX_HIVE_STATE/locks/<repo-identity>/`) alongside the content
   store, keeping `.haex-hive/` fully committed content. Both preserve
   the byte-identity-via-git guarantee for actual harness state; Spec
-  008 picks one and documents the stale-artifact contract.
+  008 picks one and documents the stale-lease contract (owner-token
+  format, heartbeat interval, lease TTL, revalidation ordering).
 
 ## Constitution compliance check
 
