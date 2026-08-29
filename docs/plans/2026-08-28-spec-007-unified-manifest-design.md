@@ -874,30 +874,33 @@ are non-negotiable for the Spec 008 landing:
 - **Repository-wide visibility commit**. All new bytes are written to a
   staging root next to the target (same filesystem), fsynced, and prepared as
   complete logical output-root views for `.haex-hive/`, `.claude/`, and
-  `.codex/` (only adapter-owned paths are replaced). A transaction MUST NOT
-  use ordinary rename-over-existing-directory semantics for these roots: they
-  can be non-empty on a reinstall. It either uses a platform primitive that
-  atomically exchanges populated, same-filesystem directories, or stores each
-  complete view under a versioned generation directory and atomically replaces
-  a small current-generation pointer. In the latter case every managed adapter
-  entry resolves through that pointer (for example, through a supported
-  symlink/junction or adapter-managed launcher); a platform without either
-  mechanism MUST refuse the install rather than publish a torn direct view.
-  Unowned entries in `.claude/` and `.codex/` are never replaced. After every
-  other staged output is sealed, the transaction writes and fsyncs the final
-  staged `install.lock`, computes the participating-root digests over those
-  final staged bytes, and writes the staged `.haex-hive/visibility.json` marker
-  last. The marker contains a deterministic generation ID and the digest of
-  every participating output root; the `.haex-hive/` digest includes
-  `install.lock` and excludes only the marker itself to avoid self-reference.
-  Readers MUST NOT treat individual root exchanges or pointer replacements as
-  publication. The `.haex-hive/` exchange or pointer replacement containing
-  that final marker is the final journal step and publishes the generation.
-  Readers first load the marker and then verify every root's generation and
-  digest; a missing marker or mixed generation is an unavailable installation,
-  never a partially valid one. Recovery tests MUST cover a crash after each
-  root publication step and a reinstall with non-empty output roots, proving
-  that recovery either restores the previous marker-consistent generation or
+  `.codex/`. `.haex-hive/` is haex-owned and may use a platform primitive that
+  atomically exchanges populated, same-filesystem directories. `.claude/` and
+  `.codex/` are mixed-ownership roots and MUST NEVER be exchanged or renamed as
+  directories. Their adapter-owned leaves are instead stored under a versioned
+  generation directory and published through a stable per-adapter overlay and
+  current-generation pointer (for example, a supported symlink/junction or
+  adapter-managed launcher). The overlay changes only paths recorded as
+  adapter-owned; it never enumerates, copies, or replaces sibling entries in
+  the mixed-ownership root. A platform without an atomic pointer or stable
+  overlay mechanism MUST refuse the install rather than publish a torn direct
+  view. The digest for a mixed-ownership root covers only its managed overlay,
+  never its unowned directory contents. After every other staged output is
+  sealed, the transaction writes and fsyncs the final staged `install.lock`,
+  computes the participating-root digests over those final staged bytes, and
+  writes the staged `.haex-hive/visibility.json` marker last. The marker
+  contains a deterministic generation ID and the digest of every participating
+  output root; the `.haex-hive/` digest includes `install.lock` and excludes
+  only the marker itself to avoid self-reference. Readers MUST NOT treat
+  individual root exchanges or pointer replacements as publication. The
+  `.haex-hive/` exchange or pointer replacement containing that final marker is
+  the final journal step and publishes the generation. Readers first load the
+  marker and then verify every root's generation and digest; a missing marker
+  or mixed generation is an unavailable installation, never a partially valid
+  one. Recovery tests MUST cover a crash after each root publication step and a
+  reinstall with non-empty output roots, including an unowned `.claude/` or
+  `.codex/` file modified during staging that survives unchanged, proving that
+  recovery either restores the previous marker-consistent generation or
   completes the new one before readers resume.
 - **Stable staged-input reads through commit**. Plan-build captures the exact
   bytes of `.haex-hive.json`, every publisher manifest, and every atom manifest
