@@ -263,52 +263,30 @@ and `config.schema.json` (JSON Schema Draft 2020-12). The schema describes the
 where consumer input is accepted, it MUST set `additionalProperties: false`
 and declare its permitted `properties` and/or `patternProperties`.
 
-For each selected atom, the meta-validator first validates and rewrites any
-`x-haex-secret` field as defined below. Validation then proceeds in this order:
-(1) validate `defaults` against the rewritten `config_schema`; (2) recursively
-reject any key supplied in
-`config.<atom-id>.values` that is not permitted by that object's properties or
-pattern properties; (3) deep-merge the override onto defaults, replacing
-arrays; then (4) validate the effective settings object against
-the rewritten `config_schema`. Thus a required property supplied by defaults
+For each selected atom, validation proceeds in this order:
+(1) validate `defaults` against the `config_schema`; (2) recursively reject
+any key supplied in `config.<atom-id>.values` that is not permitted by that
+object's properties or pattern properties; (3) deep-merge the override onto
+defaults, replacing arrays; then (4) validate the effective settings object
+against the `config_schema`. Thus a required property supplied by defaults
 does not make an empty or partial override invalid, while an unknown override
 key still fails before the effective config is written.
 `config.<atom-id>.priority` is processed separately as specified in D5 and is
 not part of that effective settings object.
 
-Config is committed, so it MUST NOT contain plaintext secrets. A
-secret-dependent publisher field MUST be an otherwise unconstrained property
-schema with exactly `"x-haex-secret": true`; it MUST NOT combine the marker
-with `type`, `const`, `enum`, `format`, `pattern`, `$ref`, or a composition
-keyword. The haex schema meta-validator rejects any other marked-field shape,
-then replaces the marked field's schema before standard Draft 2020-12
-validation with this exact schema:
-
-```json
-{
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["$haex_secret"],
-  "properties": {
-    "$haex_secret": {
-      "type": "string",
-      "pattern": "^keychain:[A-Za-z0-9._-]+$"
-    }
-  }
-}
-```
-
-Consequently a marked field accepts only
-`{ "$haex_secret": "keychain:<alias>" }`, never a string or another
-literal. The alias is a device-local keychain reference, never secret
-material. The meta-validator leaves every unmarked field unchanged for normal
-publisher `config_schema` validation. Before writing
-`.haex-hive/config/<atom-id>.json`, `haex install` runs this transformation
-and the complete D7 validation sequence; the Spec 008 conformance suite MUST
-cover a valid reference that is committed verbatim, a rejected plaintext
-value, and unchanged validation of an unmarked field. Install, rendering,
-locking, and verification never dereference a valid reference; runtime
-consumers resolve it locally if their own contract requires it.
+**No secrets in schema.** `config.<atom-id>.values` is committed, so it MUST
+NOT contain plaintext secrets. Spec 007 provides **no schema-level mechanism**
+for declaring secret fields — publisher `config_schema` files describe only
+non-secret configuration. Blueprints that need runtime secrets (API tokens,
+passwords, private keys) obtain them **out-of-band** via the operating
+system's keychain at hook-runtime, not through committed config: publisher
+documents which keychain aliases the hook expects; the operator sets those
+aliases up with a device-local tool (e.g. a future `haex secret set <alias>`
+subcommand, or their OS-native keychain manager); the hook reads them at
+runtime through the standard Python `keyring` module or via
+`HAEX_HOOK_*` environment variables that the dispatcher populates from the
+keychain. `haex install`, `haex verify`, `install.lock`, and every committed
+file under `.haex-hive/` remain secret-free by construction.
 
 Config in the consumer entry is a map keyed by atom-ID (even for
 length-1 `includes`, to keep the shape uniform):
@@ -1154,6 +1132,27 @@ Non-blocking for Spec 007 but must be resolved by Spec 008/009/010:
 - **`haex init --from-repo`**: the Spec 006 bootstrap-from-neighbor
   convenience mode. Not blocking Spec 007; could land in Spec 008 or a
   later add-source-focused mini-spec.
+- **Speckit-extension scripts — Python migration (Spec 011 candidate)**:
+  the haex-hive-authored speckit extensions currently ship as parallel
+  bash and PowerShell scripts under
+  `.specify/extensions/git/scripts/{bash,powershell}/` (auto-commit,
+  create-new-feature, git-common, initialize-repo — landed in Spec 005).
+  This contradicts D1's Python-only stance for consumer-facing hooks and
+  the overall cross-OS-uniformity argument. Spec 007–010 do NOT touch
+  these scripts (out of scope). A dedicated Spec 011 (working title
+  "Speckit extensions rewrite in Python") migrates the real logic into
+  a `haex_hive.speckit` Python package. Two candidate strategies for
+  Spec 011 to decide between: (a) full rewrite that also patches every
+  `.claude/skills/speckit-*/SKILL.md` `bash:`/`powershell:` dispatch
+  line; or (b) Python-behind-shim: `.sh` and `.ps1` become one-line
+  shims that invoke `python3 -m haex_hive.speckit.<verb>`, skill files
+  keep their current dispatch lines and the real logic is Python.
+  Strategy (b) is likely lighter-touch and preserves speckit-CLI
+  compatibility during transition.
+- **Upstream speckit scripts** (`.specify/scripts/bash/`,
+  `check-prerequisites.sh` et al.): NOT in haex-hive scope at any point.
+  These are speckit-cli-provided infrastructure that a speckit upgrade
+  replaces. haex-hive treats them as read-only vendor content.
 - **`install.mutex` / `install.journal` placement** (raised by
   CodeRabbit on PR #9, 2026-08-29): these transaction artifacts carry
   device-local state (owner token, hostname, recovery cursor) that MUST
@@ -1178,9 +1177,11 @@ Non-blocking for Spec 007 but must be resolved by Spec 008/009/010:
 
 All eight NON-NEGOTIABLE principles:
 
-- **I (No Secrets in Git)**: no change; content stores hold public git
-  content only, and D7 permits only device-local keychain references—not
-  plaintext secret values—in committed effective config.
+- **I (No Secrets in Git)**: reinforced. Content stores hold public git
+  content only, and D7 explicitly provides no schema-level mechanism for
+  declaring secret fields; committed effective config is secret-free by
+  construction. Runtime secrets are obtained out-of-band via the OS
+  keychain and never touch committed content.
 - **II (No Absolute Paths in Versioned Config)**: `.haex-hive/` and
   `.haex-hive.json` remain repo-relative. `$HAEX_HIVE_STATE/` is
   device-local, never in versioned config.
