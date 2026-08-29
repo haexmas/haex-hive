@@ -68,10 +68,25 @@ trust model:
 Blueprints that need runtime secrets (API tokens, passwords, private keys)
 obtain them out-of-band via the OS keychain at hook-runtime, not through
 committed config. See Spec 007 D7 for the "no schema-level secret surface"
-principle. The Spec 009 hook dispatcher populates the `HAEX_HOOK_*`
-environment variable allow-list with values sourced from the OS keychain
-based on aliases declared by the publisher; the hook reads them through
-the standard Python `keyring` module or from the pre-populated environment.
+principle. The publisher manifest contract owned by Spec 010 defines the
+machine-readable optional `runtime_secrets` field as an array of aliases. Each
+alias MUST match `^[a-z][a-z0-9-]{0,62}$`; underscores are deliberately
+forbidden so the environment-variable mapping cannot collide. For each alias,
+the dispatcher looks up the device-local keychain value and injects it only
+into the child process environment as
+`HAEX_HOOK_SECRET_<ALIAS>`, where `<ALIAS>` is the alias uppercased with every
+`-` replaced by `_` (for example, `github-token` becomes
+`HAEX_HOOK_SECRET_GITHUB_TOKEN`). The publisher manifest carries aliases only,
+never secret values.
+
+The dispatcher resolves every declared alias before spawning the hook. A
+missing value, unavailable keychain, invalid alias, or lookup error fails the
+invocation closed: the hook is not started, no partial secret environment is
+provided, and the error reports only the alias and failure class, never a
+secret value. Resolved values exist only in the child environment; they MUST
+NOT enter committed configuration, logs, command lines, lockfiles, or hook
+context JSON. Hooks consume the injected `HAEX_HOOK_SECRET_*` variables and
+need not access the keychain directly.
 
 ## Non-Goals
 
