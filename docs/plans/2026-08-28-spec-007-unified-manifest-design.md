@@ -174,8 +174,8 @@ source.
 **Canonical `source` normalization**: before de-duplication, cache-key
 derivation, profile expansion, or any network access, `haex add`, `haex
 install`, and `haex verify` normalize every `source` URL identically. The
-normalization: (1) lowercase the scheme and host; (2) strip a single trailing
-`.git` suffix from the path; (3) strip trailing `/` from the path; (4) reject
+normalization: (1) lowercase the scheme and host; (2) strip trailing `/` from
+the path; (3) strip a single terminal `.git` suffix from the path; (4) reject
 any URL that carries userinfo (a `user[:token]@host` component) with the
 error `source URL must not embed credentials; use SSH or a Git credential
 helper`; (5) reject any non-`https`, non-`ssh`, or non-`git` scheme. The
@@ -661,7 +661,7 @@ and `haex update <atom-id>` operate only on `.haex-hive.json` top-level
 it is only reachable transitively through a profile atom's `includes`), the
 command refuses with `atom <id> is provided by profile <profile-id>; edit or
 remove <profile-id> instead`. `haex list` prints every resolved atom-ID and,
-for atoms visible only through a profile, appends ` (via <profile-id>)` so
+for atoms visible only through a profile, appends `(via <profile-id>)` so
 the ownership chain is auditable without hidden state. This applies before
 D14's shadowing rule: shadowing only takes effect once the operator has
 added an explicit direct entry.
@@ -871,16 +871,32 @@ are non-negotiable for the Spec 008 landing:
   incomplete journal before any new plan is built. Journal state
   transitions fsync the journal file and its parent directory before
   advancing.
-- **Sibling staging root + atomic swap**. All new bytes are written to a
-  staging root next to the target (same filesystem), fsynced, and moved
-  into place through `rename(2)` (POSIX) or the platform-atomic equivalent
-  (`ReplaceFile`/`MoveFileEx` on Windows). Directories are fsynced after
-  the swap.
-- **Stable staged-input reads through commit**. `.haex-hive.json`, every
-  publisher manifest, and every atom manifest read during plan-build is
-  copied into the staging root under the lock and re-hashed at commit
-  time. If any input digest changed since plan-build, the install aborts
-  before publishing outputs.
+- **Repository-wide visibility commit**. All new bytes are written to a
+  staging root next to the target (same filesystem), fsynced, and prepared as
+  complete output-root views for `.haex-hive/`, `.claude/`, and `.codex/` (only
+  adapter-owned paths are replaced). The transaction swaps those views with
+  `rename(2)` (POSIX) or the platform-atomic equivalent
+  (`ReplaceFile`/`MoveFileEx` on Windows), but readers MUST NOT treat the
+  individual swaps as publication. The last view swap publishes
+  `.haex-hive/visibility.json`, a repository-wide visibility marker containing
+  a deterministic generation ID and the digest of every participating output
+  root (the `.haex-hive/` digest excludes the marker itself). Readers first
+  load that marker and then verify every root's generation and digest; a
+  missing marker or mixed generation is an unavailable
+  installation, never a partially valid one. Recovery tests MUST cover a crash
+  after each root swap and prove that recovery either restores the previous
+  marker-consistent generation or completes the new one before readers resume.
+- **Stable staged-input reads through commit**. Plan-build captures the exact
+  bytes of `.haex-hive.json`, every publisher manifest, and every atom manifest
+  into a sealed plan snapshot and records their digests. Immediately before
+  publishing any output, still under the install lock, the transaction reads
+  the live inputs into a fresh commit snapshot, hashes those snapshot bytes,
+  and compares every digest with the plan snapshot. A source identity/metadata
+  change during capture is also a failure. On any mismatch the install aborts
+  before the first output-root swap. Only the fresh, digest-matching commit
+  snapshot is then sealed and used for resolution and hydration; no later step
+  re-reads live inputs. The conformance suite MUST mutate a live config or
+  manifest during installation and prove that no output is published.
 - **Every side effect through the transaction**. The following outputs
   MUST be produced through the same staging-root+journal transaction:
   `.haex-hive/constitution.md` (D2), `.haex-hive/config/<atom-id>.json`
@@ -921,26 +937,41 @@ delete-orphans plan.
 is the sole consumer-side execution surface for publisher-authored code
 and is therefore load-bearing for the operator's trust model:
 
-- **Filesystem cwd + allowlist**. The subprocess cwd is the consumer repo
-  root. A hook's readable and writable paths are enumerated in the
-  dispatcher contract; at minimum, reads are restricted to the consumer
-  repo tree and `.haex-hive/generated/`, writes to a per-invocation
-  scratch directory. Attempts outside the allowlist are refused, not
-  silently allowed.
+- **Filesystem cwd + advisory allowlist**. The subprocess cwd is the consumer
+  repo root. The dispatcher contract enumerates a hook's readable and writable
+  paths; at minimum, dispatcher-mediated reads are limited to the consumer
+  repo tree and `.haex-hive/generated/`, and dispatcher-mediated writes go to
+  a per-invocation scratch directory. The dispatcher refuses requests through
+  its own file APIs that fall outside this allowlist. Because hooks run under
+  the consumer's user account and Spec 007 provides no OS-level sandbox,
+  direct filesystem syscalls outside the allowlist cannot be technically
+  prevented; this requirement MUST NOT claim kernel-enforced confinement.
 - **Environment isolation**. The subprocess starts from an explicit
   allow-list of environment variables (`PATH`, `HOME`, `LANG`, plus a
   named `HAEX_HOOK_*` set); the caller's other environment does not
   leak in, and the hook cannot read the operator's shell state.
-- **Process-group reaping**. The dispatcher runs each hook in its own
-  process group (`setsid` / `CREATE_NEW_PROCESS_GROUP`), enforces the
-  timeout by killing the group, and reaps every descendant before
-  returning. A hook cannot leave stray processes behind after failure.
-- **No-follow reads of hook outputs**. When a hook writes to a
-  pre-declared output path, the dispatcher reads it back through
-  no-follow file handles (`O_NOFOLLOW` on POSIX, equivalent on
-  Windows), verifies the target's device+inode identity both before
-  and after the read, and rejects the result if identity changed
-  during the read. This is the TOCTOU-closure rule.
+- **Process-group reaping**. On Windows, the dispatcher assigns the hook and
+  all inherited descendants to a Job Object configured with
+  `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`; timeout or failure closes the job,
+  waits for termination, and reaps every process. On Linux, it uses a
+  dedicated cgroup v2 subtree and kills the subtree, which also contains
+  descendants that create new sessions. On other POSIX platforms, process
+  groups alone are explicitly insufficient: the dispatcher MUST use an
+  equivalent OS-level descendant container or refuse to run the hook until
+  one is available. Tests MUST spawn a descendant that creates a new session
+  and prove that timeout and failure terminate and reap it, with no stray
+  process remaining.
+- **No-follow reads of hook outputs**. The dispatcher establishes a handle to
+  the permitted output root and resolves the declared relative path beneath
+  that boundary, without following symlinks or reparse points in any parent
+  component. On Linux this uses an `openat2`-style beneath/no-symlink resolve;
+  POSIX fallbacks open and validate each component relative to a directory
+  handle, and Windows uses a constrained directory handle with reparse-point
+  rejection. It reads from the opened handle rather than reopening the path,
+  verifies the handle's device+inode identity (or Windows volume serial/file
+  ID) before and after reading, and rejects any identity change. Tests MUST
+  replace a parent directory or output during a read and prove the result is
+  rejected. This is the TOCTOU-closure rule.
 - **Timeout contract**. Every trigger declares a max wall-clock
   duration; exceeding it kills the hook's process group and marks the
   invocation as failed. No hook can hang the dispatcher indefinitely.
@@ -1015,6 +1046,16 @@ The final three rows cover every valid v1 permission-only shape. v2's
 permission, so dropping or widening such a scope would change authorization;
 the operator must replace it with explicit v2 atom entries in a reviewed PR.
 
+**Migration source handling**: every repository emitted in the v2 `atoms[]`
+result, including a `self` repository resolved from `remote.origin.url` and a
+repository supplied directly by a v1 entry, goes through D3's canonical source
+normalization, scheme validation, and credential rejection before its root
+manifest is read or the migration sidecar is written. The normalized source is
+the only source value emitted in the sidecar. A credential-bearing or otherwise
+unsupported URL refuses the migration before any sidecar replacement and
+leaves the original v1 file untouched; the same rule applies to all transitive
+publisher sources encountered while resolving an entry.
+
 **Role mapping and migration glob rule**: migration first maps the v1 role to
 exactly one contribution member: `constitution` →
 `contributes.constitution`, `spec` → `contributes.spec`, `rules` →
@@ -1059,16 +1100,33 @@ publisher manifest is absent, migration refuses with the relevant entry index
 and leaves the original file untouched; it also removes any temporary or
 previous migration sidecar as required by D10.
 
-**Adoption of an unmanaged legacy output**: if a pre-existing
-`.specify/memory/constitution.md` (or any other file that v2 hydration would
-own under `.haex-hive/`) is present in the working tree before migration,
-`haex migrate` MUST NOT silently claim ownership. It reads the resolved v1
-constitution bytes at the pinned SHA, compares them byte-for-byte to the
-unmanaged file, and only records the file as adopted when the two are
-identical (after LF normalization). On mismatch it refuses with `unmanaged
-<path> differs from resolved v1 <role>; move or delete the file, or restate
-the v1 pin`, and leaves the original tree untouched. The same rule applies
-to every other role the v1 file names.
+**Adoption of an unmanaged legacy output**: the v2 sidecar has an optional
+top-level `legacy_outputs` array, sorted by `legacy_path`, whose entries have
+`legacy_path`, `atom`, optional `managed_path`, and a `state` enum:
+`preserved`, `copied`, or `unmanaged`. `preserved` means a pre-existing legacy
+file is byte-identical (after LF normalization) to the resolved atom and
+remains the authoritative managed output at `legacy_path`; `copied` means
+`haex install` copies the resolved bytes to `managed_path` and makes that v2
+path authoritative; `unmanaged` means the legacy path is not owned and
+`haex install` and `haex verify` MUST refuse rather than overwrite it. The
+record is part of the v2 schema, is written by install as the transactional
+`.haex-hive/legacy-outputs.json` state record, and is consumed by verify and
+the lockfile output-set calculation.
+
+If a pre-existing `.specify/memory/constitution.md` (or any other file that v2
+hydration would own under `.haex-hive/`) is present in the working tree before
+migration, `haex migrate` MUST NOT silently claim ownership. It reads the
+resolved v1 constitution bytes at the pinned SHA and compares them byte-for-
+byte to the unmanaged file. When they are identical, the migrated sidecar
+records `state: "preserved"`; install and verify keep that legacy path and
+verify its bytes. When no legacy file is present, the sidecar records the
+corresponding v2 target as `state: "copied"`, and install writes and verifies
+the managed path. A mismatch records no adoptable ownership: migration refuses
+with `unmanaged <path> differs from resolved v1 <role>; move or delete the
+file, or restate the v1 pin`, and leaves the original tree untouched. The
+`unmanaged` state remains an explicit refusal state for a reviewed v2 record,
+never permission to overwrite. The same rule applies to every other role the
+v1 file names.
 
 Output written to `.haex-hive.json.migrated`. User reviews, moves manually,
 commits. `haex install` on the v2 file then reconciles.
