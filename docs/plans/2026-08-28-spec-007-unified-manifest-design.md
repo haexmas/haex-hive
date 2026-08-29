@@ -1117,49 +1117,14 @@ publisher manifest is absent, migration refuses with the relevant entry index
 and leaves the original file untouched; it also removes any temporary or
 previous migration sidecar as required by D10.
 
-**Adoption of an unmanaged legacy output**: the v2 sidecar has an optional
-top-level `legacy_outputs` array, sorted by `legacy_path`, whose entries have
-`legacy_path`, `atom`, required atom-relative `source_path`, optional
-`managed_path`, and a `state` enum: `preserved`, `copied`, or `unmanaged`.
-`source_path` names one regular file within the selected atom, has the same
-POSIX no-empty/`.`/`..`-segment validation as other atom-relative paths, and
-MUST match the exact literal or glob contribution that produces this output. It
-identifies the bytes to compare, copy, and verify; `atom` alone is not
-sufficient because one atom can contribute multiple files. `preserved` means a
-pre-existing legacy file is raw-byte-for-byte identical to the resolved
-`source_path` and remains
-the authoritative managed output at `legacy_path`; `copied` means `haex
-install` copies the resolved `source_path` bytes to `managed_path` and makes
-that v2 path authoritative; `unmanaged` means the legacy path is not owned and
-`haex install` and `haex verify` MUST refuse rather than overwrite it.
-`managed_path` is required and repository-relative when `state` is `copied`,
-and remains optional for the other states. Schema validation, `haex install`,
-and `haex verify` MUST reject a copied record without it before writing or
-checking any output. The committed `legacy_outputs` array in `.haex-hive.json`
-is the sole authoritative adoption record: install validates and consumes it
-transactionally, verify rereads and enforces it, and the lockfile output-set
-calculation derives from it. No independent
-`.haex-hive/legacy-outputs.json` state record exists. A copied output that is
-modified or deleted is drift: `haex verify` fails and the next successful
-install restores it from `source_path`; a preserved output that is modified or
-deleted also makes verify and install fail rather than allowing either command
-to overwrite the legacy path.
-
-If a pre-existing `.specify/memory/constitution.md` (or any other file that v2
-hydration would own under `.haex-hive/`) is present in the working tree before
-migration, `haex migrate` MUST NOT silently claim ownership. It resolves the
-exact selected atom `source_path` from the v1 role mapping at the pinned SHA
-and compares those bytes byte-for-byte to the unmanaged file. When they are
-identical, the migrated sidecar records that `source_path` with
-`state: "preserved"`; install and verify keep that legacy path and verify its
-bytes. When no legacy file is present, the sidecar records that same
-`source_path` and the corresponding v2 target as `state: "copied"`, and
-install writes and verifies the managed path. A mismatch records no adoptable
-ownership: migration refuses with `unmanaged <path> differs from resolved v1
-<role>; move or delete the file, or restate the v1 pin`, and leaves the
-original tree untouched. The `unmanaged` state remains an explicit refusal
-state for a reviewed v2 record, never permission to overwrite. The same rule
-applies to every other role the v1 file names.
+**No legacy-output compatibility**: v2 has no `legacy_outputs` field or
+installed legacy-output state. `haex migrate` transforms only the reviewed
+configuration sidecar; it never adopts, copies, preserves, or deletes files
+from the v1 layout. The repository's one-time v2 migration MUST review any
+pre-existing v1-managed files explicitly and remove or replace them in the
+same migration PR as appropriate. After adoption, `haex install` and `haex
+verify` operate solely on v2-owned outputs and `install.lock`; they provide no
+special behavior for paths from the retired layout.
 
 Output written to `.haex-hive.json.migrated`. User reviews, moves manually,
 commits. `haex install` on the v2 file then reconciles.
