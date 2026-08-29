@@ -832,92 +832,16 @@ store admin, publisher-side hydration of blueprint atoms. Those are Spec
 - `haex store prune`, `haex store status`
 - `haex add`, `haex update`, `haex remove` verbs
 
-**Install-transaction requirements (Spec 008 MUST specify)**. The following
-rules are load-bearing for correctness under concurrency and interruption and
-are non-negotiable for the Spec 008 landing:
-
-- **Repository lock ordering**. Acquire an exclusive advisory lock at
-  `.haex-hive/install.mutex` (or per-OS equivalent) **before** reading
-  `.haex-hive.json`, cloning, resolving, or building the install plan. Hold
-  it through recovery, staging, commit, rollback, and cleanup. Concurrent
-  invocations wait or fail with the lock owner's PID, hostname, and start
-  time. `haex verify` acquires a shared/read lock so a concurrent install
-  cannot present it a torn view.
-- **Journal + startup recovery**. Every filesystem mutation step is recorded
-  in a `.haex-hive/install.journal` before it is executed, and the next
-  `haex install` (or `haex verify --recover`) replays or rolls back an
-  incomplete journal before any new plan is built. Journal state
-  transitions fsync the journal file and its parent directory before
-  advancing.
-- **Repository-wide visibility commit**. All new bytes are written to a
-  staging root next to the target (same filesystem), fsynced, and prepared as
-  complete logical output-root views for `.haex-hive/`, `.claude/`, and
-  `.codex/`. `.haex-hive/` is haex-owned and may use a platform primitive that
-  atomically exchanges populated, same-filesystem directories. `.claude/` and
-  `.codex/` are mixed-ownership roots and MUST NEVER be exchanged or renamed as
-  directories. Their adapter-owned leaves are instead stored under a versioned
-  generation directory and published through a stable per-adapter overlay and
-  current-generation pointer (for example, a supported symlink/junction or
-  adapter-managed launcher). The overlay changes only paths recorded as
-  adapter-owned; it never enumerates, copies, or replaces sibling entries in
-  the mixed-ownership root. A platform without an atomic pointer or stable
-  overlay mechanism MUST refuse the install rather than publish a torn direct
-  view. The digest for a mixed-ownership root covers only its managed overlay,
-  never its unowned directory contents. After every other staged output is
-  sealed, the transaction writes and fsyncs the final staged `install.lock`,
-  computes the participating-root digests over those final staged bytes, and
-  writes the staged `.haex-hive/visibility.json` marker last. The marker
-  contains a deterministic generation ID and the digest of every participating
-  output root; the `.haex-hive/` digest includes `install.lock` and excludes
-  only the marker itself to avoid self-reference. Readers MUST NOT treat
-  individual root exchanges or pointer replacements as publication. The
-  `.haex-hive/` exchange or pointer replacement containing that final marker is
-  the final journal step and publishes the generation. Readers first load the
-  marker and then verify every root's generation and digest; a missing marker
-  or mixed generation is an unavailable installation, never a partially valid
-  one. Recovery tests MUST cover a crash after each root publication step and a
-  reinstall with non-empty output roots, including an unowned `.claude/` or
-  `.codex/` file modified during staging that survives unchanged, proving that
-  recovery either restores the previous marker-consistent generation or
-  completes the new one before readers resume.
-- **Stable staged-input reads through commit**. Plan-build captures the exact
-  bytes of `.haex-hive.json`, every publisher manifest, and every atom manifest
-  into a sealed plan snapshot and records their digests. Immediately before
-  publishing any output, still under the install lock, the transaction reads
-  the live inputs into a fresh commit snapshot, hashes those snapshot bytes,
-  and compares every digest with the plan snapshot. A source identity/metadata
-  change during capture is also a failure. On any mismatch the install aborts
-  before the first output-root swap. Only the fresh, digest-matching commit
-  snapshot is then sealed and used for resolution and hydration; no later step
-  re-reads live inputs. The conformance suite MUST mutate a live config or
-  manifest during installation and prove that no output is published.
-- **Every side effect through the transaction**. The following outputs
-  MUST be produced through the same staging-root+journal transaction:
-  `.haex-hive/constitution.md` (D2), `.haex-hive/config/<atom-id>.json`
-  (D7), every file under `.haex-hive/generated/`, and any device-local
-  agent-facing copy under `.claude/`, `.codex/`, etc. that Spec 010's
-  adapters emit. `install.lock` is written last, after every other output
-  in the transaction has been sealed (including any deferred publisher-hook
-  outputs — see the "Publisher install-time outputs" clarifier below).
-- **Delete-orphans in-transaction**. The plan computes the delta between
-  the previous `install.lock` output set and the current planned output
-  set. Files owned by removed resources are staged for deletion through
-  the same transaction as new outputs; a partial state where deleted
-  files reappear after rollback (or new files persist after rollback)
-  is not allowed.
-- **`install.lock` computed last**. The lockfile records
-  `generated_content_integrity` and every `atoms[].content_integrity`
-  over the final sealed bytes actually swapped into place. Its own fsync
-  precedes construction of `visibility.json`; the staged `.haex-hive/` view
-  swap containing both files is the final journal step. Any output that could
-  still mutate (native-tool outputs when they return — see the Non-Goals
-  clarifier) is sealed before `install.lock` is computed.
-
-Spec 008's conformance suite MUST cover: concurrent `haex install`
-invocations (one wins, the other waits or fails with owner detail), crash
-recovery from every journal state, mid-install `.haex-hive.json` mutation
-(aborted at commit-time re-hash), and rollback of a partially-applied
-delete-orphans plan.
+**Install-transaction requirements**. The install transaction contract
+(repository lock ordering, journal + startup recovery, repository-wide
+visibility commit with mixed-ownership root handling, stable staged-input
+reads through commit, every-side-effect-through-transaction rule,
+delete-orphans in-transaction, `install.lock` computed last, plus the
+conformance-suite requirements) is captured verbatim in
+[Spec 008 — Install Transaction Contract](2026-08-29-spec-008-install-transaction-requirements.md).
+That document is authoritative for Spec 008 and MUST be referenced (not
+restated) by Spec 008's plan/tasks. Any change to those requirements is a
+change to Spec 008's authoritative contract and MUST land there.
 
 ### Spec 009 — Hook dispatcher (Python-only)
 
@@ -928,51 +852,15 @@ delete-orphans plan.
 - Timeout/env-isolation contract
 - Consumer-side hook install (git-hooks wiring, pre-commit dispatcher)
 
-**Hook-boundary requirements (Spec 009 MUST specify)**. `haex hook run`
-is the sole consumer-side execution surface for publisher-authored code
-and is therefore load-bearing for the operator's trust model:
-
-- **Filesystem cwd + advisory allowlist**. The subprocess cwd is the consumer
-  repo root. The dispatcher contract enumerates a hook's readable and writable
-  paths; at minimum, dispatcher-mediated reads are limited to the consumer
-  repo tree and `.haex-hive/generated/`, and dispatcher-mediated writes go to
-  a per-invocation scratch directory. The dispatcher refuses requests through
-  its own file APIs that fall outside this allowlist. Because hooks run under
-  the consumer's user account and Spec 007 provides no OS-level sandbox,
-  direct filesystem syscalls outside the allowlist cannot be technically
-  prevented; this requirement MUST NOT claim kernel-enforced confinement.
-- **Environment isolation**. The subprocess starts from an explicit
-  allow-list of environment variables (`PATH`, `HOME`, `LANG`, plus a
-  named `HAEX_HOOK_*` set); the caller's other environment does not
-  leak in, and the hook cannot read the operator's shell state.
-- **Process-group reaping**. On Windows, the dispatcher assigns the hook and
-  all inherited descendants to a Job Object configured with
-  `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`; timeout or failure closes the job,
-  waits for termination, and reaps every process. On Linux, it uses a
-  dedicated cgroup v2 subtree and kills the subtree, which also contains
-  descendants that create new sessions. On other POSIX platforms, process
-  groups alone are explicitly insufficient: the dispatcher MUST use an
-  equivalent OS-level descendant container or refuse to run the hook until
-  one is available. Tests MUST spawn a descendant that creates a new session
-  and prove that timeout and failure terminate and reap it, with no stray
-  process remaining.
-- **No-follow reads of hook outputs**. The dispatcher establishes a handle to
-  the permitted output root and resolves the declared relative path beneath
-  that boundary, without following symlinks or reparse points in any parent
-  component. On Linux this uses an `openat2`-style beneath/no-symlink resolve;
-  POSIX fallbacks open and validate each component relative to a directory
-  handle, and Windows uses a constrained directory handle with reparse-point
-  rejection. It reads from the opened handle rather than reopening the path,
-  verifies the handle's device+inode identity (or Windows volume serial/file
-  ID) before and after reading, and rejects any identity change. Tests MUST
-  replace a parent directory or output during a read and prove the result is
-  rejected. This is the TOCTOU-closure rule.
-- **Timeout contract**. Every trigger declares a max wall-clock
-  duration; exceeding it marks the invocation as failed and cleans up through
-  the platform containment object above: it closes the Windows Job Object,
-  kills the Linux cgroup v2 subtree, or uses the required equivalent POSIX
-  descendant container. The dispatcher then waits for termination and reaps
-  every contained process. No hook can hang the dispatcher indefinitely.
+**Hook-boundary requirements**. The hook boundary contract (filesystem
+cwd + advisory allowlist, environment isolation, process-group reaping via
+Windows Job Objects and Linux cgroup v2, no-follow reads with device+inode
+identity checks, timeout contract) plus the runtime-secret-access
+convention that follows from D7 are captured verbatim in
+[Spec 009 — Hook Boundary Contract](2026-08-29-spec-009-hook-boundary-requirements.md).
+That document is authoritative for Spec 009 and MUST be referenced (not
+restated) by Spec 009's plan/tasks. Any change to those requirements is a
+change to Spec 009's authoritative contract and MUST land there.
 
 ### Spec 010 — Publisher manifest contract + Blueprint atoms
 
@@ -1153,25 +1041,11 @@ Non-blocking for Spec 007 but must be resolved by Spec 008/009/010:
   `check-prerequisites.sh` et al.): NOT in haex-hive scope at any point.
   These are speckit-cli-provided infrastructure that a speckit upgrade
   replaces. haex-hive treats them as read-only vendor content.
-- **`install.mutex` / `install.journal` placement** (raised by
-  CodeRabbit on PR #9, 2026-08-29): these transaction artifacts carry
-  device-local state (owner token, hostname, recovery cursor) that MUST
-  NOT be synchronized across devices, but Spec 007's committed-`.haex-hive/`
-  model would otherwise pull them in through git. Two candidate
-  resolutions for Spec 008 to decide between: (a) locate them under an
-  ignored runtime subpath (e.g. `.haex-hive/run/` gitignored) with a
-  **fenced lease** contract — a unique owner token stamped at
-  acquisition, a heartbeat/renewal cadence while the install runs,
-  atomic revalidation of ownership before any recovery action, and
-  recovery only when the lease has demonstrably expired past its safety
-  margin (mtime alone is insufficient because a live install can be
-  paused, swapped out, or otherwise starved without dying); or (b) move
-  them to a device-local state root (e.g.
-  `$HAEX_HIVE_STATE/locks/<repo-identity>/`) alongside the content
-  store, keeping `.haex-hive/` fully committed content. Both preserve
-  the byte-identity-via-git guarantee for actual harness state; Spec
-  008 picks one and documents the stale-lease contract (owner-token
-  format, heartbeat interval, lease TTL, revalidation ordering).
+- **`install.mutex` / `install.journal` placement**: the two candidate
+  resolutions (fenced-lease under a gitignored `.haex-hive/run/` vs.
+  device-local `$HAEX_HIVE_STATE/locks/<repo-identity>/`) are captured
+  in the Spec 008 install-transaction contract document. Spec 008 picks
+  one and documents the stale-lease contract there.
 
 ## Constitution compliance check
 
