@@ -24,8 +24,12 @@ interruption and are non-negotiable for the Spec 008 landing:
   `.haex-hive.json`, cloning, resolving, or building the install plan. Hold
   it through recovery, staging, commit, rollback, and cleanup. Concurrent
   invocations wait or fail with the lock owner's PID, hostname, and start
-  time. `haex verify` acquires a shared/read lock so a concurrent install
-  cannot present it a torn view.
+  time. Ordinary `haex verify` acquires a shared/read lock so a concurrent
+  install cannot present it a torn view. `haex verify --recover` is a
+  modifying operation: it MUST acquire the same exclusive lock as `haex
+  install` before reading the journal, and it MUST NOT first take a shared
+  lock and upgrade it before replaying or rolling back a journal or changing
+  any output root.
 - **Journal + startup recovery**. Every filesystem mutation step is recorded
   in a `.haex-hive/install.journal` before it is executed, and the next
   `haex install` (or `haex verify --recover`) replays or rolls back an
