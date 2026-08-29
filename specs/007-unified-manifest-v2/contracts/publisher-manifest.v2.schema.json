@@ -31,7 +31,7 @@
     },
     "repoRelativePath": {
       "type": "string",
-      "pattern": "^(?!.*(?:^|/)\\.\\.?(/|$))[^/\\0]+(?:/[^/\\0]+)*$",
+      "pattern": "^(?!.*(?:^|/)\\.\\.?(/|$))[^\\u0000/\\\\]+(?:/[^\\u0000/\\\\]+)*$",
       "minLength": 1,
       "description": "Repository-relative POSIX path with no leading/trailing slash, NUL, empty, . or .. segments."
     },

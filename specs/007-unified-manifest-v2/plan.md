@@ -8,7 +8,7 @@
 
 Deliver the CLI-level surface for the unified-manifest v2 architecture: the `.haex-hive.json` v2 schema, publisher-side root and per-atom `manifest.json` schemas, the review-gated `haex migrate` command that rewrites v1 files into v2 via a `.migrated` sidecar with unified-diff output, and the `haex constitution assemble` + `haex constitution show` commands that produce a byte-deterministic (single-source) or LLM-merged (multi-source) `.haex-hive/constitution.md` with content-hash recording in `.haex-hive/install.lock`. Haex-hive migrates itself as the reference case.
 
-Technical approach (from research): Python 3.10+ stdlib-first with three targeted external dependencies (`jsonschema` for Draft 2020-12 validation, `PyYAML` with `safe_load` + custom serializer for deterministic YAML I/O when needed, `Jinja2` reserved for Spec 010 hydration but not used in Spec 007). CLI structure via stdlib `argparse` with subparser tree (`haex migrate`, `haex constitution {assemble,show}`). Git operations via `git` subprocess (bare `git show <sha>:<path>`, `git rev-parse`, `git remote get-url`) — no `pygit2`/`GitPython` dependency. Deterministic JSON serialization via stdlib `json` (`sort_keys=True`, LF endings, trailing newline). Unified-diff generation via stdlib `difflib.unified_diff`. Atomic file publication via write-to-temp + `os.replace` in same directory + parent-directory fsync (POSIX) / `MoveFileExW(MOVEFILE_REPLACE_EXISTING)` (Windows-portable via `os.replace` which uses that API).
+Technical approach (from research): Python 3.10+ stdlib-first with three targeted external dependencies (`jsonschema` for Draft 2020-12 validation, `PyYAML` with `safe_load` + custom serializer for deterministic YAML I/O when needed, `Jinja2` reserved for Spec 010 hydration but not used in Spec 007). CLI structure via stdlib `argparse` with subparser tree (`haex migrate`, `haex constitution {assemble,show}`). Git operations via `git` subprocess (bare `git show <sha>:<path>`, `git rev-parse`, `git remote get-url`) — no `pygit2`/`GitPython` dependency. Deterministic JSON serialization via stdlib `json` (`sort_keys=True`, LF endings, trailing newline). Unified-diff generation via stdlib `difflib.unified_diff`. Single files publish via write-to-temp + `os.replace` + parent-directory fsync on POSIX; the constitution pair uses the durable FR-035 journal, with explicit `MoveFileExW(..., MOVEFILE_WRITE_THROUGH)` and `FlushFileBuffers` on Windows.
 
 ## Technical Context
 
@@ -143,7 +143,8 @@ tests/
     ├── test_atom_id.py                # reverse-DNS grammar
     ├── test_version_constraint.py     # FR-006 grammar
     ├── test_json_deterministic.py     # FR-036 byte-identity
-    ├── test_transaction.py            # FR-035 journal recovery and mixed-pair refusal
+    ├── test_transaction.py            # FR-035 durable-journal recovery after journal creation and each target replacement; mixed-pair refusal
+    ├── test_git_show_raw_bytes.py     # pinned-SHA blob bytes, including a .gitattributes-filtered fixture
     ├── test_transform.py              # migration table rules
     └── test_resolve.py                # D11 two-step lookup
 

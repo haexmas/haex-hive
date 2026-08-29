@@ -31,7 +31,7 @@ One row of `ConsumerManifest.atoms[]`. Represents a consumer's selection of one-
 
 | Field | Type | Optional | Constraint / Source |
 |---|---|---|---|
-| `source` | `CanonicalSourceUrl` | required | Passes through `source_url.canonicalize()` (D3); rejected on userinfo, non-`https`/`ssh`/`git` schemes. |
+| `source` | `CanonicalSourceUrl` | required | Passes through `source_url.canonicalize()` (D3); canonical output accepts only lowercase `https` or `ssh`, and rejects userinfo or every other scheme. |
 | `revision` | `str` (40-char lowercase hex) | required | Full commit SHA. 7-39-char short SHAs are refused by Spec 007's read path (only `haex migrate` expands them, at migration time). |
 | `track` | `str \| None` | optional | Non-authoritative branch annotation. Never overrides `revision`. |
 | `includes` | `list[AtomId]` | required, non-empty | Reverse-DNS atom-IDs. Length ≥ 1 (D12). |
@@ -133,7 +133,7 @@ Sub-entity of `InstallLock.constitution`. Records provenance for `.haex-hive/con
 
 | Field | Type | Optional | Constraint / Source |
 |---|---|---|---|
-| `sources` | `list[ConstitutionSource]` | required, non-empty | Contributing sources, sorted alphabetically by `ConstitutionSource.id` (FR-030). Length ≥ 1. |
+| `sources` | `list[ConstitutionSource]` | required, non-empty | One row per contributing atom, unique and sorted by `ConstitutionSource.id` in bytewise UTF-8 order (FR-030). Length ≥ 1. |
 | `assembled_by` | `AssembledBy` | required | Tool identity and semver for the assembly invocation (FR-029). |
 | `content_integrity` | `str` (format: `sha256-<base64>`) | required | SHA-256 of D15's `haex-hive-tree-v1` one-file tree with regular-file mode `100644`, path `constitution.md`, and the produced raw bytes (R11). |
 
@@ -178,7 +178,7 @@ Value object, not a distinct entity. String-typed at the schema level; validated
 
 Grammar (D3, R9):
 
-- Canonical scheme in `{"https", "ssh"}` (lowercase).
+- Canonical scheme is lowercase `https` or `ssh`; `git://` and every other scheme are refused.
 - Host lowercase.
 - Path has no trailing `/`.
 - Path has no terminal `.git`.
@@ -198,7 +198,7 @@ Grammar (FR-006, R10): `^(?:>=)?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*
 
 ### RepoRelativePath
 
-Value object. String-typed at the schema level; validated with the pattern `^[^/][^\0]*$` combined with a segment-walk rejection for `.`, `..`, empty segments, absolute paths, and control characters.
+Value object. String-typed at the schema level; validated with a POSIX-only pattern plus a segment-walk rejection for `.`, `..`, empty segments, absolute paths, backslashes, drive-qualified paths, and control characters.
 
 ## Relationships
 
@@ -211,7 +211,7 @@ ConsumerManifest 1 ─── * AtomEntry
 
 ConsumerManifest 1 ─── 1 (references, does not embed) InstallLock
 
-InstallLock      1 ─── 1 ConstitutionLockSection
+InstallLock      1 ─── 0..1 ConstitutionLockSection
 ConstitutionLockSection 1 ─── * ConstitutionSource
 
 PublisherManifest 1 ─── * PublisherAtomEntry (keyed by AtomId)
@@ -226,6 +226,8 @@ Cross-manifest constraints (validated at read/resolve time, not by JSON Schema a
 - `AtomManifest.id == PublisherManifest`-key that referenced it.
 - Every `AtomId` in `ConsumerManifest.atoms[i].includes[]` MUST resolve at `atoms[i].source@atoms[i].revision` via `PublisherManifest → PublisherAtomEntry → AtomManifest`.
 - Every `AtomId` key in `ConsumerManifest.atoms[i].config[]` MUST resolve (directly or transitively via profile expansion) from `atoms[i].includes[]`.
+- `InstallLock.constitution` exists only when an assembled `constitution.md` exists. A lock with no constitution sources may omit the section entirely.
+- `ConstitutionLockSection.sources[]` is validated semantically after JSON Schema validation: IDs are unique and entries are bytewise UTF-8 sorted by ID.
 
 ## State transitions
 
