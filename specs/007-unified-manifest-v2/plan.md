@@ -19,7 +19,7 @@ Technical approach (from research): Python 3.10+ stdlib-first with three targete
 **Target Platform**: Linux, macOS, Windows (Windows-portability is a Spec-007 correctness requirement per D15; no symlinks, no junctions, no bind mounts).
 **Project Type**: Single-project CLI. Python package `haex_hive/` published to PyPI as `haex-hive`; `haex` console script defined in `pyproject.toml`.
 **Performance Goals**: `haex migrate --dry-run` completes in under 5 seconds on a well-formed v1 file (SC-004). `haex constitution assemble` refuses on missing-LLM in multi-source case in under 1 second (SC-007). No per-request throughput targets — this is a one-shot CLI.
-**Constraints**: Deterministic output (byte-identical across runs on identical inputs — FR-036, D9). Cross-platform correctness with no OS-specific filesystem primitives outside `os.replace` and `fsync`. No plaintext secrets in any committed content (FR-029 explicit; no schema-level secret surface). Every pathname replacement is atomic; constitution + lock publication uses the FR-035 durable journal and startup recovery protocol.
+**Constraints**: Deterministic output (byte-identical across runs on identical inputs — FR-036, D9). Cross-platform correctness with no OS-specific filesystem primitives outside `os.replace` and `fsync`, except the FR-035 Windows durability calls `MoveFileExW` with `MOVEFILE_WRITE_THROUGH` and `FlushFileBuffers`. No plaintext secrets in any committed content (FR-029 explicit; no schema-level secret surface). Every pathname replacement is atomic; constitution + lock publication uses the FR-035 durable journal and startup recovery protocol.
 **Scale/Scope**: Per-repo tool. A consumer's `.haex-hive.json` v2 typically declares 1-10 atom entries; a project constitution is a few KB to tens of KB; `install.lock` for Spec-007 scope is under 1 KB. Publisher-side registries in scope for Spec 007 read: haex-hive's own root + atom manifest (one atom entry, `constitution` type).
 
 ## Constitution Check
@@ -37,7 +37,7 @@ Constitution version at plan time: **1.3.0** (ratified 2026-08-26, last amended 
 | V. External Sources Are Opt-in Per Project (NON-NEGOTIABLE) | PASS | `.haex-hive.json`'s `atoms[]` is the explicit allowlist. An empty array grants no external inheritance. Migration refuses to widen v1 permission-only entries into v2 atom grants (FR-019). |
 | VI. Self-Modifying Instructions Are Always Review-Gated (NON-NEGOTIABLE) | PASS | `haex migrate` writes a `.migrated` sidecar plus stdout diff (FR-014–FR-018), never overwrites the original. Constitution v1.3.0's Principle-VI clarification (from PR #9) codifies this pattern; Spec 007 implements it. |
 | VII. Relay Unavailability Never Blocks Local Work (NON-NEGOTIABLE) | PASS | Spec 007 has zero Nostr-relay code path. Constitution merge sync (design D2) uses git as primary channel; Nostr notify is optional and out of Spec 007's scope. |
-| VIII. No Concealment Instructions in Agent Output (NON-NEGOTIABLE) | PASS | Spec 007's commands emit only diagnostic text, JSON schemas, and unified diffs — no natural-language content that could embed concealment instructions to a downstream agent. |
+| VIII. No Concealment Instructions in Agent Output (NON-NEGOTIABLE) | PASS | Before publication, every LLM-supplied merge candidate is checked by the R7 concealment-instruction guard. A rejected candidate is never staged or written to `constitution.md`; tests cover the refusal path. |
 
 **Result**: Zero violations. No entries needed in Complexity Tracking.
 
@@ -113,6 +113,7 @@ src/
     │   ├── resolve.py                 # atoms[]→ContributionFile resolution (D11)
     │   ├── assemble.py                # single-source straight-copy + LLM path stub
     │   ├── llm.py                     # LLM invocation abstraction (research-topic)
+    │   ├── safety.py                  # Principle-VIII merged-candidate validation
     │   └── show.py                    # synthesized preface + body print
     ├── io/
     │   ├── __init__.py
@@ -143,7 +144,8 @@ tests/
     ├── test_atom_id.py                # reverse-DNS grammar
     ├── test_version_constraint.py     # FR-006 grammar
     ├── test_json_deterministic.py     # FR-036 byte-identity
-    ├── test_transaction.py            # FR-035 durable-journal recovery after journal creation and each target replacement; mixed-pair refusal
+    ├── test_transaction.py            # FR-035 recovery after every interruption boundary for existing and absent targets; mixed-pair refusal
+    ├── test_constitution_safety.py    # Principle-VIII candidate refusal before publication
     ├── test_git_show_raw_bytes.py     # pinned-SHA blob bytes, including a .gitattributes-filtered fixture
     ├── test_transform.py              # migration table rules
     └── test_resolve.py                # D11 two-step lookup
