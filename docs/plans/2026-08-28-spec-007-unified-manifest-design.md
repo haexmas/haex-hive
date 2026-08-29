@@ -874,18 +874,22 @@ are non-negotiable for the Spec 008 landing:
 - **Repository-wide visibility commit**. All new bytes are written to a
   staging root next to the target (same filesystem), fsynced, and prepared as
   complete output-root views for `.haex-hive/`, `.claude/`, and `.codex/` (only
-  adapter-owned paths are replaced). The transaction swaps those views with
-  `rename(2)` (POSIX) or the platform-atomic equivalent
+  adapter-owned paths are replaced). After every other staged output is sealed,
+  the transaction writes and fsyncs the final staged `install.lock`, computes
+  the participating-root digests over those final staged bytes, and writes the
+  staged `.haex-hive/visibility.json` marker last. The marker contains a
+  deterministic generation ID and the digest of every participating output
+  root; the `.haex-hive/` digest includes `install.lock` and excludes only the
+  marker itself to avoid self-reference. The transaction swaps those complete
+  views with `rename(2)` (POSIX) or the platform-atomic equivalent
   (`ReplaceFile`/`MoveFileEx` on Windows), but readers MUST NOT treat the
-  individual swaps as publication. The last view swap publishes
-  `.haex-hive/visibility.json`, a repository-wide visibility marker containing
-  a deterministic generation ID and the digest of every participating output
-  root (the `.haex-hive/` digest excludes the marker itself). Readers first
-  load that marker and then verify every root's generation and digest; a
-  missing marker or mixed generation is an unavailable
-  installation, never a partially valid one. Recovery tests MUST cover a crash
-  after each root swap and prove that recovery either restores the previous
-  marker-consistent generation or completes the new one before readers resume.
+  individual swaps as publication. The `.haex-hive/` view swap containing that
+  final marker is the final journal step and publishes the generation. Readers
+  first load the marker and then verify every root's generation and digest; a
+  missing marker or mixed generation is an unavailable installation, never a
+  partially valid one. Recovery tests MUST cover a crash after each root swap
+  and prove that recovery either restores the previous marker-consistent
+  generation or completes the new one before readers resume.
 - **Stable staged-input reads through commit**. Plan-build captures the exact
   bytes of `.haex-hive.json`, every publisher manifest, and every atom manifest
   into a sealed plan snapshot and records their digests. Immediately before
@@ -913,10 +917,11 @@ are non-negotiable for the Spec 008 landing:
   is not allowed.
 - **`install.lock` computed last**. The lockfile records
   `generated_content_integrity` and every `atoms[].content_integrity`
-  over the final sealed bytes actually swapped into place. Its own
-  fsync and swap are the final journal step. Any output that could
-  still mutate (native-tool outputs when they return — see the
-  Non-Goals clarifier) is sealed before `install.lock` is computed.
+  over the final sealed bytes actually swapped into place. Its own fsync
+  precedes construction of `visibility.json`; the staged `.haex-hive/` view
+  swap containing both files is the final journal step. Any output that could
+  still mutate (native-tool outputs when they return — see the Non-Goals
+  clarifier) is sealed before `install.lock` is computed.
 
 Spec 008's conformance suite MUST cover: concurrent `haex install`
 invocations (one wins, the other waits or fails with owner detail), crash
@@ -973,8 +978,11 @@ and is therefore load-bearing for the operator's trust model:
   replace a parent directory or output during a read and prove the result is
   rejected. This is the TOCTOU-closure rule.
 - **Timeout contract**. Every trigger declares a max wall-clock
-  duration; exceeding it kills the hook's process group and marks the
-  invocation as failed. No hook can hang the dispatcher indefinitely.
+  duration; exceeding it marks the invocation as failed and cleans up through
+  the platform containment object above: it closes the Windows Job Object,
+  kills the Linux cgroup v2 subtree, or uses the required equivalent POSIX
+  descendant container. The dispatcher then waits for termination and reaps
+  every contained process. No hook can hang the dispatcher indefinitely.
 
 ### Spec 010 — Publisher manifest contract + Blueprint atoms
 
@@ -1104,14 +1112,17 @@ previous migration sidecar as required by D10.
 top-level `legacy_outputs` array, sorted by `legacy_path`, whose entries have
 `legacy_path`, `atom`, optional `managed_path`, and a `state` enum:
 `preserved`, `copied`, or `unmanaged`. `preserved` means a pre-existing legacy
-file is byte-identical (after LF normalization) to the resolved atom and
-remains the authoritative managed output at `legacy_path`; `copied` means
-`haex install` copies the resolved bytes to `managed_path` and makes that v2
-path authoritative; `unmanaged` means the legacy path is not owned and
-`haex install` and `haex verify` MUST refuse rather than overwrite it. The
-record is part of the v2 schema, is written by install as the transactional
-`.haex-hive/legacy-outputs.json` state record, and is consumed by verify and
-the lockfile output-set calculation.
+file is raw-byte-for-byte identical to the resolved atom and remains the
+authoritative managed output at `legacy_path`; `copied` means `haex install`
+copies the resolved bytes to `managed_path` and makes that v2 path
+authoritative; `unmanaged` means the legacy path is not owned and `haex
+install` and `haex verify` MUST refuse rather than overwrite it.
+`managed_path` is required and repository-relative when `state` is `copied`,
+and remains optional for the other states. Schema validation, `haex install`,
+and `haex verify` MUST reject a copied record without it before writing or
+checking any output. The record is part of the v2 schema, is written by
+install as the transactional `.haex-hive/legacy-outputs.json` state record,
+and is consumed by verify and the lockfile output-set calculation.
 
 If a pre-existing `.specify/memory/constitution.md` (or any other file that v2
 hydration would own under `.haex-hive/`) is present in the working tree before
