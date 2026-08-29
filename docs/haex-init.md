@@ -1,5 +1,15 @@
 # `haex-init` — Operator Documentation
 
+> **Superseded by Spec 007 CLI surface (2026-08-29).** Per
+> [ADR 0008](adr/0008-retire-haex-init-binary-for-haex-init-subcommand.md),
+> the standalone `haex-init` binary retires in favour of `haex init` as
+> a subcommand of the unified `haex` binary introduced by
+> [Spec 007](plans/2026-08-28-spec-007-unified-manifest-design.md).
+> This document remains the authoritative operator reference for the
+> shipped v1 `haex-init` implementation
+> (`.specify/scripts/haex-init`); v2 operator flow is documented by
+> Spec 007's deliverables, not by editing this file.
+
 `haex-init` is a single stdlib-only Python CLI that bootstraps a project
 for haex-hive: it patches the operator's user-global config files
 (byte-safely, inside a marker-wrapped block), writes the project-local
