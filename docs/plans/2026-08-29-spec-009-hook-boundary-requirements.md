@@ -75,20 +75,25 @@ keychain. Secrets live entirely outside the manifest+config+lockfile chain.
 The convention:
 
 - **Publisher documents in prose**, in the atom's README/documentation,
-  which keychain aliases the hook expects (e.g. "this atom expects a
-  keychain entry named `graphify-neo4j-password`").
+  the exact, case-sensitive keychain `service` and `alias` pair for every
+  required secret (for example, `service: haex-hive/graphify`,
+  `alias: neo4j-password`). A bare alias is not sufficient: the publisher
+  chooses and documents both strings, and a change to either is a hook
+  compatibility change.
 - **Operator sets those aliases up device-locally** using their OS-native
   keychain manager (Keychain Access on macOS, secret-service on Linux,
   Credential Manager on Windows) or a future `haex secret set <alias>`
   device-local subcommand. This setup is orthogonal to `haex install`
   and never touches committed content.
-- **Hooks read secrets at runtime directly**, using the standard Python
-  `keyring` module (`keyring.get_password("<service>", "<alias>")`) or
-  the equivalent OS API. The dispatcher passes no secret-related state
-  in the JSON context or the environment. A hook that cannot obtain its
-  required secret fails within its own error handling; the dispatcher
-  treats the outcome as a normal hook failure without secret-specific
-  diagnostics.
+- **Hooks read secrets at runtime directly** through the Python `keyring`
+  package, a non-stdlib hook-runtime dependency with an OS-native backend;
+  the supported call is `keyring.get_password("<service>", "<alias>")` using
+  exactly the documented pair. A hook environment without a usable `keyring`
+  backend is unsupported and the hook fails closed. The dispatcher passes no
+  secret-related state in the JSON context or the environment. A hook that
+  cannot obtain its required secret fails within its own error handling; the
+  dispatcher treats the outcome as a normal hook failure without
+  secret-specific diagnostics.
 
 Consequence for the hook boundary contract above: the `HAEX_HOOK_*`
 environment allow-list does NOT include any `HAEX_HOOK_SECRET_*` variables.

@@ -283,14 +283,18 @@ no dispatcher mechanism for populating secret environment variables.
 Publisher `config_schema` files describe only non-secret configuration.
 Blueprints that need runtime secrets (API tokens, passwords, private
 keys) obtain them entirely out-of-band via the OS keychain at
-hook-runtime: publisher documents in prose which keychain aliases the
-hook expects; operator sets them up device-locally with their OS-native
-keychain manager (or a future `haex secret set <alias>` device-local
-subcommand); the hook reads them at runtime through the standard Python
-`keyring` module directly. See Spec 009's Hook Boundary Contract for
-the runtime access convention. `haex install`, `haex verify`,
-`install.lock`, publisher manifests, and every committed file under
-`.haex-hive/` remain secret-surface-free by construction.
+hook-runtime: publisher documents in prose the exact keychain service/alias
+pairs the hook expects; operator sets them up device-locally with their
+OS-native keychain manager (or a future `haex secret set <alias>` device-local
+subcommand); the hook reads them at runtime through the non-stdlib Python
+`keyring` package directly. See Spec 009's Hook Boundary Contract for the
+runtime access convention. This D7 guarantee is limited to validated
+dispatcher-owned inputs and metadata: consumer config, publisher manifests,
+`install.lock`, and generated config. It does not establish a general secret
+detector for arbitrary hook output. The current Specs 007–009 prohibit hooks
+from publishing output into committed output roots; any future spec that allows
+such publication MUST define and enforce validation before publication, or
+refuse the output.
 
 Config in the consumer entry is a map keyed by atom-ID (even for
 length-1 `includes`, to keep the shape uniform):
