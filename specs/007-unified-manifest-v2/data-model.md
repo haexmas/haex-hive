@@ -154,7 +154,28 @@ In-memory-only assembly input. This entity is not serialized to `install.lock`; 
 | Field | Type | Optional | Constraint / Source |
 |---|---|---|---|
 | `source` | `ConstitutionSource` | required | Provenance for this exact contribution. |
-| `body` | `bytes` | required | Exact raw bytes read from the contribution file at `source.revision`. The single-source path copies these bytes unchanged after the FR-038 safety gate; multi-source adapters receive every body with its associated metadata. |
+| `body` | `bytes` | required | Exact raw bytes read from the contribution file at `source.revision`. The single-source path copies these bytes unchanged after the FR-038 safety gate; multi-source adapters receive every body with its associated metadata. In the `--llm=file` pending JSON, this field is represented only as `body_base64`: RFC 4648 standard Base64 with required `=` padding over these exact bytes; no text decoding or newline normalization occurs. |
+
+### PendingContribution
+
+JSON-only representation of one `ResolvedConstitutionContribution` inside `PendingMerge.sources[]`.
+
+| Field | Type | Optional | Constraint / Source |
+|---|---|---|---|
+| `id` | `AtomId` | required | Copied from `source.id`. |
+| `revision` | `str` (40-char lowercase hex) | required | Copied from `source.revision`. |
+| `source` | `CanonicalSourceUrl` | required | Copied from `source.source`. |
+| `body_base64` | `str` | required | Padded RFC 4648 standard Base64 of the exact `body` bytes. |
+
+### PendingMerge
+
+Transient file at `.haex-hive/constitution.merge.pending.json` for the `--llm=file` flow. It is not committed and is deleted only after successful publication.
+
+| Field | Type | Optional | Constraint / Source |
+|---|---|---|---|
+| `sources` | `list[PendingContribution]` | required, non-empty | Sorted by bytewise UTF-8 `id`; each item contains `id`, `revision`, `source`, and `body_base64` for one `ResolvedConstitutionContribution`. |
+| `task_prompt` | `str` | required | Tool-generated task description. The complete serialized payload is checked by FR-038 before it is written. |
+| `pending_id` | `sha256-<base64>` | required | Binding digest for phase-one inputs. It is the SHA-256 digest of `haex-hive-constitution-pending-v1\0`, followed for every source in bytewise UTF-8 ID order by `S\0`, then each of `id`, `revision`, `source` encoded as UTF-8 and raw `body` bytes, each prefixed with its ASCII decimal byte length and `\0`. Phase two independently derives it from decoded pending content and freshly resolved current contributions; all derived values and the stored value must match. |
 
 ### MergeResult
 

@@ -12,7 +12,7 @@ haex migrate [--dry-run | --check]
 
 ## Description
 
-Rewrite the current repository's `.haex-hive.json` v1 file into the v2 shape defined by the design doc's migration table. The v2 proposal is written to a same-directory `.haex-hive.json.migrated` sidecar; the original file is left untouched. A unified diff between the original and the proposal is printed to stdout for human review. The operator moves the sidecar over the original manually (`mv .haex-hive.json.migrated .haex-hive.json`) and commits the result in a reviewable PR. Any transient `.migrated` sidecar from a prior failed write-mode run is invalidated before the current run's proposal is written; preview modes leave it untouched.
+Rewrite the current repository's `.haex-hive.json` v1 file into the v2 shape defined by the design doc's migration table. Before printing a diff or writing anything, the proposed sidecar's complete serialized bytes pass the FR-038 plaintext-secret guard, including preserved free-text fields such as `identity_note`. The v2 proposal is written to a same-directory `.haex-hive.json.migrated` sidecar; the original file is left untouched. A unified diff between the original and the proposal is printed to stdout for human review. The operator moves the sidecar over the original manually (`mv .haex-hive.json.migrated .haex-hive.json`) and commits the result in a reviewable PR. Any transient `.migrated` sidecar from a prior failed write-mode run is invalidated before the current run's proposal is written; preview modes leave it untouched.
 
 If the input file is already v2 (`haex_hive_version: "2"`), the command reports `already migrated to v2` and exits 0 without writing anything.
 
@@ -47,6 +47,7 @@ If the input file is already v2 (`haex_hive_version: "2"`), the command reports 
 | 3 | I/O refuse — missing publisher clone, unresolvable `self` remote, unavailable pinned revision | See "Inputs" above. In write mode, `.haex-hive.json` is untouched and any sidecar is deleted; in preview mode, an existing sidecar is preserved. |
 | 4 | Post-migration validation refuse — the produced v2 sidecar failed the v2 JSON Schema | Should not happen in practice; indicates a bug in the migration table. In write mode, the temporary file and sidecar are removed; in preview mode, no temporary file is created and an existing sidecar is preserved. |
 | 5 | System refuse — the repo has no `.haex-hive.json`, or the CLI's version does not satisfy `.haex-hive.json`'s `haex_hive_min_version` | See FR-034 also. |
+| 10 | Plaintext-secret safety refuse | `key=plaintext-secret-detected`; the proposed serialized sidecar contains a plaintext-secret signature. The diagnostic does not echo the matched value; no diff or new sidecar is written. In write mode, a pre-existing sidecar is left untouched. |
 | 64 | Usage error — both `--dry-run` and `--check` supplied | No filesystem mutation. |
 
 ## Diagnostics
@@ -56,7 +57,7 @@ Every refuse diagnostic includes:
 - The exit code.
 - A machine-parseable diagnostic key (e.g., `credential-in-source-url`, `permission-only-entry`, `identity-not-github-nor-reverse-dns`).
 - The `.haex-hive.json` entry index (for `harness_sources[]`-scoped errors) or the affected field path.
-- The offending value (with credential material redacted if applicable).
+- The offending value (with credential material redacted if applicable). For exit 10, omit the matched value entirely and report only a non-sensitive field path.
 - A single-sentence remediation hint.
 
 Example refuse output:
@@ -75,7 +76,7 @@ error: exit=2 key=credential-in-source-url entry=harness_sources[1]
 ## Filesystem-atomicity guarantees
 
 - No partial-write state ever exists for the `.migrated` sidecar. It is written to a same-directory `.haex-hive.json.migrated.<random>.tmp` and atomically renamed via `os.replace()` (FR-015, R6).
-- On write-mode refuse codes 2/3/4/5, the temporary file is unlinked and no `.migrated` sidecar remains. On preview-mode refusal or usage error, neither a temporary file nor a sidecar mutation occurs.
+- On write-mode refuse codes 2/3/4/5, the temporary file is unlinked and no `.migrated` sidecar remains. On secret-safety refuse code 10, no temporary file is created and a pre-existing sidecar remains untouched. On preview-mode refusal or usage error, neither a temporary file nor a sidecar mutation occurs.
 
 ## Not in scope
 
