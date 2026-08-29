@@ -460,10 +460,11 @@ generalizes it. Phases are not optional — do not skip forward.
   deferred to when a Windows satellite is real). Acceptance: the same
   `spec-ref.yaml` resolves the identical revision on both OSes without local
   path configuration.
-  _Status_: **implemented and in daily use as of 2026-08-28** via Spec 004
-  + Spec 005. Spec 004 landed the mechanism: `spec-resolve` tool at
-  `.specify/scripts/spec-resolve`, unified `harness_sources` array in
-  `.haex-hive.json`, canonical JSON Schema at
+  _Status_: **v1 implemented and in daily use as of 2026-08-28** via
+  Spec 004 + Spec 005; **v2 in design as of 2026-08-29** via Spec 007
+  (unified manifest). Spec 004 landed the mechanism: `spec-resolve`
+  tool at `.specify/scripts/spec-resolve`, unified `harness_sources`
+  array in `.haex-hive.json`, canonical JSON Schema at
   `.specify/schemas/haex-hive.schema.json`, constitution v1.1.1. Spec 005
   landed the adoption path: `haex-init` CLI at
   `.specify/scripts/haex-init` scaffolds `.haex-hive.json` +
@@ -475,8 +476,13 @@ generalizes it. Phases are not optional — do not skip forward.
   paths. macOS cross-OS validation still deferred per Spec 004
   Assumptions; Linux is live. The Phase 1 mechanism is what Phase 2
   (harness registry + multi-tool compiler) now builds on. Public-URL
-  `--fetch-latest`, `add-source`, and multi-spec external-ref are
-  Spec 006 territory.
+  `--fetch-latest`, `add-source`, multi-spec external-ref, and the
+  granular publisher/consumer atom model are **Spec 007** territory
+  (unified manifest v2). Spec 006 (multi-spec external-ref draft) is
+  superseded by Spec 007. Spec 007 also retires the standalone
+  `haex-init` binary in favour of `haex init` as a subcommand of the
+  unified `haex` binary (see ADR 0008), and the constitution moves to
+  v1.3.0 in step (ADR 0007).
 - **Phase 2 — Harness registry + multi-tool compiler.** Central harness repo
   with global/groups/registry structure. Compiler emits per-tool artifacts
   (CLAUDE.md/AGENTS.md/GEMINI.md via symlink, settings.json/config.toml via
