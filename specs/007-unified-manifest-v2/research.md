@@ -69,14 +69,15 @@ All three are one-shot reads, execute in <200ms, and require no long-lived state
 - **`click`** — friendlier decorator-based syntax; adds a dependency and a rich context object. We don't need context — subcommands share nothing but the project root, which is discovered fresh in each invocation. Not enough payoff.
 - **`typer`** — pretty terminal output; more magic. Rejected for the same reason as click, plus type-annotation-driven parsers can obscure exactly-which-flags semantics that this spec's tests need to pin.
 
-## R6. Atomic file publication on Windows
+## R6. Crash-safe file publication on Windows
 
-**Decision**: `haex_hive.io.atomic.write_replace(target: Path, data: bytes)` — writes to `target.parent / f".{target.name}.tmp"` (or a `mkstemp` in the same directory for the migration sidecar), fsyncs the file, then calls `os.replace(tmp, target)`, then fsyncs the parent directory (POSIX only — Windows silently ignores directory fsync).
+**Decision**: Use `haex_hive.io.atomic.write_replace(target: Path, data: bytes)` for one-file writes. For the `constitution.md` + `install.lock` pair, use `haex_hive.io.transaction.publish_pair(...)`: write and fsync generation-staged files plus pre-generation backups, atomically write and fsync a journal containing the generation, target paths, and digests, replace each target, fsync the directory, then remove the journal. Startup recovery deterministically completes valid staged output or restores both backups. Readers refuse while a journal exists, so they never present a mixed pair.
 
-**Rationale**: `os.replace` is Python's cross-platform wrapper: on POSIX it is `rename(2)` (atomic within a filesystem); on Windows it uses `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING`, which is atomic within an NTFS volume. Same-directory constraint guarantees "same filesystem" on both. The tmp-file name pattern uses a leading `.` so partial writes are less visible to editors watching the directory. Directory fsync on POSIX ensures the metadata entry survives a power loss; Windows doesn't expose a direct equivalent, but `MoveFileEx` with a completing flush satisfies the operator's durability expectations. This is the pattern used by SQLite, dpkg, and Postgres for the same problem.
+**Rationale**: `os.replace` is Python's cross-platform wrapper: on POSIX it is `rename(2)` (atomic within a filesystem); on Windows it uses `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING`, which is atomic within an NTFS volume. It makes each pathname atomic, but cannot make two pathnames a transaction. The journal gives the pair a durable generation and recovery point. Same-directory staging guarantees one filesystem; directory fsync on POSIX ensures metadata durability. Windows has no direct directory fsync, but completed `MoveFileEx` provides the available platform durability boundary.
 
 **Alternatives considered**:
 
+- **Two independent `os.replace()` calls** — each file is safe alone, but a crash between calls exposes a mixed generation. FR-035 requires journaled recovery for the pair.
 - **Write-in-place** — non-atomic; a crash mid-write leaves a truncated file. FR-035 forbids this.
 - **`tempfile.NamedTemporaryFile(dir=target.parent)` + rename** — same guarantee, but the `NamedTemporaryFile` context manager `close()`s and deletes the file on error, which conflicts with the intent of leaving the tmp file in place on failure (we then explicitly unlink it in an error handler). Wrapping in a try/finally with manual unlink is what we do anyway; use `mkstemp` directly.
 - **`fcntl.flock` + write-in-place** — locking prevents concurrent writers but not partial writes; still not atomic on crash.
@@ -101,7 +102,7 @@ Multi-source without any `--llm`/`HAEX_LLM`/attached-TTY → default to `none` (
 
 ## R8. Reverse-DNS atom-ID grammar validation
 
-**Decision**: Regex `^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$` compiled once at module import. Length cap 253 characters (same as DNS max), individual-segment cap 63 characters. Reject empty and 254+ character strings before applying the regex to short-circuit.
+**Decision**: Regex `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$` compiled once at module import. Length cap 253 characters (same as DNS max), individual-segment cap 63 characters, and every segment ends alphanumeric. Reject empty and 254+ character strings before applying the regex to short-circuit. Fixtures reject `com.example-` and `com.example--`.
 
 **Rationale**: The regex matches D3 exactly (at least two segments joined by dots, each segment starting with `[a-z0-9]` and continuing with `[a-z0-9-]`). DNS length caps are the natural reference point since we borrow the naming convention. Length pre-check keeps regex engine work bounded even against pathological inputs.
 
@@ -113,9 +114,9 @@ Multi-source without any `--llm`/`HAEX_LLM`/attached-TTY → default to `none` (
 
 ## R9. Canonical source URL normalization
 
-**Decision**: Implement `haex_hive.model.source_url.canonicalize(url: str) -> str` following D3 exactly: (1) lowercase the scheme and host, (2) strip trailing `/` from the path, (3) strip a single terminal `.git`, (4) reject any URL that carries userinfo (`user[:token]@host`), (5) reject any scheme not in `{"https", "ssh", "git"}`. Use stdlib `urllib.parse.urlsplit` for parsing.
+**Decision**: Implement `haex_hive.model.source_url.canonicalize(url: str) -> str` with a migration-input normalization step followed by canonical output validation: (1) recognize credential-free SCP syntax `git@host:path` as SSH and recognize only `git` as the transport user in `ssh://git@host/path`; (2) lowercase scheme and host; (3) strip trailing `/`; (4) strip one terminal `.git`; (5) emit only userinfo-free `https://` or `ssh://` URLs; (6) reject any other userinfo or scheme, including `git://`. Use stdlib `urllib.parse.urlsplit` after SCP normalization.
 
-**Rationale**: `urlsplit` handles the three schemes we accept without doing anything surprising. The rejection rules land as raised `ValueError` subclasses (`CredentialInUrlError`, `UnsupportedSchemeError`) that the CLI catches and formats into the operator-facing diagnostic. Applying every rule at every entry point (`haex migrate`, `haex constitution assemble`, future `haex add`) ensures uniform behavior — publisher URLs never round-trip as-typed through the manifest.
+**Rationale**: Git remotes commonly use SCP syntax or the `git` SSH transport user; neither is stored in the committed canonical URL. After normalization, `urlsplit` handles both allowed schemes without ambiguity. The rejection rules land as raised `ValueError` subclasses (`CredentialInUrlError`, `UnsupportedSchemeError`) that the CLI catches and formats into the operator-facing diagnostic. Applying every rule at every entry point (`haex migrate`, `haex constitution assemble`, future `haex add`) ensures uniform behavior — publisher URLs never round-trip as-typed through the manifest.
 
 **Alternatives considered**:
 
@@ -135,9 +136,9 @@ Multi-source without any `--llm`/`HAEX_LLM`/attached-TTY → default to `none` (
 
 ## R11. SHA-256 canonical serialization for `install.lock`'s `content_integrity`
 
-**Decision**: `install.lock`'s `constitution.content_integrity` value is the string `"sha256-" + base64.b64encode(hashlib.sha256(constitution_bytes).digest()).decode("ascii")`. Base64 uses standard alphabet with `=` padding. This matches the design doc D15 canonical serialization format (already fixed for Spec 008; Spec 007 uses only the constitution-file case, which is a one-file tree per D15).
+**Decision**: `install.lock`'s `constitution.content_integrity` value is the string `"sha256-" + base64.b64encode(hashlib.sha256(tree_bytes).digest()).decode("ascii")`, where `tree_bytes` is D15's exact one-file `haex-hive-tree-v1` serialization: `b"haex-hive-tree-v1\0F\0" + b"100644\0" + b"15\0constitution.md" + str(len(constitution_bytes)).encode("ascii") + b"\0" + constitution_bytes + b"\0"`. Base64 uses the standard alphabet with `=` padding.
 
-**Rationale**: Consistent format with Spec 008's install-transaction contract; forward-compatible when Spec 008 extends `install.lock` with `atoms[].content_integrity` and `generated_content_integrity`. Standard alphabet is universally decodable; padding is preserved (Python's `b64encode` includes it). The `sha256-` prefix is the same subresource-integrity format the wider Web ecosystem uses, making the value copy-paste-verifiable via off-the-shelf tools.
+**Rationale**: This is the exact D15 serialization shared with Spec 008, including entry kind, mode, normalized path, and byte lengths; hashing raw payload bytes would not interoperate with verify. It remains forward-compatible when Spec 008 extends `install.lock` with `atoms[].content_integrity` and `generated_content_integrity`. Standard alphabet is universally decodable; padding is preserved (Python's `b64encode` includes it).
 
 **Alternatives considered**:
 
@@ -146,9 +147,9 @@ Multi-source without any `--llm`/`HAEX_LLM`/attached-TTY → default to `none` (
 
 ## R12. Migration self-migration approach for haex-hive
 
-**Decision**: The v2 file that `haex migrate` produces for haex-hive itself is generated by the same code path that any external consumer would exercise. The migration commits do not embed hand-written v2 content; instead, the migration is run once during Spec-007 implementation, the sidecar is reviewed, and the result becomes the committed `.haex-hive.json`. The commit that lands v2 also introduces the root and atom `manifest.json` files (FR-021, FR-022) at the SAME `revision` SHA the migrated `.haex-hive.json` pins, so that after landing, the consumer's own pin resolves against its own committed publisher manifest at the same commit.
+**Decision**: The v2 file that `haex migrate` produces for haex-hive itself is generated by the same code path that any external consumer would exercise. Use three commits: A adds the root and atom `manifest.json` files, B updates the v1 source revision to A, and C commits the reviewed v2 sidecar. The v2 entry pins A, not C: a commit cannot contain its own SHA, whereas A already contains both manifests required for resolution.
 
-**Rationale**: This is what US1 exists to prove — the migration table produces the correct v2 output for haex-hive's own real v1 file. Using the same code path (rather than authoring the v2 file by hand) guarantees the FR-021–FR-023 outputs are exactly what any external consumer would receive on their first `haex migrate` run. It also gives the Spec-007 conformance suite a real fixture: this repo's v1 file at commit `<pre-landing-sha>` MUST migrate to the committed v2 file at commit `<landing-sha>` byte-for-byte on every future run.
+**Rationale**: This is what US1 exists to prove — the migration table produces the correct v2 output for haex-hive's own real v1 file. Using the same code path (rather than authoring the v2 file by hand) guarantees the FR-021–FR-023 outputs are what any external consumer receives on their first `haex migrate` run. The conformance fixture records A, B, and C and asserts that the v1 file at B migrates byte-for-byte to the v2 file at C, whose revision is A.
 
 **Alternatives considered**:
 

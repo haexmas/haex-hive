@@ -7,7 +7,7 @@
 
 ## Synopsis
 
-```
+```console
 haex constitution assemble [--llm=<method>] [--accept-merged <path>]
 ```
 
@@ -15,12 +15,14 @@ haex constitution assemble [--llm=<method>] [--accept-merged <path>]
 
 Resolve every `atoms[]` entry in `.haex-hive.json`, identify the atoms whose manifest declares `contributes.constitution`, load their contributed constitution content at the pinned SHAs, and produce the effective `.haex-hive/constitution.md` file. Record its content-hash and source-attribution in `.haex-hive/install.lock`.
 
-Two paths, selected mechanically by the number of resolved constitution sources:
+Three paths, selected mechanically by the number of resolved constitution sources:
+
+- **No-source path** (zero resolved contributions): report `no constitution sources declared`, exit 2, and leave both output files exactly as they were. It does not create, delete, or replace an existing constitution or lock.
 
 - **Single-source path** (exactly one resolved contribution): produce `.haex-hive/constitution.md` as a byte-for-byte copy of the source contribution file at the pinned SHA. No LLM invocation, always deterministic (FR-026, FR-031).
 - **Multi-source path** (two or more resolved contributions): invoke the operator-attached LLM via the selected `--llm` method to merge the sources into a single reconciled `.haex-hive/constitution.md`. On a device where no LLM method succeeds, the command refuses (FR-027, FR-028).
 
-In both paths, the same `.haex-hive/install.lock` write records provenance (FR-030): `constitution.sources[]` names every input atom, `constitution.content_integrity` records the SHA-256 of the produced file.
+In both successful paths, the same `.haex-hive/install.lock` write records provenance (FR-030): `constitution.sources[]` records every input atom as `{id, revision, source}`, `constitution.assembled_by` records the tool/version, and `constitution.content_integrity` records the D15 one-file-tree SHA-256 of the produced file.
 
 ## Flags
 
@@ -47,14 +49,14 @@ Success creates or replaces two files atomically:
 - `<repo-root>/.haex-hive/constitution.md` — the effective constitution content. In single-source: byte-identical to the source file at the pinned SHA. In multi-source: LLM-merged content, no prepended header (FR-029).
 - `<repo-root>/.haex-hive/install.lock` — populated with the `constitution` section per data-model.md §ConstitutionLockSection. Existing top-level fields not owned by Spec 007 (e.g., future Spec-008 `atoms[]`) MUST be preserved (FR-030 forward-compat).
 
-Both writes go through the atomic-replace pattern (R6). Either both files land or neither does (FR-035).
+Both writes use the journaled generation protocol in FR-035: staged files and a durable journal make startup recovery converge both targets to the same generation. On startup, `assemble` recovers a live journal before resolving sources; read-only commands refuse instead of reading a mixed pair.
 
 ## Exit codes
 
 | Code | Meaning | Notes |
 |---|---|---|
 | 0 | Success | |
-| 2 | Resolution refuse — one or more atoms could not be resolved | Missing publisher manifest, missing atom manifest, atom-manifest doesn't declare `contributes.constitution`, publisher/atom manifest schema violation, atom-ID collision across sources (D3 uniqueness). See FR-025. |
+| 2 | Resolution refuse — zero constitution sources or one or more atoms could not be resolved | For zero sources: `no constitution sources declared`; existing output files are untouched. Other cases include missing publisher manifest, missing atom manifest, absent `contributes.constitution`, schema violation, or collision. See FR-025. |
 | 3 | I/O refuse — publisher clone unavailable OR pinned SHA not in clone OR contribution file not found at SHA | See spec Edge Cases. |
 | 4 | Multi-source LLM refuse — `--llm=none` was resolved and multi-source is required | FR-028. `.haex-hive/constitution.md` and `.haex-hive/install.lock` untouched. |
 | 5 | Pending merge state | Emitted only under `--llm=file` after writing `.haex-hive/constitution.merge.pending.json`. Operator/agent produces the merged output out-of-process; re-invocation with `--accept-merged` completes the transaction. `.haex-hive/constitution.md` and `.haex-hive/install.lock` untouched. |
@@ -69,15 +71,15 @@ Both writes go through the atomic-replace pattern (R6). Either both files land o
 4. Operator (or agent) reads the pending file, produces the merged content, writes it to some path (default suggested: `.haex-hive/constitution.md.candidate`).
 5. Operator re-invokes `haex constitution assemble --accept-merged .haex-hive/constitution.md.candidate`.
 6. CLI validates: (a) the candidate file exists and is UTF-8, (b) the pending file's `pending_id` still matches (no source drift between phase-1 and phase-2), (c) all sources in the pending file are still resolvable at the same SHAs.
-7. CLI writes `.haex-hive/constitution.md` (byte-identical to the candidate) and `.haex-hive/install.lock` (with `constitution.content_integrity` = SHA-256 of the candidate bytes).
-8. CLI deletes `.haex-hive/constitution.merge.pending.json` and (optionally) the candidate file.
+7. CLI publishes `.haex-hive/constitution.md` (byte-identical to the candidate) and `.haex-hive/install.lock` through the FR-035 journaled generation protocol. `constitution.content_integrity` is the D15 one-file-tree digest of the candidate bytes.
+8. CLI deletes `.haex-hive/constitution.merge.pending.json` after publication. It never deletes the caller-supplied candidate path.
 9. Exit 0.
 
 ## Diagnostics
 
 Every refuse diagnostic includes exit code, machine-parseable key, affected atom-id (if applicable), and a remediation hint. Multi-source `--llm=none` refuse example:
 
-```
+```text
 error: exit=4 key=llm-required-for-multi-source
   resolved 3 constitution atoms:
     - com.github.haexmas.haex-hive.constitution @ b2f884...
@@ -93,7 +95,7 @@ error: exit=4 key=llm-required-for-multi-source
 
 ## Filesystem-atomicity guarantees
 
-- Both output files land together, or neither does. Any partial state is cleaned up before the command exits, regardless of exit code (FR-035).
+- A durable journal records every output generation before either target is replaced. On the next assemble invocation, recovery completes or restores the pair so both targets have one generation; read-only commands refuse rather than expose a mixed state (FR-035).
 - On refuse codes 2/3/4/6/7, neither `.haex-hive/constitution.md` nor `.haex-hive/install.lock` is modified from its pre-command state.
 - On refuse code 5, `.haex-hive/constitution.merge.pending.json` is written atomically; the two output files are untouched.
 
