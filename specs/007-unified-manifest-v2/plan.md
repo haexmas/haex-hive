@@ -19,7 +19,7 @@ Technical approach (from research): Python 3.10+ stdlib-first with three targete
 **Target Platform**: Linux, macOS, Windows (Windows-portability is a Spec-007 correctness requirement per D15; no symlinks, no junctions, no bind mounts).
 **Project Type**: Single-project CLI. Python package `haex_hive/` published to PyPI as `haex-hive`; `haex` console script defined in `pyproject.toml`.
 **Performance Goals**: `haex migrate --dry-run` completes in under 5 seconds on a well-formed v1 file (SC-004). `haex constitution assemble` refuses on missing-LLM in multi-source case in under 1 second (SC-007). No per-request throughput targets — this is a one-shot CLI.
-**Constraints**: Deterministic output (byte-identical across runs on identical inputs — FR-036, D9). Cross-platform correctness with no OS-specific filesystem primitives outside `os.replace` and `fsync`, except the FR-035 Windows durability calls `MoveFileExW` with `MOVEFILE_WRITE_THROUGH` and `FlushFileBuffers`. No plaintext secrets in any committed content (FR-029 explicit; no schema-level secret surface). Every pathname replacement is atomic; constitution + lock publication uses the FR-035 durable journal and startup recovery protocol.
+**Constraints**: Deterministic output (byte-identical across runs on identical inputs — FR-036, D9). Cross-platform correctness with no OS-specific filesystem primitives outside `os.replace` and `fsync`, except the FR-035 Windows durability calls `MoveFileExW` with `MOVEFILE_WRITE_THROUGH`, `FlushFileBuffers`, and `LockFileEx` for the exclusive constitution writer lock (the POSIX equivalent is `fcntl.flock`). No plaintext secrets in any committed content (FR-029 explicit; no schema-level secret surface). Every pathname replacement is atomic; constitution + lock publication uses the FR-035 durable journal and startup recovery protocol.
 **Scale/Scope**: Per-repo tool. A consumer's `.haex-hive.json` v2 typically declares 1-10 atom entries; a project constitution is a few KB to tens of KB; `install.lock` for Spec-007 scope is under 1 KB. Publisher-side registries in scope for Spec 007 read: haex-hive's own root + atom manifest (one atom entry, `constitution` type).
 
 ## Constitution Check
@@ -119,6 +119,7 @@ src/
     │   ├── __init__.py
     │   ├── atomic.py                  # write-to-temp + os.replace + fsync
     │   ├── transaction.py             # journaled constitution + lock pair publication/recovery
+    │   ├── writer_lock.py             # cross-platform exclusive assemble ownership
     │   ├── json_deterministic.py      # sort_keys=True, LF, trailing newline
     │   └── file_hash.py               # D15 tree serialization + sha256-<base64> encoding
     └── util/
@@ -144,7 +145,7 @@ tests/
     ├── test_atom_id.py                # reverse-DNS grammar
     ├── test_version_constraint.py     # FR-006 grammar
     ├── test_json_deterministic.py     # FR-036 byte-identity
-    ├── test_transaction.py            # FR-035 recovery after every interruption boundary for existing and absent targets; mixed-pair refusal
+    ├── test_transaction.py            # FR-035 recovery after every interruption boundary for existing and absent targets; mixed-pair and concurrent-writer refusal
     ├── test_constitution_safety.py    # Principle-VIII candidate refusal before publication
     ├── test_git_show_raw_bytes.py     # pinned-SHA blob bytes, including a .gitattributes-filtered fixture
     ├── test_transform.py              # migration table rules
