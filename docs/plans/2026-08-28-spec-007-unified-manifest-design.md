@@ -274,19 +274,23 @@ key still fails before the effective config is written.
 `config.<atom-id>.priority` is processed separately as specified in D5 and is
 not part of that effective settings object.
 
-**No secrets in schema.** `config.<atom-id>.values` is committed, so it MUST
-NOT contain plaintext secrets. Spec 007 provides **no schema-level mechanism**
-for declaring secret fields — publisher `config_schema` files describe only
-non-secret configuration. Blueprints that need runtime secrets (API tokens,
-passwords, private keys) obtain them **out-of-band** via the operating
-system's keychain at hook-runtime, not through committed config: publisher
-documents which keychain aliases the hook expects; the operator sets those
-aliases up with a device-local tool (e.g. a future `haex secret set <alias>`
-subcommand, or their OS-native keychain manager); the hook reads them at
-runtime through the standard Python `keyring` module or via
-`HAEX_HOOK_*` environment variables that the dispatcher populates from the
-keychain. `haex install`, `haex verify`, `install.lock`, and every committed
-file under `.haex-hive/` remain secret-free by construction.
+**No secrets anywhere in the schema, manifest, or config chain.**
+`config.<atom-id>.values` is committed, so it MUST NOT contain plaintext
+secrets. But the exclusion goes further: haex-hive provides **no
+structured secret surface at all** — no publisher-manifest field for
+declaring secret aliases, no consumer-config field for secret references,
+no dispatcher mechanism for populating secret environment variables.
+Publisher `config_schema` files describe only non-secret configuration.
+Blueprints that need runtime secrets (API tokens, passwords, private
+keys) obtain them entirely out-of-band via the OS keychain at
+hook-runtime: publisher documents in prose which keychain aliases the
+hook expects; operator sets them up device-locally with their OS-native
+keychain manager (or a future `haex secret set <alias>` device-local
+subcommand); the hook reads them at runtime through the standard Python
+`keyring` module directly. See Spec 009's Hook Boundary Contract for
+the runtime access convention. `haex install`, `haex verify`,
+`install.lock`, publisher manifests, and every committed file under
+`.haex-hive/` remain secret-surface-free by construction.
 
 Config in the consumer entry is a map keyed by atom-ID (even for
 length-1 `includes`, to keep the shape uniform):
