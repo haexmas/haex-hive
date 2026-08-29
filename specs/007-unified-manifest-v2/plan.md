@@ -148,7 +148,7 @@ tests/
     ├── test_transaction.py            # FR-035 recovery after every interruption boundary for existing and absent targets; mixed-pair and concurrent-writer refusal
     ├── test_constitution_safety.py    # Principle-I/VIII and terminal-control refusal at source, pending, candidate, and publication boundaries
     ├── test_git_show_raw_bytes.py     # pinned-SHA blob bytes, including a .gitattributes-filtered fixture
-    ├── test_transform.py              # migration table rules and FR-038 sidecar secret refusal
+    ├── test_transform.py              # migration table rules and FR-038 sidecar-secret refusal/invalidation
     └── test_resolve.py                # D11 two-step lookup
 
 pyproject.toml                         # PyPI package metadata + console_scripts
