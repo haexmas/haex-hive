@@ -19,7 +19,7 @@ Technical approach (from research): Python 3.10+ stdlib-first with three targete
 **Target Platform**: Linux, macOS, Windows (Windows-portability is a Spec-007 correctness requirement per D15; no symlinks, no junctions, no bind mounts).
 **Project Type**: Single-project CLI. Python package `haex_hive/` published to PyPI as `haex-hive`; `haex` console script defined in `pyproject.toml`.
 **Performance Goals**: `haex migrate --dry-run` completes in under 5 seconds on a well-formed v1 file (SC-004). `haex constitution assemble` refuses on missing-LLM in multi-source case in under 1 second (SC-007). No per-request throughput targets — this is a one-shot CLI.
-**Constraints**: Deterministic output (byte-identical across runs on identical inputs — FR-036, D9). Cross-platform correctness with no OS-specific filesystem primitives outside `os.replace` and `fsync`, except the FR-035 Windows durability calls `MoveFileExW` with `MOVEFILE_WRITE_THROUGH`, `FlushFileBuffers`, and `LockFileEx` for the exclusive constitution writer lock (the POSIX equivalent is `fcntl.flock`). No plaintext secrets in any committed content: FR-038's fail-closed guard checks every source, pending payload, candidate, and generated lock payload before any write. Every pathname replacement is atomic; constitution + lock publication uses the FR-035 durable journal and startup recovery protocol.
+**Constraints**: Deterministic output (byte-identical across runs on identical inputs — FR-036, D9). Cross-platform correctness with no OS-specific filesystem primitives outside `os.replace` and `fsync`, except the FR-035 Windows durability calls `MoveFileExW` with `MOVEFILE_WRITE_THROUGH`, `FlushFileBuffers`, and `LockFileEx` for the exclusive constitution writer lock (the POSIX equivalent is `fcntl.flock`). No plaintext secrets in any committed content: FR-038's fail-closed guard checks every assembly source, pending payload, candidate, generated lock payload, and complete migration sidecar before any diff or write. Every pathname replacement is atomic; constitution + lock publication uses the FR-035 durable journal and startup recovery protocol.
 **Scale/Scope**: Per-repo tool. A consumer's `.haex-hive.json` v2 typically declares 1-10 atom entries; a project constitution is a few KB to tens of KB; `install.lock` for Spec-007 scope is under 1 KB. Publisher-side registries in scope for Spec 007 read: haex-hive's own root + atom manifest (one atom entry, `constitution` type).
 
 ## Constitution Check
@@ -30,7 +30,7 @@ Constitution version at plan time: **1.3.0** (ratified 2026-08-26, last amended 
 
 | Principle | Status | Justification |
 |---|---|---|
-| I. No Secrets in Git (NON-NEGOTIABLE) | PASS | FR-038 runs the fail-closed plaintext-secret guard over resolved sources before any display, copy, or pending write, and over candidates plus generated pending/lock payloads before publication. It never echoes a match; tests cover every input/output boundary. |
+| I. No Secrets in Git (NON-NEGOTIABLE) | PASS | FR-038 runs the fail-closed plaintext-secret guard over assembly sources before display, copy, or pending write; candidates and generated pending/lock payloads before publication; and the complete migration sidecar before any diff or write. It never echoes a match; tests cover every input/output boundary. |
 | II. No Local Absolute Paths in Versioned Config (NON-NEGOTIABLE) | PASS | Every path in `.haex-hive.json` v2, publisher `manifest.json`, atom `manifest.json`, and `install.lock` is repo-relative (POSIX with `/`, no `.`/`..` segments). `$HAEX_HIVE_STATE` resolves per-OS at runtime and is device-local, never versioned. |
 | III. Project Identity Is Device-Independent (NON-NEGOTIABLE) | PASS | `identity` is reverse-DNS (D3), derived deterministically from the git remote URL by `haex migrate` (lowercase + reverse-DNS conversion). Same across every device. |
 | IV. Cross-Repo References Pin Immutable Revisions (NON-NEGOTIABLE) | PASS | Every `atoms[]` entry carries `source + revision` with the full 40-char SHA (FR-002). Track is optional and non-authoritative. Extension in v1.3.0 to allow directory-shaped `path` is honored: publisher root manifest and atom `manifest.json` both live at pinned SHAs. |
@@ -146,9 +146,9 @@ tests/
     ├── test_version_constraint.py     # FR-006 grammar
     ├── test_json_deterministic.py     # FR-036 byte-identity
     ├── test_transaction.py            # FR-035 recovery after every interruption boundary for existing and absent targets; mixed-pair and concurrent-writer refusal
-    ├── test_constitution_safety.py    # Principle-I and VIII refusal at source, pending, candidate, and publication boundaries
+    ├── test_constitution_safety.py    # Principle-I/VIII and terminal-control refusal at source, pending, candidate, and publication boundaries
     ├── test_git_show_raw_bytes.py     # pinned-SHA blob bytes, including a .gitattributes-filtered fixture
-    ├── test_transform.py              # migration table rules
+    ├── test_transform.py              # migration table rules and FR-038 sidecar secret refusal
     └── test_resolve.py                # D11 two-step lookup
 
 pyproject.toml                         # PyPI package metadata + console_scripts
