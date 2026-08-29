@@ -1,0 +1,198 @@
+# Feature Specification: Unified Manifest v2 + Migration + Constitution Assemble
+
+**Feature Branch**: `007-unified-manifest-v2`
+**Created**: 2026-08-29
+**Status**: Draft
+**Input**: User description: "Spec 007 — Unified Manifest v2 + Migration + Constitution Assemble. Deliver the CLI-level surface for the .haex-hive.json v2 schema, the publisher-side root and per-atom manifest.json schemas, the review-gated `haex migrate` command, the `haex constitution assemble` and `haex constitution show` commands, and the root+atom manifests for this repo itself so haex-hive becomes its own first publisher."
+
+**Design source of truth**: [docs/plans/2026-08-28-spec-007-unified-manifest-design.md](../../docs/plans/2026-08-28-spec-007-unified-manifest-design.md) (17 decisions D1–D17, migration path v1→v2 table). This spec inherits all D-decisions from the design doc and does not restate them.
+
+**Related but out of scope**: [Spec 008 install-transaction contract](../../docs/plans/2026-08-29-spec-008-install-transaction-requirements.md); [Spec 009 hook-boundary contract](../../docs/plans/2026-08-29-spec-009-hook-boundary-requirements.md). Spec 007 does not implement `haex install`, `haex verify`, the content-addressed store, the hook dispatcher, agent adapters, or publisher blueprint hydration — those land in Specs 008/009/010.
+
+## Clarifications
+
+### Session 2026-08-29
+
+- Q: Where is the SHA-256 content-hash of `.haex-hive/constitution.md` recorded, and does it apply to every assembled constitution or only multi-source ones? → A: Spec 007 lays down a minimal `.haex-hive/install.lock` with fields `haex_hive_version`, `generated_by`, and a `constitution` section carrying `sources` (array of contributing atom-IDs, alphabetically sorted) plus `content_integrity` (SHA-256 of the produced `.haex-hive/constitution.md` bytes, base64-encoded per Spec 008 canonical format). The hash is recorded uniformly on every successful `haex constitution assemble`, including the single-source straight-copy path. Spec 008 later extends this file with `atoms[]` and `generated_content_integrity` entries; Spec 007's write of the file must be forward-compatible with those additions.
+- Q: What format does the source-attribution header of `.haex-hive/constitution.md` use? → A: **`.haex-hive/constitution.md` contains no source-attribution header at all** — the file is pure constitution content. In the single-source path, it is byte-identical to the source contribution file at the pinned SHA (direct diffability for audits). In the multi-source path, it is the LLM-merge output, unmodified. All provenance lives in `.haex-hive/install.lock`'s `constitution.sources[]` (with each source's `id`, `revision`, `source` URL). `haex constitution show` reads `install.lock` and synthesizes a human-readable "Assembled from" preface at print-time (never written back to `constitution.md`). Single source of truth for provenance is `install.lock`.
+- Q: What version-range grammar does `haex_hive_min_version` accept? → A: Simple grammar only. Two accepted forms: (1) an exact-match version literal `"X.Y.Z"` (three dot-separated non-negative integers, no leading zeros except `0`), or (2) a lower-bound with `>=` prefix: `">=X.Y.Z"` (single space after `>=` is not permitted; the operator and the version literal are contiguous). No `<`, `!=`, `~=`, `^`, `,` combinations, no PEP 440 markers, no npm/semver-range extensions. Any other value is rejected at CLI startup with a diagnostic naming the invalid string and the accepted grammar. A future spec MAY widen the grammar to PEP 440 without a breaking change, since the current strict form is a strict subset.
+
+## User Scenarios & Testing *(mandatory)*
+
+### User Story 1 — haex-hive migrates its own `.haex-hive.json` from v1 to v2 (Priority: P1)
+
+The haex-hive repo currently uses the v1 `.haex-hive.json` shape (`harness_sources[]` with `role: "constitution"`, `repository: "self"`). As the first consumer to adopt v2, haex-hive must migrate itself: run `haex migrate`, review the produced sidecar diff, replace the original file, and open a PR that lands the v2 shape (plus the root/atom `manifest.json` files that make haex-hive its own first publisher). Every subsequent consumer follows the same review-gated pattern.
+
+**Why this priority**: The migration command is the entry point for every v1-to-v2 transition. Without it, no consumer can adopt v2. Because haex-hive's own repo is the reference case, its successful self-migration proves the deterministic mapping is complete and reviewable. This is the MVP.
+
+**Independent Test**: Run `haex migrate` in this repo. Verify: (a) `.haex-hive.json.migrated` sidecar appears, (b) stdout carries a unified diff between v1 and v2, (c) the sidecar validates against the v2 JSON Schema, (d) manually renaming the sidecar over `.haex-hive.json` and committing produces a repo whose state matches the design doc's expected v2 example, (e) re-running `haex migrate` on the already-v2 file reports "already migrated, nothing to do".
+
+**Acceptance Scenarios**:
+
+1. **Given** a repo with a v1 `.haex-hive.json` containing exactly one `harness_sources[]` entry with `role: "constitution"`, `repository: "self"`, and a full-40-char `revision`, **When** the operator runs `haex migrate`, **Then** a `.haex-hive.json.migrated` sidecar is written containing the deterministic v2 shape defined by the design doc's migration table, a unified diff is printed to stdout, and the original file is untouched.
+2. **Given** the same v1 file plus a stale `.haex-hive.json.migrated` sidecar from a prior interrupted run, **When** the operator runs `haex migrate`, **Then** the stale sidecar is deleted first, migration proceeds as if it were absent, and only the fresh proposal remains after a successful run.
+3. **Given** a v1 file whose `repository: "self"` cannot be resolved (no `remote.origin.url` in the local git config), **When** the operator runs `haex migrate`, **Then** the migration refuses with an entry-index error, no sidecar is written, and any temporary file created during evaluation is removed before the command exits.
+4. **Given** a v1 file whose `identity` is not a GitHub URL and not already a v2 reverse-DNS ID, **When** the operator runs `haex migrate`, **Then** the migration refuses with the diagnostic `cannot migrate identity: not a GitHub identity or v2 reverse-DNS ID` and leaves the original file untouched.
+5. **Given** any operator invocation with `--dry-run` or `--check`, **When** `haex migrate` runs, **Then** no sidecar is written, no temporary file remains, only the unified diff is printed to stdout, and the process exits 0 if the migration would succeed and non-zero if it would refuse.
+6. **Given** a v1 file with a permission-only entry (only `repository`, or `repository` + `revision`, or `repository` + `paths`), **When** the operator runs `haex migrate`, **Then** migration refuses with the specific diagnostic named in the design-doc migration table for each shape, and leaves the original file untouched.
+7. **Given** an already-v2 `.haex-hive.json`, **When** the operator runs `haex migrate`, **Then** the command reports `already migrated to v2 (haex_hive_version: 2)`, exits 0, writes no sidecar, and leaves the file untouched.
+
+---
+
+### User Story 2 — Consumer with a single-source constitution gets a straight-copied `.haex-hive/constitution.md` (Priority: P2)
+
+A consumer's `.haex-hive.json` v2 has exactly one `atoms[]` entry whose selected atom `contributes.constitution`. The operator runs `haex constitution assemble`. Because there is only one constitution source, no LLM merge is required — the assembled `.haex-hive/constitution.md` is a byte-for-byte copy of the source atom's declared file at the pinned SHA (no modifications, no prepended header). The command records the content-hash and source-attribution in `.haex-hive/install.lock` so future `haex install`/`haex verify` runs (Spec 008) can verify the file's integrity byte-for-byte on any device.
+
+**Why this priority**: This is the common case (single-constitution consumers). It exercises the atom-ID lookup path (root manifest → atom manifest → contribution file), the byte-identical straight-copy semantics, and the content-hash recording — all foundations reused by US3. It must work standalone before the LLM path can be trusted.
+
+**Independent Test**: In a fresh test repo with a v2 `.haex-hive.json` pointing at a known publisher constitution atom, run `haex constitution assemble`. Verify: (a) `.haex-hive/constitution.md` exists, (b) its SHA-256 equals the source contribution file's SHA-256 at the pinned SHA (byte-identical), (c) `.haex-hive/install.lock`'s `constitution.sources[]` contains exactly one entry with the correct atom-id, revision, and canonical source URL, (d) `install.lock`'s `constitution.content_integrity` equals the SHA-256 of the file, (e) `haex constitution show` prints a synthesized "Assembled from" preface followed by `---` and the constitution content.
+
+**Acceptance Scenarios**:
+
+1. **Given** a v2 `.haex-hive.json` with one entry whose selected atom manifest declares `contributes.constitution: "constitution.md"`, **When** the operator runs `haex constitution assemble`, **Then** `.haex-hive/constitution.md` is created byte-for-byte identical to the source contribution file at the pinned SHA, `.haex-hive/install.lock` is created with the `constitution` section populated, and no other files are modified.
+2. **Given** the same setup, **When** the operator runs `haex constitution assemble` a second time with no source changes, **Then** both output files are byte-identical to the previous run (deterministic), and no LLM invocation occurs.
+3. **Given** the assembled file and `install.lock` exist, **When** the operator runs `haex constitution show`, **Then** a synthesized "Assembled from" preface (naming the one source with atom-ID, revision, and canonical URL) is printed to stdout, followed by `---` and the byte-for-byte content of `.haex-hive/constitution.md`.
+4. **Given** the pinned SHA does not exist in the publisher's clone (unavailable revision), **When** the operator runs `haex constitution assemble`, **Then** the command refuses with a diagnostic that names the missing SHA and does not modify `.haex-hive/constitution.md` or `.haex-hive/install.lock`.
+
+---
+
+### User Story 3 — Consumer with N constitution sources gets an LLM-merged `.haex-hive/constitution.md` verifiable byte-for-byte on every device (Priority: P2)
+
+A consumer's `.haex-hive.json` v2 has multiple `atoms[]` entries whose selected atoms `contributes.constitution` (e.g. a base constitution plus a team-specific overlay). The operator runs `haex constitution assemble` on a device with LLM access; the command loads all source constitutions, invokes the LLM interactively to detect and resolve conflicts, and writes the reconciled merge output to `.haex-hive/constitution.md` (constitution content only, no header). Every source's `id`, `revision`, and canonical `source` URL is recorded in `.haex-hive/install.lock`'s `constitution.sources[]`, together with the merged file's `content_integrity` SHA-256. The operator reviews, commits, and pushes. Other devices `git pull` and use the committed file without re-running the LLM; a Spec 008 `haex verify` can later confirm that the committed content matches the recorded hash.
+
+**Why this priority**: This exercises the LLM-merge path and — via committed sync + content-hash verification — the mechanism that keeps Principle IV (byte-identical resolution across devices) intact despite a non-deterministic LLM step. Without it, multi-constitution consumers cannot use haex-hive at all.
+
+**Independent Test**: In a test repo with two mock constitution atoms declared, run `haex constitution assemble` (LLM present). Verify: (a) the operator is prompted interactively for conflict resolutions if any exist, (b) `.haex-hive/constitution.md` contains the merged content plus a header naming both source atom-ids and their pinned SHAs, (c) the recorded content-hash equals SHA-256 over the file, (d) copying the file plus its content-hash record to a second machine and running `haex constitution show` prints the file, and (e) any command that expects an assembled constitution can consult the recorded content-hash to verify the file byte-for-byte on the second machine without re-invoking the LLM.
+
+**Acceptance Scenarios**:
+
+1. **Given** a v2 `.haex-hive.json` with two entries whose selected atoms both `contributes.constitution`, **When** the operator runs `haex constitution assemble`, **Then** the LLM is invoked with all source constitution bodies, the operator confirms or edits the merged output interactively, and the final `.haex-hive/constitution.md` is written with a header naming both sources.
+2. **Given** the assembled file and its content-hash are committed and pulled on a second machine that lacks LLM access, **When** the operator inspects the file with `haex constitution show`, **Then** the same content appears; **When** any command that needs to trust the file consults the recorded content-hash, **Then** the hash equals SHA-256 over the pulled file.
+3. **Given** the recorded content-hash exists but `.haex-hive/constitution.md` is missing on the current device (never committed, or deleted), **When** any command that needs the assembled file runs, **Then** it refuses with a diagnostic that says the constitution has not been assembled and points at running `haex constitution assemble` on a device with LLM access, then committing and pulling the result.
+4. **Given** the operator runs `haex constitution assemble` on a device with no LLM available AND the current sources form a multi-source set, **When** the command detects the missing LLM, **Then** it refuses with a diagnostic that names the LLM requirement and points at running the command on a device with LLM access.
+
+---
+
+### User Story 4 — `haex constitution show` prints the effective constitution with source attribution (Priority: P3)
+
+Every user who wants to inspect what constitution the current project actually enforces can run `haex constitution show`. The command reads `.haex-hive/install.lock` and synthesizes a human-readable "Assembled from" preface (one line per source with atom-ID, revision SHA, and canonical URL), prints it to stdout, then prints a `---` separator, then the byte-for-byte content of `.haex-hive/constitution.md`. A `--no-preface` flag suppresses the synthesized preface for scripting use.
+
+**Why this priority**: Convenience over correctness. `cat .haex-hive/constitution.md` alone would not show provenance because the file has no header — provenance is in `install.lock`. A dedicated command that synthesizes the preface makes the operator-facing story complete, and gives us a natural insertion point for future features (colorized diff against a source, source-only view, etc.) without breaking backward compatibility.
+
+**Independent Test**: After US2 or US3 has produced `.haex-hive/constitution.md` and `.haex-hive/install.lock`, run `haex constitution show`. Verify: (a) the synthesized preface names every source recorded in `install.lock.constitution.sources[]`, (b) after `---`, the printed constitution content matches `.haex-hive/constitution.md` byte-for-byte, (c) `haex constitution show --no-preface` prints only the constitution content with no preface, (d) if `.haex-hive/constitution.md` is missing, the command refuses with the same diagnostic as US3 scenario 3.
+
+**Acceptance Scenarios**:
+
+1. **Given** `.haex-hive/constitution.md` exists, **When** the operator runs `haex constitution show`, **Then** the file content is printed to stdout with no modification and the process exits 0.
+2. **Given** `.haex-hive/constitution.md` does not exist, **When** the operator runs `haex constitution show`, **Then** the command refuses with a diagnostic pointing at `haex constitution assemble` and exits non-zero.
+
+---
+
+### Edge Cases
+
+- **v1 file already has an atom-directory-shaped `path`**: v1 permits only file-level `path` (per Spec 004/005). A file that somehow already ends in a directory-shaped path (uncommon; would be a manual edit) is refused during migration with `cannot migrate: v1 path does not name a regular file at the pinned SHA`.
+- **v1 revision is a short SHA (7-39 chars)**: migration MUST expand it to the full 40-char SHA at the resolved publisher; if the short SHA is ambiguous or the publisher clone is offline, migration refuses.
+- **Publisher root `manifest.json` is missing at the pinned SHA**: migration and `haex constitution assemble` both refuse with `publisher manifest.json not found at <sha>`.
+- **Publisher root `manifest.json` maps the atom-id but the referenced atom directory has no `manifest.json`**: refuse with `atom manifest.json not found at <sha>:<atom-path>/manifest.json`.
+- **Atom's `contributes.constitution` names a path that does not exist at the pinned SHA**: refuse; the contribution declaration is only trustworthy at the SHA the atom itself was frozen at.
+- **Consumer's `.haex-hive.json` v2 declares zero `atoms[]` entries**: `haex constitution assemble` writes no file and reports "no constitution sources declared"; `haex constitution show` refuses per US4 scenario 2.
+- **The v1 `identity` is a GitHub URL that would collapse to an invalid v2 reverse-DNS ID** (e.g. contains uppercase letters that lowercase into a valid form): migration lowercases before validating and emits the lowercased result. A URL that cannot be lowercased into a valid reverse-DNS ID (edge case: empty owner or repo segment) is refused.
+- **Publisher URL carries embedded userinfo** (e.g. `https://user:token@github.com/…`): migration and `haex migrate` sidecar generation refuse the source per D3's canonical-source normalization rules, before any cache lookup or clone.
+- **Same atom-id appears in `.haex-hive.json` under two different `(source, revision)` pairs**: refused as a collision per D3's global uniqueness rule, with both entry indices named.
+- **`.haex-hive/constitution.md` file exists but its content-hash mismatches the recorded hash** (locally modified, or drift from a stale git-pull): commands that need the assembled constitution refuse with a hash-mismatch diagnostic pointing at `haex constitution assemble` OR `git pull`, depending on which is more likely.
+- **`.haex-hive.json` v2 declares `haex_hive_min_version` above the installed CLI's version**: every `haex` verb refuses at startup with the required version and points at `pip install --upgrade haex-hive`.
+
+## Requirements *(mandatory)*
+
+### Functional Requirements
+
+#### `.haex-hive.json` v2 schema
+
+- **FR-001**: The system MUST publish a JSON Schema (Draft 2020-12) that describes the `.haex-hive.json` v2 shape, including the top-level fields `haex_hive_version` (const `"2"`), `haex_hive_min_version` (optional; a string matching the grammar defined in FR-006), `identity` (reverse-DNS string), `atoms[]` (array of entries), and the carried-forward `groups`, `active_feature`, `identity_note` optional fields.
+- **FR-002**: The system MUST validate every `atoms[]` entry against the discriminated entry schema: required `source`, `revision` (full 40-char SHA), and `includes[]` (non-empty array of reverse-DNS atom-IDs); optional `track` (branch annotation, non-authoritative), optional `config` object keyed by atom-ID.
+- **FR-003**: The system MUST canonicalize every `source` URL per the D3 rules (lowercase scheme+host, strip trailing `/`, strip terminal `.git`, reject any URL with userinfo, reject any URL whose scheme is not one of `https`, `ssh`, `git`).
+- **FR-004**: The `.haex-hive.json` v2 JSON Schema MUST forbid `additionalProperties` at every object boundary that accepts consumer input, so typos in field names produce clear errors instead of silent ignores.
+- **FR-005**: The system MUST enforce that every `config.<atom-id>` value is an object with only the two permitted keys `priority` (optional integer) and `values` (optional object, default `{}`); no other top-level keys allowed there.
+- **FR-006**: The `haex_hive_min_version` field, when present, MUST match one of two forms: an exact-version literal `X.Y.Z` (three dot-separated non-negative decimal integers, no leading zeros except a literal `0`), or a lower-bound `>=X.Y.Z` (no whitespace between `>=` and the version literal). At CLI startup, the system MUST reject any other string with a diagnostic that quotes the offending value and names the accepted grammar. When the field is present and the local `haex` CLI version does not satisfy the constraint (exact-match: version must equal literally; `>=`: version must be at or above the literal, per standard three-part numeric comparison), the CLI MUST refuse to run and MUST print both the required constraint and the installed version.
+
+#### Publisher `manifest.json` schemas
+
+- **FR-007**: The system MUST publish a JSON Schema for the publisher-root `manifest.json`, requiring top-level `haex_hive_version` (const `"2"`), `publisher` (reverse-DNS), and `atoms` (object mapping atom-IDs to entries with required `path` and `version`, optional `description`).
+- **FR-008**: The system MUST publish a JSON Schema for the per-atom `manifest.json`, requiring top-level `haex_hive_version` (const `"2"`), `id` (reverse-DNS matching the root-manifest key), `version` (semver), and at least one of `contributes` (object with optional `constitution` (string), `spec` (string), `rules` (array), `hooks` (array), `skills` (array)) OR `includes` (non-empty array of atom-IDs).
+- **FR-009**: The atom `manifest.json` MUST forbid an explicit `type` field; the atom's semantic role is derived from the presence of `contributes.constitution`, `contributes.spec`, `contributes.rules`/`hooks`/`skills`, or `includes` (type-by-shape per D13).
+- **FR-010**: The atom `manifest.json` MUST support an optional `priority` field (integer, default 100), and an optional `defaults` object plus an optional `config_schema` reference (relative path within the atom directory).
+- **FR-011**: The publisher-root `manifest.json`'s `atoms.<atom-id>.path` MUST be a non-empty repository-relative POSIX path with no `.`, `..`, or empty segments, referring to a directory containing a `manifest.json` file; violations are refused at read-time with the `(atom-id, path)` pair named.
+
+#### `haex migrate` command
+
+- **FR-012**: The `haex migrate` command MUST detect the input `.haex-hive.json` version by reading the `haex_hive_version` field; a file with `haex_hive_version: "2"` produces the report `already migrated to v2` and exits 0 without writing a sidecar.
+- **FR-013**: The `haex migrate` command MUST implement the v1→v2 migration table exactly as documented in the design doc's "Migration path v1 → v2" section, including: identity lowercasing + reverse-DNS conversion, `self`-repository resolution from `remote.origin.url`, full-SHA expansion, publisher root `manifest.json` lookup at the resolved SHA, atom-directory selection via the D3 uniqueness and role-mapping rules, and grouping of same-`(source, revision)` entries into one v2 `atoms[]` entry with sorted `includes[]`.
+- **FR-014**: The `haex migrate` command MUST invalidate any pre-existing `.haex-hive.json.migrated` sidecar at the start of every non-dry-run invocation, before evaluating the migration.
+- **FR-015**: The `haex migrate` command MUST write its proposal to a same-directory temporary file and atomically replace the `.migrated` sidecar only after every migration step (including validation against the v2 JSON Schema) succeeds.
+- **FR-016**: On any migration failure, the `haex migrate` command MUST delete the temporary file, ensure no `.migrated` sidecar remains after the failure (so the operator cannot manually apply a stale proposal), and leave the original `.haex-hive.json` untouched.
+- **FR-017**: The `haex migrate` command MUST print a unified diff between the input file and the proposed v2 sidecar to stdout on success.
+- **FR-018**: The `haex migrate --dry-run` (and equivalent `--check`) mode MUST print the diff to stdout, write no sidecar or temporary file, exit 0 if a real invocation would succeed, and exit non-zero otherwise.
+- **FR-019**: The `haex migrate` command MUST refuse every permission-only v1 shape (bare `repository`, `repository` + `revision`, `repository` + `paths` with or without `revision`) with the diagnostic strings named in the design doc's migration table.
+- **FR-020**: The `haex migrate` command MUST refuse any transitive publisher URL that carries userinfo, before any clone or root-manifest read, and MUST leave the original file untouched on such a refusal.
+
+#### Root + atom manifests for haex-hive itself
+
+- **FR-021**: The haex-hive repo MUST land a root `manifest.json` at the repo root (or another well-known location documented alongside) that maps `com.github.haexmas.haex-hive.constitution` to `.specify/memory` with `version: "1.3.0"`.
+- **FR-022**: The haex-hive repo MUST land an atom `manifest.json` at `.specify/memory/manifest.json` with `id: "com.github.haexmas.haex-hive.constitution"`, `version: "1.3.0"`, `priority: 10`, and `contributes.constitution: "constitution.md"`.
+- **FR-023**: The migrated `.haex-hive.json` v2 for haex-hive itself MUST list exactly one `atoms[]` entry: `source` = the canonical haex-hive git URL, `revision` = the SHA at which the migration lands, `includes: ["com.github.haexmas.haex-hive.constitution"]`, `config: {}`.
+
+#### `haex constitution assemble` command
+
+- **FR-024**: The `haex constitution assemble` command MUST resolve every `atoms[]` entry in `.haex-hive.json` v2, identify those whose selected atom manifest declares `contributes.constitution`, and load each contributed file's bytes at its pinned SHA via the D11 two-step lookup (root manifest → atom manifest → contribution file).
+- **FR-025**: The `haex constitution assemble` command MUST refuse the run before touching any output if any resolution step fails (missing publisher manifest, missing atom manifest, missing contribution file, atom-ID collision, credential-bearing source URL), naming the specific failure and the involved entry index/atom-id.
+- **FR-026**: When exactly one constitution source is resolved, the `haex constitution assemble` command MUST NOT invoke an LLM; it MUST produce `.haex-hive/constitution.md` as a byte-for-byte copy of the source contribution file at the pinned SHA (no prepended header, no modification of any kind — the file's SHA-256 equals the source file's SHA-256 at that revision), and MUST still record the file's content-hash and source-attribution in `install.lock` per FR-030 (single-source is not exempt from hash-recording — only from LLM invocation).
+- **FR-027**: When more than one constitution source is resolved, the `haex constitution assemble` command MUST invoke the operator-attached LLM interactively, present it with all source constitution bodies plus a task description, allow the operator to review and edit the merged output, and write the confirmed result to `.haex-hive/constitution.md` verbatim (no prepended header — provenance lives in `install.lock` per FR-030).
+- **FR-028**: When more than one constitution source is resolved AND no LLM is available on the current device, the `haex constitution assemble` command MUST refuse with a diagnostic naming the LLM requirement and pointing at a device with LLM access, and MUST NOT modify `.haex-hive/constitution.md`.
+- **FR-029**: `.haex-hive/constitution.md` MUST NOT carry a source-attribution header, YAML frontmatter, HTML comment, or any other meta content. It contains only constitution text. All provenance (atom-ID, canonical source URL, pinned revision SHA, and — for multi-source — the assembling tool identity and version) is stored in `.haex-hive/install.lock`'s `constitution` object per FR-030. `haex constitution show` (FR-032) synthesizes a human-readable "Assembled from" preface from `install.lock` at print-time and prepends it to stdout only; it never writes that preface into any file.
+- **FR-030**: The `haex constitution assemble` command MUST record the SHA-256 content-hash of the produced `.haex-hive/constitution.md` in the file `.haex-hive/install.lock` on every successful run, regardless of source count (single-source straight-copy and multi-source LLM-merge both record). The recorded value goes in a top-level `constitution` object with fields: `sources` (array of contributing atom-IDs, sorted alphabetically) and `content_integrity` (`sha256-<base64>` per Spec 008's canonical serialization format). Spec 008 extends this file with `atoms[]` and `generated_content_integrity`; Spec 007's write MUST preserve any unknown top-level fields it encounters (forward compatibility) and MUST NOT reject an `install.lock` that carries additional fields it does not recognize as long as its `haex_hive_version` matches.
+- **FR-036**: The `.haex-hive/install.lock` file MUST use deterministic JSON serialization: keys alphabetically sorted at every object level, LF line endings, UTF-8 encoding, 2-space indent, trailing newline. Two runs of `haex constitution assemble` on identical inputs MUST produce byte-identical `install.lock` output.
+- **FR-037**: The `.haex-hive/install.lock` file's own SHA-256 integrity is NOT part of its own body (avoiding chicken-and-egg). Spec 008 will define how `install.lock` is verified against `.haex-hive.json` and `.haex-hive/constitution.md`; Spec 007 only guarantees the file's fields are correctly populated per FR-030 and FR-036.
+- **FR-031**: The single-source path of `haex constitution assemble` MUST be deterministic: two runs with identical inputs produce byte-identical `.haex-hive/constitution.md` output.
+
+#### `haex constitution show` command
+
+- **FR-032**: The `haex constitution show` command MUST print, when `.haex-hive/constitution.md` and `.haex-hive/install.lock` both exist, a human-readable "Assembled from" preface synthesized from `install.lock`'s `constitution.sources[]` (one line per source with atom-ID, revision SHA, and canonical source URL) followed by a `---` separator and then the byte-for-byte content of `.haex-hive/constitution.md`. It MUST exit 0 on success. The preface is stdout-only — no file is modified. A `--no-preface` flag MUST be available to suppress the preface and print only the raw `constitution.md` bytes for scripting.
+- **FR-033**: The `haex constitution show` command MUST refuse with a non-zero exit when `.haex-hive/constitution.md` does not exist, printing a diagnostic that names the missing path and points at `haex constitution assemble`.
+
+#### Cross-cutting
+
+- **FR-034**: Every command in this spec (`haex migrate`, `haex constitution assemble`, `haex constitution show`) MUST refuse to run against a `.haex-hive.json` file whose `haex_hive_version` is unknown to the installed CLI, with an error naming both versions.
+- **FR-035**: Every command in this spec that writes to disk MUST leave the filesystem in either the pre-command state or the fully-successful-post-command state; a partial write (e.g. `.haex-hive/constitution.md` half-written, or `.migrated` sidecar present without a completed diff) is not allowed. Interrupted invocations are cleaned up on the next run.
+
+### Key Entities
+
+- **`.haex-hive.json` v2 (Consumer manifest)**: The single top-level configuration file per consumer project. Declares `identity`, `haex_hive_min_version`, and an `atoms[]` array of pinned atom selections. Fully committed to the consumer repo.
+- **Publisher root `manifest.json`**: A per-publisher-repo registry mapping atom-IDs to internal atom-directory paths. Committed at the root of a publisher repo. Its structure lets publishers rename atom directories without breaking consumers.
+- **Atom `manifest.json`**: A per-atom manifest inside each atom directory in a publisher repo. Declares the atom's `id`, `version`, `priority`, `defaults`, `config_schema`, and either `contributes` (constitution / spec / rules / hooks / skills) or `includes` (composition) or both.
+- **Migration sidecar (`.haex-hive.json.migrated`)**: A same-directory proposed v2 rewrite of a v1 `.haex-hive.json`. Written by `haex migrate`, reviewed by the operator, moved by the operator over the original file, committed via PR.
+- **Assembled constitution (`.haex-hive/constitution.md`)**: The effective, possibly-merged constitution the current project enforces. Committed to the consumer repo. Content is either a byte-for-byte straight-copy of a single source atom's contribution file (in the single-source path, the file's SHA-256 equals the source file's SHA-256 at the pinned revision) or the LLM-merged result of multiple sources (multi-source path). No prepended header, no meta content — pure constitution text. Provenance is stored in `.haex-hive/install.lock`.
+- **`.haex-hive/install.lock`**: The recorded state produced by `haex constitution assemble`. Spec 007 populates its `haex_hive_version`, `generated_by`, and `constitution` fields (with `sources[]` and `content_integrity`). Spec 008 later extends the file with `atoms[]` (per-atom source SHA + content_integrity) and `generated_content_integrity`. Deterministic JSON serialization; committed to the consumer repo.
+
+## Success Criteria *(mandatory)*
+
+### Measurable Outcomes
+
+- **SC-001**: An operator can migrate haex-hive's own `.haex-hive.json` from v1 to v2 in a single `haex migrate` run, and the resulting sidecar validates against the v2 JSON Schema with zero warnings.
+- **SC-002**: A consumer whose `.haex-hive.json` declares one constitution atom can produce a committed `.haex-hive/constitution.md` from `haex constitution assemble` without ever invoking an LLM.
+- **SC-003**: A consumer whose `.haex-hive.json` declares N constitution atoms can produce a committed `.haex-hive/constitution.md` via `haex constitution assemble` with human-in-the-loop LLM merge, and a second device that pulls the file via `git pull` reads it byte-for-byte with `haex constitution show` and passes future Spec 008 content-hash verification.
+- **SC-004**: `haex migrate --dry-run` on any well-formed v1 file completes and reports its verdict in under 5 seconds (excluding first-time git-clone of remote publishers).
+- **SC-005**: Every negative scenario documented in the design doc's migration table (identity mismatch, permission-only shape, missing publisher manifest, credential URL) is caught at migrate-time with a specific diagnostic and leaves the original file untouched.
+- **SC-006**: A `.haex-hive.json` v2 file that violates any schema constraint (unknown top-level field, missing required field, `additionalProperties` violation in a nested config object, invalid reverse-DNS atom-ID, non-40-char revision, userinfo in source URL) is rejected by every command in this spec at read-time, with a diagnostic that names the field path.
+- **SC-007**: On a device with no LLM available, `haex constitution assemble` for a multi-source constitution set refuses in under 1 second (no publisher-clone required, since the LLM absence is device-local state) and leaves `.haex-hive/constitution.md` untouched.
+- **SC-008**: Every command in this spec that writes to disk survives an interrupted run: after the interrupt, the filesystem is either in the pre-command state or the fully-successful-post-command state (verified by re-running the command and observing convergence to the successful state).
+
+## Assumptions
+
+- **Python 3.10+** is installed on the operator's device (D8). Every command in this spec runs under that interpreter, invoked via the `haex` console script that pip installs.
+- **`git`** (≥ 2.30) is on the operator's `PATH` (needed for `remote.origin.url` reads during migration, for publisher clones, and for the future Spec 008 install transaction). Absence at command startup produces a clear error.
+- **A publisher-clone location under `$HAEX_HIVE_STATE/repos/<clone-hash>/`** is prepared per D15's storage layout. Spec 007 only reads publisher content at pinned SHAs; the reconciliation-and-hydration logic that populates this store is Spec 008's deliverable. For Spec 007, a plain `git clone --bare` at command-time (or an ephemeral `git fetch` from a shared cache) is acceptable — the exact publisher-fetch mechanism will be finalized alongside Spec 008 with backward-compatibility, since the assembled constitution's determinism depends only on the SHA it reads from, not on how the SHA was reached.
+- **LLM access for multi-source constitution merges** means the operator is running the `haex` command inside an environment that has an attached agent-runtime (Claude Code CLI, Claude Desktop, or equivalent). Spec 007 defines the refusal semantics for the absence of that runtime; it does not standardize how the LLM prompt is constructed (that is an implementation choice for the Spec 007 plan phase).
+- **The migration source-file for haex-hive itself** at Spec 007 landing time is the current v1 shape shown in this repo's `.haex-hive.json`. The migrated v2 file will pin the same immutable revision SHA that carries the v2 root+atom `manifest.json` files (so the pinned constitution content is guaranteed available at the pinned SHA).
+- **`.haex-hive/constitution.md` and the content-hash record are committed to git** per D16 (fully-committed `.haex-hive/`). Every command in this spec assumes read-write access to `.haex-hive/` under the consumer repo root; no other filesystem location is written by Spec 007's commands.
+- **Constitution v1.3.0 and ADR 0008 (retire `haex-init` binary)** are already merged onto `main` via PR #9. Spec 007 does not amend the constitution again and does not introduce a new binary rename; it delivers the CLI verbs `migrate`, `constitution assemble`, `constitution show` under the existing `haex` console script.
+- **The Spec 008 install-transaction contract and Spec 009 hook-boundary contract** are the authoritative sources for their respective concerns. Spec 007's commands MUST NOT introduce alternative or overlapping definitions; where a Spec-007 command reads or writes state that Spec 008/009 will later govern (e.g. the content-hash record location), it MUST follow the contracts named in the two dedicated documents.

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haexmas/haex-hive/schemas/publisher-manifest.v2.schema.json",
+  "title": "haex-hive Publisher Root Manifest v2",
+  "description": "Schema for the root manifest.json of a publisher repo. Maps atom-ids to internal directory paths. See spec-007 FR-007, FR-011.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["haex_hive_version", "publisher", "atoms"],
+  "properties": {
+    "haex_hive_version": {
+      "const": "2"
+    },
+    "publisher": {
+      "$ref": "#/$defs/atomId",
+      "description": "Publisher's reverse-DNS namespace. Every atom-id key in atoms MUST start with publisher + '.'."
+    },
+    "atoms": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/atomId" },
+      "additionalProperties": { "$ref": "#/$defs/publisherAtomEntry" },
+      "minProperties": 1,
+      "description": "Map from atom-id to the publisher-repo-relative directory containing that atom's manifest.json."
+    }
+  },
+  "$defs": {
+    "atomId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*(\\.[a-z0-9][a-z0-9-]*)+$",
+      "minLength": 3,
+      "maxLength": 253
+    },
+    "repoRelativePath": {
+      "type": "string",
+      "pattern": "^[^/\\0]([^\\0]*[^/\\0])?$",
+      "minLength": 1,
+      "description": "Repository-relative POSIX path, no leading/trailing slash, no NUL. Segment-level rejection of . and .. is enforced at runtime, not by pattern."
+    },
+    "publisherAtomEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "version"],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/repoRelativePath",
+          "description": "Directory (not file) containing the atom's manifest.json."
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+          "description": "Semver X.Y.Z of the atom."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable one-liner shown by future haex atoms list command (Spec 010)."
+        }
+      }
+    }
+  }
+}
