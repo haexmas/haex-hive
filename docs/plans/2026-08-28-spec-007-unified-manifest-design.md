@@ -1095,6 +1095,20 @@ Non-blocking for Spec 007 but must be resolved by Spec 008/009/010:
 - **`haex init --from-repo`**: the Spec 006 bootstrap-from-neighbor
   convenience mode. Not blocking Spec 007; could land in Spec 008 or a
   later add-source-focused mini-spec.
+- **`install.mutex` / `install.journal` placement** (raised by
+  CodeRabbit on PR #9, 2026-08-29): these transaction artifacts carry
+  device-local state (PID, hostname, recovery cursor) that MUST NOT be
+  synchronized across devices, but Spec 007's committed-`.haex-hive/`
+  model would otherwise pull them in through git. Two candidate
+  resolutions for Spec 008 to decide between: (a) locate them under an
+  ignored runtime subpath (e.g. `.haex-hive/run/` gitignored) with a
+  stale-owner detection rule (PID no longer alive OR hostname mismatch
+  OR mtime older than threshold triggers auto-recovery), or (b) move
+  them to a device-local state root (e.g.
+  `$HAEX_HIVE_STATE/locks/<repo-identity>/`) alongside the content
+  store, keeping `.haex-hive/` fully committed content. Both preserve
+  the byte-identity-via-git guarantee for actual harness state; Spec
+  008 picks one and documents the stale-artifact contract.
 
 ## Constitution compliance check
 
