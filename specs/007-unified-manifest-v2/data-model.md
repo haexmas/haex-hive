@@ -147,6 +147,24 @@ Sub-entity of `ConstitutionLockSection.sources[]`. One row per contributing atom
 | `revision` | `str` (40-char lowercase hex) | required | Full commit SHA at which the constitution content was read. |
 | `source` | `CanonicalSourceUrl` | required | Canonical form (D3) of the publisher repo URL. |
 
+### ResolvedConstitutionContribution
+
+In-memory-only assembly input. This entity is not serialized to `install.lock`; its `source` metadata is serialized there as a `ConstitutionSource` after successful publication.
+
+| Field | Type | Optional | Constraint / Source |
+|---|---|---|---|
+| `source` | `ConstitutionSource` | required | Provenance for this exact contribution. |
+| `body` | `bytes` | required | Exact raw bytes read from the contribution file at `source.revision`. The single-source path copies these bytes unchanged after the FR-038 safety gate; multi-source adapters receive every body with its associated metadata. |
+
+### MergeResult
+
+In-memory-only return value from `MergeLLM.merge`. It prevents orchestration from treating an unreviewed adapter response as publishable content.
+
+| Field | Type | Optional | Constraint / Source |
+|---|---|---|---|
+| `candidate` | `bytes` | required | The full merged candidate body. It passes FR-038 and Principle-VIII validation before staging. |
+| `confirmed` | `bool` | required | `true` only after the `stdio` adapter has displayed the final candidate and received an explicit affirmative operator confirmation. `false` causes `merge-not-confirmed` with no output write. |
+
 ### AssembledBy
 
 Sub-entity of `ConstitutionLockSection`. Records the tool that produced the
