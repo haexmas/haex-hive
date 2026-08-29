@@ -52,7 +52,7 @@ Print the current effective constitution to stdout. Before emitting any stdout, 
 | 0 | Success | |
 | 2 | Missing constitution — `.haex-hive/constitution.md` does not exist | FR-033. Points at `haex constitution assemble`. |
 | 3 | Missing install.lock — `.haex-hive/install.lock` does not exist or lacks a `constitution` section | Suggests running `haex constitution assemble`. |
-| 4 | Corrupt install.lock — `.haex-hive/install.lock` failed schema validation | Reports the specific validator failure. |
+| 4 | Corrupt install.lock — `.haex-hive/install.lock` failed schema or required semantic validation | Schema failures use `key=install-lock-schema-invalid`; duplicate or non-ascending `constitution.sources[].id` values use `key=install-lock-sources-not-canonical`. |
 | 5 | System refuse — `.haex-hive.json` version mismatch (FR-034) | Only checked if the file exists; missing `.haex-hive.json` is not a refuse condition for this read-only command. |
 | 6 | Constitution integrity mismatch — `constitution.md` does not match `constitution.content_integrity` | Emits no stdout; suggests `git pull` or `haex constitution assemble`. |
 | 7 | Incomplete assembly transaction — a constitution journal is present | Emits no stdout; suggests `haex constitution assemble` to perform recovery. |
@@ -73,6 +73,14 @@ Integrity-mismatch refuse output:
 error: exit=6 key=constitution-integrity-mismatch
   .haex-hive/constitution.md does not match install.lock constitution.content_integrity
   hint: Run `git pull` or `haex constitution assemble` to restore a matched generation.
+```
+
+Semantic-lock refuse output:
+
+```text
+error: exit=4 key=install-lock-sources-not-canonical
+  constitution.sources[].id values must be unique and ascending in bytewise UTF-8 order
+  hint: Re-run `haex constitution assemble` to regenerate install.lock.
 ```
 
 Incomplete-transaction refuse output:

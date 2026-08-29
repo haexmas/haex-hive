@@ -31,9 +31,9 @@
     },
     "repoRelativePath": {
       "type": "string",
-      "pattern": "^(?!.*(?:^|/)\\.\\.?(/|$))[^\\u0000/\\\\]+(?:/[^\\u0000/\\\\]+)*$",
+      "pattern": "^(?!(?:\\.{1,2})(?:/|$))[^\\u0000-\\u001F\\u007F/\\\\]+(?:/(?!(?:\\.{1,2})(?:/|$))[^\\u0000-\\u001F\\u007F/\\\\]+)*$",
       "minLength": 1,
-      "description": "Repository-relative POSIX path with no leading/trailing slash, NUL, empty, . or .. segments."
+      "description": "Repository-relative POSIX path with no leading/trailing slash, control characters, empty, . or .. segments."
     },
     "publisherAtomEntry": {
       "type": "object",
