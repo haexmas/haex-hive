@@ -873,23 +873,32 @@ are non-negotiable for the Spec 008 landing:
   advancing.
 - **Repository-wide visibility commit**. All new bytes are written to a
   staging root next to the target (same filesystem), fsynced, and prepared as
-  complete output-root views for `.haex-hive/`, `.claude/`, and `.codex/` (only
-  adapter-owned paths are replaced). After every other staged output is sealed,
-  the transaction writes and fsyncs the final staged `install.lock`, computes
-  the participating-root digests over those final staged bytes, and writes the
-  staged `.haex-hive/visibility.json` marker last. The marker contains a
-  deterministic generation ID and the digest of every participating output
-  root; the `.haex-hive/` digest includes `install.lock` and excludes only the
-  marker itself to avoid self-reference. The transaction swaps those complete
-  views with `rename(2)` (POSIX) or the platform-atomic equivalent
-  (`ReplaceFile`/`MoveFileEx` on Windows), but readers MUST NOT treat the
-  individual swaps as publication. The `.haex-hive/` view swap containing that
-  final marker is the final journal step and publishes the generation. Readers
-  first load the marker and then verify every root's generation and digest; a
-  missing marker or mixed generation is an unavailable installation, never a
-  partially valid one. Recovery tests MUST cover a crash after each root swap
-  and prove that recovery either restores the previous marker-consistent
-  generation or completes the new one before readers resume.
+  complete logical output-root views for `.haex-hive/`, `.claude/`, and
+  `.codex/` (only adapter-owned paths are replaced). A transaction MUST NOT
+  use ordinary rename-over-existing-directory semantics for these roots: they
+  can be non-empty on a reinstall. It either uses a platform primitive that
+  atomically exchanges populated, same-filesystem directories, or stores each
+  complete view under a versioned generation directory and atomically replaces
+  a small current-generation pointer. In the latter case every managed adapter
+  entry resolves through that pointer (for example, through a supported
+  symlink/junction or adapter-managed launcher); a platform without either
+  mechanism MUST refuse the install rather than publish a torn direct view.
+  Unowned entries in `.claude/` and `.codex/` are never replaced. After every
+  other staged output is sealed, the transaction writes and fsyncs the final
+  staged `install.lock`, computes the participating-root digests over those
+  final staged bytes, and writes the staged `.haex-hive/visibility.json` marker
+  last. The marker contains a deterministic generation ID and the digest of
+  every participating output root; the `.haex-hive/` digest includes
+  `install.lock` and excludes only the marker itself to avoid self-reference.
+  Readers MUST NOT treat individual root exchanges or pointer replacements as
+  publication. The `.haex-hive/` exchange or pointer replacement containing
+  that final marker is the final journal step and publishes the generation.
+  Readers first load the marker and then verify every root's generation and
+  digest; a missing marker or mixed generation is an unavailable installation,
+  never a partially valid one. Recovery tests MUST cover a crash after each
+  root publication step and a reinstall with non-empty output roots, proving
+  that recovery either restores the previous marker-consistent generation or
+  completes the new one before readers resume.
 - **Stable staged-input reads through commit**. Plan-build captures the exact
   bytes of `.haex-hive.json`, every publisher manifest, and every atom manifest
   into a sealed plan snapshot and records their digests. Immediately before
@@ -1110,34 +1119,47 @@ previous migration sidecar as required by D10.
 
 **Adoption of an unmanaged legacy output**: the v2 sidecar has an optional
 top-level `legacy_outputs` array, sorted by `legacy_path`, whose entries have
-`legacy_path`, `atom`, optional `managed_path`, and a `state` enum:
-`preserved`, `copied`, or `unmanaged`. `preserved` means a pre-existing legacy
-file is raw-byte-for-byte identical to the resolved atom and remains the
-authoritative managed output at `legacy_path`; `copied` means `haex install`
-copies the resolved bytes to `managed_path` and makes that v2 path
-authoritative; `unmanaged` means the legacy path is not owned and `haex
-install` and `haex verify` MUST refuse rather than overwrite it.
+`legacy_path`, `atom`, required atom-relative `source_path`, optional
+`managed_path`, and a `state` enum: `preserved`, `copied`, or `unmanaged`.
+`source_path` names one regular file within the selected atom, has the same
+POSIX no-empty/`.`/`..`-segment validation as other atom-relative paths, and
+MUST match the exact literal or glob contribution that produces this output. It
+identifies the bytes to compare, copy, and verify; `atom` alone is not
+sufficient because one atom can contribute multiple files. `preserved` means a
+pre-existing legacy file is raw-byte-for-byte identical to the resolved
+`source_path` and remains
+the authoritative managed output at `legacy_path`; `copied` means `haex
+install` copies the resolved `source_path` bytes to `managed_path` and makes
+that v2 path authoritative; `unmanaged` means the legacy path is not owned and
+`haex install` and `haex verify` MUST refuse rather than overwrite it.
 `managed_path` is required and repository-relative when `state` is `copied`,
 and remains optional for the other states. Schema validation, `haex install`,
 and `haex verify` MUST reject a copied record without it before writing or
-checking any output. The record is part of the v2 schema, is written by
-install as the transactional `.haex-hive/legacy-outputs.json` state record,
-and is consumed by verify and the lockfile output-set calculation.
+checking any output. The committed `legacy_outputs` array in `.haex-hive.json`
+is the sole authoritative adoption record: install validates and consumes it
+transactionally, verify rereads and enforces it, and the lockfile output-set
+calculation derives from it. No independent
+`.haex-hive/legacy-outputs.json` state record exists. A copied output that is
+modified or deleted is drift: `haex verify` fails and the next successful
+install restores it from `source_path`; a preserved output that is modified or
+deleted also makes verify and install fail rather than allowing either command
+to overwrite the legacy path.
 
 If a pre-existing `.specify/memory/constitution.md` (or any other file that v2
 hydration would own under `.haex-hive/`) is present in the working tree before
-migration, `haex migrate` MUST NOT silently claim ownership. It reads the
-resolved v1 constitution bytes at the pinned SHA and compares them byte-for-
-byte to the unmanaged file. When they are identical, the migrated sidecar
-records `state: "preserved"`; install and verify keep that legacy path and
-verify its bytes. When no legacy file is present, the sidecar records the
-corresponding v2 target as `state: "copied"`, and install writes and verifies
-the managed path. A mismatch records no adoptable ownership: migration refuses
-with `unmanaged <path> differs from resolved v1 <role>; move or delete the
-file, or restate the v1 pin`, and leaves the original tree untouched. The
-`unmanaged` state remains an explicit refusal state for a reviewed v2 record,
-never permission to overwrite. The same rule applies to every other role the
-v1 file names.
+migration, `haex migrate` MUST NOT silently claim ownership. It resolves the
+exact selected atom `source_path` from the v1 role mapping at the pinned SHA
+and compares those bytes byte-for-byte to the unmanaged file. When they are
+identical, the migrated sidecar records that `source_path` with
+`state: "preserved"`; install and verify keep that legacy path and verify its
+bytes. When no legacy file is present, the sidecar records that same
+`source_path` and the corresponding v2 target as `state: "copied"`, and
+install writes and verifies the managed path. A mismatch records no adoptable
+ownership: migration refuses with `unmanaged <path> differs from resolved v1
+<role>; move or delete the file, or restate the v1 pin`, and leaves the
+original tree untouched. The `unmanaged` state remains an explicit refusal
+state for a reviewed v2 record, never permission to overwrite. The same rule
+applies to every other role the v1 file names.
 
 Output written to `.haex-hive.json.migrated`. User reviews, moves manually,
 commits. `haex install` on the v2 file then reconciles.
