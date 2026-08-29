@@ -1,11 +1,22 @@
 # Spec 006 — Multi-Spec External-Ref: Design
 
-**Status**: Draft (design brainstorming from 2026-08-28 session)
+> **Superseded by Spec 007 (2026-08-29).** The multi-spec external-ref
+> problem framed here is subsumed by the unified manifest v2 design in
+> [Spec 007](2026-08-28-spec-007-unified-manifest-design.md), which
+> introduces atoms as the granular unit of external content, replaces
+> `harness_sources[]` with `atoms[]` in `.haex-hive.json` v2, and
+> defines publisher root manifests, install reconciliation, and the
+> `haex migrate` verb. This document is retained as design context;
+> new work SHOULD reference Spec 007, not this file.
+
+**Status**: Superseded by Spec 007
 **Author**: haex-hive constitution v1.2.0 process
-**Related**: [Spec 004 — Cross-Repo References](../../specs/004-cross-repo-refs/spec.md);
+**Related**: [Spec 007 — Unified Manifest v2](2026-08-28-spec-007-unified-manifest-design.md);
+[Spec 004 — Cross-Repo References](../../specs/004-cross-repo-refs/spec.md);
 [Spec 005 — haex-init CLI](../../specs/005-haex-init/spec.md);
 [Roadmap Phase 1](2026-08-26-haex-hive-design.md#L458-L469);
 [ADR 0005 — Unified `harness_sources`](../adr/0005-unify-harness-sources-and-drop-system-yaml.md);
+[ADR 0007 — Constitution alignment with unified-manifest v2](../adr/0007-unified-manifest-v2-constitution-alignment.md);
 [Constitution §Principle IV, V](../../.specify/memory/constitution.md)
 
 ## Problem
