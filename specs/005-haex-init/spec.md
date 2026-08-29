@@ -1,5 +1,14 @@
 # Feature Specification: `haex-init` — CLI-Driven Project Initialization
 
+> **Superseded by Spec 007 CLI surface (2026-08-29).** Per ADR 0008,
+> the standalone `haex-init` binary retires in favour of `haex init` as
+> a subcommand of the unified `haex` binary introduced by
+> [Spec 007](../../docs/plans/2026-08-28-spec-007-unified-manifest-design.md).
+> This spec remains the authoritative documentation for the shipped v1
+> `haex-init` implementation (`.specify/scripts/haex-init`); v2
+> initialization is chartered by Spec 007, not by editing this file.
+> See [ADR 0008](../../docs/adr/0008-retire-haex-init-binary-for-haex-init-subcommand.md).
+
 **Feature Branch**: `005-haex-init`
 **Created**: 2026-08-27
 **Status**: Draft
