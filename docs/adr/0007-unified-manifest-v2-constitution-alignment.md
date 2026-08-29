@@ -96,7 +96,7 @@ rules that lands as MINOR.
   Principle V spelling would cause.
 - The `haex migrate` command (spec-007) is a constitutionally-required
   shape, not just a design choice.
-- Consumer repos have a reserved path (`/.haex-hive/constitution.md`)
+- Consumer repos have a reserved path (`.haex-hive/constitution.md`)
   they can commit without collision.
 
 **Follow-up (not part of this ADR)**:
