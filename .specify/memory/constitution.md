@@ -51,7 +51,10 @@ When a project's harness references content in an external harness repo, the
 reference format is `repository + full commit SHA + repo-relative path`, and
 the SHA MUST be an immutable git object reference. Branch or `HEAD` references
 are not the normal case — they are permitted only for explicit "living
-document" cases, never for anything a spec, plan, or task consumes.
+document" cases, never for anything a spec, plan, or task consumes. The
+`path` component MAY address either a single repo-relative file or a
+directory whose canonical descriptor is `<path>/manifest.json` (a spec-007
+atom); in both shapes the SHA and immutability rules are unchanged.
 
 **Rationale**: satellite A resolving on Monday and satellite B resolving on
 Wednesday MUST see byte-identical spec content. Anything else creates silent
@@ -59,11 +62,15 @@ cross-device drift that only surfaces as inconsistent agent behavior later.
 
 ### V. External Sources Are Opt-in Per Project (NON-NEGOTIABLE)
 
-A project without a `.haex-hive.json` — or with an empty
-`harness_sources` array — MUST inherit no external harness content,
-regardless of what the registry, sibling directories, sibling repos, or any
-global agent instruction file says. The registry describes what is *available*;
-the per-project `harness_sources` array grants *use*.
+A project without a `.haex-hive.json` — or with an empty per-project
+allowlist array (`atoms[]` in `.haex-hive.json` v2, `harness_sources[]`
+in v1) — MUST inherit no external harness content, regardless of what
+the registry, sibling directories, sibling repos, or any global agent
+instruction file says. The registry describes what is *available*; the
+per-project allowlist array grants *use*. The invariant is the opt-in
+mechanism; the concrete field name is bound to the `.haex-hive.json`
+schema version and MAY change across schema majors without altering
+this principle.
 
 **Rationale**: private/personal repos accidentally picking up work or team
 constraints (or vice versa) is a real failure mode, not a theoretical one. The
@@ -80,22 +87,23 @@ a side effect of an apply-shaped request.
 
 **Refuse-then-propose is the required shape.** When an agent receives a
 request to apply constraints from a source that is not listed in
-`.haex-hive.json`'s `harness_sources` array, the agent MUST (a) refuse
-the apply in this session, (b) name the mechanical reason (empty or
-missing allowlist entry for the source), and (c) offer the two legitimate
-paths: either add a pinned entry (`repository + full commit SHA +
-repo-relative path(s)`) through a reviewable commit or PR under Principle
-VI's amendment procedure, or treat the constraints as the operator's direct
-instructions rather than as sourced from the external harness. Silence, or
-partial compliance ("I'll apply just some of them"), is not permitted.
+`.haex-hive.json`'s allowlist array (`atoms[]` in v2, `harness_sources[]`
+in v1), the agent MUST (a) refuse the apply in this session, (b) name
+the mechanical reason (empty or missing allowlist entry for the source),
+and (c) offer the two legitimate paths: either add a pinned entry
+(`repository + full commit SHA + repo-relative path(s)`) through a
+reviewable commit or PR under Principle VI's amendment procedure, or
+treat the constraints as the operator's direct instructions rather than
+as sourced from the external harness. Silence, or partial compliance
+("I'll apply just some of them"), is not permitted.
 
 **Modifying `.haex-hive.json` requires an explicit "modify the
 allowlist" request.** The word "apply" or its synonyms MUST NEVER trigger a
 write to `.haex-hive.json` or to any other harness configuration file.
 Only a request that explicitly asks the agent to edit the file (e.g. "add
-X to the allowlist", "update `harness_sources` to permit Y") may trigger a
-diff — and even then, per Principle VI, the diff is presented for review,
-not committed unilaterally.
+X to the allowlist", "update `atoms[]` (v2) / `harness_sources[]` (v1) to
+permit Y") may trigger a diff — and even then, per Principle VI, the
+diff is presented for review, not committed unilaterally.
 
 ### VI. Self-Modifying Instructions Are Always Review-Gated (NON-NEGOTIABLE)
 
@@ -103,6 +111,17 @@ The reflection pipeline produces proposed diffs against the harness repo — a
 commit or PR — never in-place auto-writes. A human reviews and merges. Applies
 to skill files, instruction snippets, permissions, constitutions themselves,
 and any other artifact the agent consumes on future runs.
+
+**Schema migrations of versioned config files** (added v1.3.0). Any
+schema migration of a versioned config file — `.haex-hive.json`,
+`install.lock`, `constitution.md`, `manifest.json`, or a successor
+schema — MUST run through an explicit migration verb (e.g. spec-007's
+`haex migrate`) that (a) writes candidate output to a `.migrated`
+sidecar rather than the original file, (b) prints a reviewable diff
+against the current file, (c) is deterministic given identical inputs,
+and (d) supports `--dry-run`/`--check`. No in-place rewrite of a
+versioned config file by an agent or tool is permitted; the review gate
+is the point at which the sidecar replaces the original.
 
 **Rationale**: unreviewed self-modification drifts. Instructions overfit to
 one-off incidents, accumulate contradictions, and quietly change how agents
@@ -166,6 +185,15 @@ agent unfiltered — which is every cross-tool handoff in this system.
   (e.g. secana-specs). Those follow their own owning team's rules; haex-hive
   only governs how they are *referenced*, not their internal contents.
 
+### Reserved paths (added v1.3.0)
+
+- `.haex-hive/constitution.md` (consumer-side) is reserved for the
+  effective constitution the consumer repo commits, per spec-007
+  D2/D16. Its content is either a straight-copy of a single source atom
+  or the LLM-merged result of multiple source atoms declared in the
+  consumer's `atoms[]`. It is committed content, not an agent-writable
+  cache: any change to it flows through Principle VI's review gate.
+
 ## Development Workflow
 
 - Every feature/spec created via `/speckit-specify` MUST be checked against
@@ -228,4 +256,4 @@ agent unfiltered — which is every cross-tool handoff in this system.
   Phase 7) validates that no committed file violates Principles I, II, or IV
   mechanically.
 
-**Version**: 1.2.0 | **Ratified**: 2026-08-26 | **Last Amended**: 2026-08-28
+**Version**: 1.3.0 | **Ratified**: 2026-08-26 | **Last Amended**: 2026-08-29
