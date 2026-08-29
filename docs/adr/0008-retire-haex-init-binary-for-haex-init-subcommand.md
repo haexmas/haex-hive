@@ -30,8 +30,9 @@ Two shapes were available for the transition:
    and every future spec would have to name the right one.
 2. **Retire `haex-init` and make initialization the `haex init`
    subcommand of a single `haex` binary.** One CLI surface across
-   schema versions. Legacy operators re-invoke the same binary they
-   already used for the migration verb.
+   schema versions. Every operator — new and legacy — invokes the
+   same `haex` binary for both `haex migrate` (v1 → v2 migration) and
+   `haex init` (new-project bootstrap), consistent with spec-007 D17.
 
 Option 2 was decided on 2026-08-29 by the operator ("`haex-init` fliegt
 raus und wird zu `haex init`").
