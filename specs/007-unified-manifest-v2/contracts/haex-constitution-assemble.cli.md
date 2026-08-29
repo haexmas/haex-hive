@@ -20,7 +20,7 @@ Three paths, selected mechanically by the number of resolved constitution source
 - **No-source path** (zero resolved contributions): report `no constitution sources declared`, exit 2, and leave both output files exactly as they were. It does not create, delete, or replace an existing constitution or lock.
 
 - **Single-source path** (exactly one resolved contribution): produce `.haex-hive/constitution.md` as a byte-for-byte copy of the source contribution file at the pinned SHA. No LLM invocation, always deterministic (FR-026, FR-031).
-- **Multi-source path** (two or more resolved contributions): orchestration passes every `ResolvedConstitutionContribution` — its `ConstitutionSource` metadata plus exact contribution body — to the selected adapter. `stdio` terminal-validates every source before display, displays all accepted sources, collects operator edits, terminal-validates and displays the final candidate, and requires explicit affirmative operator confirmation before it returns `confirmed=True`; a decline or EOF refuses with no output changes. If the local LLM is unavailable it refuses. `file` writes the same complete contribution set as Base64-encoded pending merge state and exits 5 without output changes or local LLM access until a later `--accept-merged`; `none` always refuses, even if a local LLM is available (FR-027, FR-028). Every source, pending payload, `stdio` result, and accepted file candidate must pass the Principle-I secret guard; confirmed results and accepted candidates must also pass the Principle-VIII concealment-instruction guard before publication.
+- **Multi-source path** (two or more resolved contributions): orchestration passes every `ResolvedConstitutionContribution` — its `ConstitutionSource` metadata plus exact contribution body — to the selected adapter. `stdio` terminal-validates every source before display, displays all accepted sources, then reads a candidate record of ASCII `Content-Length: <N>\n` and exactly `N` UTF-8 candidate bytes. It terminal-validates and displays that candidate, prompts for confirmation, and returns `confirmed=True` only after reading the separate exact ASCII record `--haex-confirm: yes\n`; any EOF, malformed record, or other confirmation returns `confirmed=False` and refuses with no output changes. If the local LLM is unavailable it refuses. `file` writes the same complete contribution set as Base64-encoded pending merge state and exits 5 without output changes or local LLM access until a later `--accept-merged`; `none` always refuses, even if a local LLM is available (FR-027, FR-028). Every source, pending payload, `stdio` result, and accepted file candidate must pass the Principle-I secret guard; confirmed results and accepted candidates must also pass the Principle-VIII concealment-instruction guard before publication.
 
 In both successful paths, the same `.haex-hive/install.lock` write records provenance (FR-030): `constitution.sources[]` records every input atom as `{id, revision, source}`, `constitution.assembled_by` records the tool/version, and `constitution.content_integrity` records the D15 one-file-tree SHA-256 of the produced file.
 
@@ -82,6 +82,17 @@ Both writes use the journaled generation protocol in FR-035. Its sole journal pa
 7. CLI publishes `.haex-hive/constitution.md` (byte-identical to the candidate) and `.haex-hive/install.lock` through the FR-035 journaled generation protocol. `constitution.content_integrity` is the D15 one-file-tree digest of the candidate bytes.
 8. CLI deletes `.haex-hive/constitution.merge.pending.json` after publication. It never deletes the caller-supplied candidate path.
 9. Exit 0.
+
+## Stdio response frame (`--llm=stdio`)
+
+After the displayed sources and task prompt, stdin first contains exactly one candidate record:
+
+```text
+Content-Length: <decimal-UTF-8-byte-count>\n
+<exactly that many candidate bytes>
+```
+
+The candidate length makes the record boundary unambiguous even when the candidate itself ends in a newline. The CLI then terminal-validates and displays the candidate, prompts for confirmation, and reads the separate exact record `--haex-confirm: yes\n`. Only that lowercase confirmation record accepts the candidate. EOF, a malformed length, an incomplete candidate, or any other confirmation is `exit=11 key=merge-not-confirmed` and does not write output.
 
 ## Diagnostics
 
