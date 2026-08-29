@@ -20,7 +20,7 @@ Three paths, selected mechanically by the number of resolved constitution source
 - **No-source path** (zero resolved contributions): report `no constitution sources declared`, exit 2, and leave both output files exactly as they were. It does not create, delete, or replace an existing constitution or lock.
 
 - **Single-source path** (exactly one resolved contribution): produce `.haex-hive/constitution.md` as a byte-for-byte copy of the source contribution file at the pinned SHA. No LLM invocation, always deterministic (FR-026, FR-031).
-- **Multi-source path** (two or more resolved contributions): `stdio` invokes the operator-attached LLM and requires operator review, edit, and confirmation; `file` writes pending merge state and exits 5 without output changes until a later `--accept-merged`; `none` refuses (FR-027, FR-028). Every `stdio` result and accepted file candidate must pass the Principle-VIII concealment-instruction guard before publication.
+- **Multi-source path** (two or more resolved contributions): `stdio` invokes the operator-attached local LLM and requires operator review, edit, and confirmation; if that LLM is unavailable it refuses. `file` writes pending merge state and exits 5 without output changes or local LLM access until a later `--accept-merged`; `none` always refuses, even if a local LLM is available (FR-027, FR-028). Every `stdio` result and accepted file candidate must pass the Principle-VIII concealment-instruction guard before publication.
 
 In both successful paths, the same `.haex-hive/install.lock` write records provenance (FR-030): `constitution.sources[]` records every input atom as `{id, revision, source}`, `constitution.assembled_by` records the tool/version, and `constitution.content_integrity` records the D15 one-file-tree SHA-256 of the produced file.
 
@@ -40,7 +40,8 @@ In both successful paths, the same `.haex-hive/install.lock` write records prove
 - **Publisher manifests at pinned SHAs**: read via `git show <sha>:manifest.json`. Must be well-formed against `publisher-manifest.v2.schema.json`.
 - **Atom manifests at pinned SHAs**: read via `git show <sha>:<publisher_atom_entry.path>/manifest.json`. Must be well-formed against `atom-manifest.v2.schema.json` and declare `contributes.constitution`.
 - **Constitution contribution files at pinned SHAs**: read via `git show <sha>:<publisher_atom_entry.path>/<atom_manifest.contributes.constitution>`. Must be regular files.
-- **LLM access** (multi-source only): per the selected `--llm` method. Missing access refuses per FR-028.
+- **LLM access** (multi-source only): required only for the `stdio` method. `file` creates pending state without local LLM access; `none` always refuses per FR-028.
+- **Writer lock**: `<repo-root>/.haex-hive/constitution-transaction.lock` is acquired exclusively and non-blocking before any recovery, source resolution, pending-state write, or output publication; it is held until the command returns. A held lock refuses with exit 9 without inspecting or modifying another writer's transaction state.
 
 ## Outputs
 
@@ -58,11 +59,12 @@ Both writes use the journaled generation protocol in FR-035. Its sole journal pa
 | 0 | Success | |
 | 2 | Resolution refuse — zero constitution sources or one or more atoms could not be resolved | For zero sources: `no constitution sources declared`; existing output files are untouched. Other cases include missing publisher manifest, missing atom manifest, absent `contributes.constitution`, schema violation, or collision. See FR-025. |
 | 3 | I/O refuse — publisher clone unavailable OR pinned SHA not in clone OR contribution file not found at SHA | See spec Edge Cases. |
-| 4 | Multi-source LLM refuse — `--llm=none` was resolved and multi-source is required | FR-028. `.haex-hive/constitution.md` and `.haex-hive/install.lock` untouched. |
+| 4 | Multi-source LLM refuse — `--llm=none` was resolved, or `--llm=stdio` lacks an operator-attached local LLM | FR-028. `.haex-hive/constitution.md` and `.haex-hive/install.lock` untouched. |
 | 5 | Pending merge state | Emitted only under `--llm=file` after writing `.haex-hive/constitution.merge.pending.json`. Operator/agent produces the merged output out-of-process; re-invocation with `--accept-merged` completes the transaction. `.haex-hive/constitution.md` and `.haex-hive/install.lock` untouched. |
 | 6 | Post-write validation refuse — the produced `constitution.md` failed a post-write integrity check | Should not happen; indicates a bug. Both output files rolled back to their pre-command state. |
 | 7 | System refuse — `.haex-hive.json` missing or version mismatch (FR-034) | |
 | 8 | Constitution safety refuse — a multi-source candidate violates Principle VIII | `key=constitution-concealment-instruction`; candidate is not staged and both output files are untouched. |
+| 9 | Constitution writer busy | `key=constitution-writer-busy`; another `assemble` owns the process-lifetime lock, so this invocation does not inspect, recover, replace, or remove its journal or targets. |
 
 ## Two-phase file flow (`--llm=file`)
 
@@ -96,9 +98,10 @@ error: exit=4 key=llm-required-for-multi-source
 
 ## Filesystem-atomicity guarantees
 
-- A durable journal at `.haex-hive/constitution-transaction.json` records every output generation before either target is replaced. On the next assemble invocation, recovery completes or restores the pair so both targets have one generation; read-only commands refuse rather than expose a mixed state (FR-035).
+- `assemble` holds the exclusive, non-blocking `.haex-hive/constitution-transaction.lock` before it examines a journal and through recovery, publication, and cleanup. The handle-owned lock is released on interruption; a concurrent invocation exits 9 without interacting with the active transaction.
+- A durable journal at `.haex-hive/constitution-transaction.json` records every output generation before either target is replaced. On the next lock-owning assemble invocation, recovery completes or restores the pair so both targets have one generation; read-only commands refuse rather than expose a mixed state (FR-035).
 - Before either target replacement, staged files and pre-generation backups are fsynced; the journal records every recovery path and phase, including each target's prior existing-or-absent state, then is fsynced with its parent directory on POSIX. Windows uses write-through replacement and flushed handles. Integration tests interrupt after durable journal creation and after each replacement with both existing and absent initial targets.
-- Startup recovery establishes the stable paired-output baseline. After that baseline is reached, refuse codes 2/3/4/6/7/8 do not modify `.haex-hive/constitution.md` or `.haex-hive/install.lock`; recovery itself may replace either target before a later refusal.
+- Startup recovery establishes the stable paired-output baseline. After that baseline is reached, refuse codes 2/3/4/6/7/8/9 do not modify `.haex-hive/constitution.md` or `.haex-hive/install.lock`; recovery itself may replace either target before a later refusal.
 - On refuse code 5, `.haex-hive/constitution.merge.pending.json` is written atomically; the two output files are untouched.
 
 ## Not in scope
