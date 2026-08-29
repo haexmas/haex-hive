@@ -25,15 +25,15 @@
   "$defs": {
     "atomId": {
       "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9-]*(\\.[a-z0-9][a-z0-9-]*)+$",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$",
       "minLength": 3,
       "maxLength": 253
     },
     "repoRelativePath": {
       "type": "string",
-      "pattern": "^[^/\\0]([^\\0]*[^/\\0])?$",
+      "pattern": "^(?!.*(?:^|/)\\.\\.?(/|$))[^/\\0]+(?:/[^/\\0]+)*$",
       "minLength": 1,
-      "description": "Repository-relative POSIX path, no leading/trailing slash, no NUL. Segment-level rejection of . and .. is enforced at runtime, not by pattern."
+      "description": "Repository-relative POSIX path with no leading/trailing slash, NUL, empty, . or .. segments."
     },
     "publisherAtomEntry": {
       "type": "object",

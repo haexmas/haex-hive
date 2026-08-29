@@ -22,7 +22,7 @@ Represents the parsed content of `.haex-hive.json` v2. Root of the consumer-faci
 
 **Validation rules**:
 
-- Every top-level object level MUST set `additionalProperties: false` in its JSON Schema counterpart (FR-004).
+- `ConsumerManifest` and its nested consumer-owned objects MUST set `additionalProperties: false` in their JSON Schema counterparts (FR-004). `InstallLock` deliberately permits unknown root fields so Spec 008 can extend it (FR-030).
 - `identity` string MUST canonicalize to itself (idempotent under `AtomId.canonicalize()`); typographical variants like uppercase letters are refused with a diagnostic naming the acceptable form.
 
 ### AtomEntry
@@ -134,7 +134,8 @@ Sub-entity of `InstallLock.constitution`. Records provenance for `.haex-hive/con
 | Field | Type | Optional | Constraint / Source |
 |---|---|---|---|
 | `sources` | `list[ConstitutionSource]` | required, non-empty | Contributing sources, sorted alphabetically by `ConstitutionSource.id` (FR-030). Length ≥ 1. |
-| `content_integrity` | `str` (format: `sha256-<base64>`) | required | SHA-256 of the produced `.haex-hive/constitution.md` bytes, base64-encoded per D15 canonical serialization (R11). |
+| `assembled_by` | `AssembledBy` | required | Tool identity and semver for the assembly invocation (FR-029). |
+| `content_integrity` | `str` (format: `sha256-<base64>`) | required | SHA-256 of D15's `haex-hive-tree-v1` one-file tree with regular-file mode `100644`, path `constitution.md`, and the produced raw bytes (R11). |
 
 ### ConstitutionSource
 
@@ -146,13 +147,23 @@ Sub-entity of `ConstitutionLockSection.sources[]`. One row per contributing atom
 | `revision` | `str` (40-char lowercase hex) | required | Full commit SHA at which the constitution content was read. |
 | `source` | `CanonicalSourceUrl` | required | Canonical form (D3) of the publisher repo URL. |
 
+### AssembledBy
+
+Sub-entity of `ConstitutionLockSection`. Records the tool that produced the
+constitution without placing metadata in the constitution body.
+
+| Field | Type | Optional | Constraint / Source |
+|---|---|---|---|
+| `tool` | `Literal["haex"]` | required | Fixed assembler identity for Spec 007. |
+| `version` | `str` (semver: `X.Y.Z`) | required | Installed `haex` version that assembled the output. |
+
 ### MigrationSidecar
 
 Represents a v2-shaped proposal written to `.haex-hive.json.migrated`. Its content is a `ConsumerManifest`; no additional envelope. This "entity" is included here to give the Phase 2 tasks a stable term.
 
 **Lifecycle** (FR-014–FR-018):
 
-1. `haex migrate` starts. If a prior `.haex-hive.json.migrated` exists, it is deleted before proceeding.
+1. Write-mode `haex migrate` starts. If a prior `.haex-hive.json.migrated` exists, it is deleted before proceeding. `--dry-run` and `--check` preserve it.
 2. The v2 proposal is built in memory as a `ConsumerManifest`.
 3. The proposal is validated against `haex-hive.v2.schema.json`.
 4. The proposal is serialized via `json_deterministic.dumps()`.
@@ -167,17 +178,17 @@ Value object, not a distinct entity. String-typed at the schema level; validated
 
 Grammar (D3, R9):
 
-- Scheme in `{"https", "ssh", "git"}` (lowercase).
+- Canonical scheme in `{"https", "ssh"}` (lowercase).
 - Host lowercase.
 - Path has no trailing `/`.
 - Path has no terminal `.git`.
-- No userinfo component (`user[:token]@host` refused).
+- No userinfo component. During migration only, credential-free SCP remotes (`git@host:path`) and the SSH transport user (`ssh://git@host/path`) normalize to userinfo-free `ssh://host/path`; all other userinfo is refused.
 
 ### AtomId
 
 Value object. String-typed at the schema level; validated via `AtomId.parse(s)`.
 
-Grammar (D3, R8): `^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$`, length ≤ 253, per-segment length ≤ 63.
+Grammar (D3, R8): `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$`, length ≤ 253, per-segment length ≤ 63, and every segment ends alphanumeric.
 
 ### VersionConstraint
 
@@ -191,7 +202,7 @@ Value object. String-typed at the schema level; validated with the pattern `^[^/
 
 ## Relationships
 
-```
+```text
 ConsumerManifest 1 ─── * AtomEntry
                        │
                        │ .config (map keyed by AtomId)

@@ -41,7 +41,7 @@
   "$defs": {
     "atomId": {
       "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9-]*(\\.[a-z0-9][a-z0-9-]*)+$",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$",
       "minLength": 3,
       "maxLength": 253,
       "description": "Reverse-DNS identifier per D3."
@@ -53,8 +53,8 @@
     },
     "canonicalSourceUrl": {
       "type": "string",
-      "pattern": "^(https|ssh|git):\\/\\/[^@]+$",
-      "description": "Canonical source URL (lowercase scheme+host, no trailing /, no terminal .git, no userinfo). Runtime canonicalizer is authoritative; this pattern is a schema-level guard against the most common violations."
+      "pattern": "^(?!.*\\.git$)(?:https|ssh):\\/\\/[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]+)?(?:\\/[A-Za-z0-9._~!$&'()*+,;=:%-]+)+$",
+      "description": "Credential-free canonical https:// or ssh:// URL: lowercase host, non-empty path, no trailing slash, and no terminal .git. SCP-style and ssh transport-user inputs are normalized before storage."
     },
     "fullSha40": {
       "type": "string",

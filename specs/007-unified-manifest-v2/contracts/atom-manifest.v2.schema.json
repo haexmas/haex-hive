@@ -45,13 +45,13 @@
   "$defs": {
     "atomId": {
       "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9-]*(\\.[a-z0-9][a-z0-9-]*)+$",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$",
       "minLength": 3,
       "maxLength": 253
     },
     "repoRelativePath": {
       "type": "string",
-      "pattern": "^[^/\\0]([^\\0]*[^/\\0])?$",
+      "pattern": "^(?!.*(?:^|/)\\.\\.?(/|$))[^/\\0]+(?:/[^/\\0]+)*$",
       "minLength": 1
     },
     "globPattern": {

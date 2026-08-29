@@ -172,14 +172,16 @@ profile/direct combination is rejected rather than silently choosing a
 source.
 
 **Canonical `source` normalization**: before de-duplication, cache-key
-derivation, profile expansion, or any network access, `haex add`, `haex
-install`, and `haex verify` normalize every `source` URL identically. The
-normalization: (1) lowercase the scheme and host; (2) strip trailing `/` from
-the path; (3) strip a single terminal `.git` suffix from the path; (4) reject
-any URL that carries userinfo (a `user[:token]@host` component) with the
-error `source URL must not embed credentials; use SSH or a Git credential
-helper`; (5) reject any non-`https`, non-`ssh`, or non-`git` scheme. The
-normalized URL is what appears in `.haex-hive.json`, `install.lock`, and
+derivation, profile expansion, or any network access, `haex migrate`, `haex
+add`, `haex install`, and `haex verify` normalize every `source` URL
+identically. The normalization: (1) recognize credential-free SCP remotes
+(`git@host:path`) and the SSH transport user in `ssh://git@host/path`, then
+normalize both to `ssh://host/path`; (2) lowercase the scheme and host; (3)
+strip trailing `/` from the path; (4) strip a single terminal `.git` suffix
+from the path; (5) reject all other URL userinfo with the error `source URL
+must not embed credentials; use SSH or a Git credential helper`; (6) reject
+any non-`https` or non-`ssh` scheme, including unencrypted `git://`. The
+normalized, userinfo-free URL is what appears in `.haex-hive.json`, `install.lock`, and
 `(source, full revision, atom-id)` collision keys. Consumer-supplied
 credentials never round-trip through the manifest, and rejection precedes
 every cache lookup, git clone, and profile-expansion step (including
@@ -439,7 +441,7 @@ Every consumer entry has the same JSON shape:
 
 ```json
 {
-  "source": "https://github.com/haexmas/blueprints.git",
+  "source": "https://github.com/haexmas/blueprints",
   "revision": "abc123...",
   "track": "main",
   "includes": [
@@ -663,7 +665,7 @@ added an explicit direct entry.
   "identity": "com.github.haexmas.haex-hive",
   "atoms": [
     {
-      "source": "https://github.com/haexmas/haex-hive.git",
+      "source": "https://github.com/haexmas/haex-hive",
       "revision": "b2f884158dc90fbd4ab956f00ee100a82b6ec3eb",
       "track": "main",
       "includes": [
@@ -766,15 +768,25 @@ or, for a blueprint bundling rules + hooks:
   "atoms": [
     {
       "id": "com.github.haexmas.haex-hive.constitution",
-      "source": "https://github.com/haexmas/haex-hive.git",
+      "source": "https://github.com/haexmas/haex-hive",
       "source_sha": "b2f884158dc90fbd4ab956f00ee100a82b6ec3eb",
       "content_integrity": "sha256-<base64>",
       "resolved_from_entry_index": 0
     }
   ],
   "constitution": {
-    "sources": ["com.github.haexmas.haex-hive.constitution"],
-    "content_integrity": "sha256-<base64>"
+    "assembled_by": {
+      "tool": "haex",
+      "version": "2.0.0"
+    },
+    "content_integrity": "sha256-<base64>",
+    "sources": [
+      {
+        "id": "com.github.haexmas.haex-hive.constitution",
+        "revision": "b2f884158dc90fbd4ab956f00ee100a82b6ec3eb",
+        "source": "https://github.com/haexmas/haex-hive"
+      }
+    ]
   },
   "generated_content_integrity": "sha256-<base64>"
 }
@@ -908,7 +920,7 @@ Automatic migration produced by `haex migrate`:
   "identity": "com.github.haexmas.haex-hive",
   "atoms": [
     {
-      "source": "https://github.com/haexmas/haex-hive.git",
+      "source": "https://github.com/haexmas/haex-hive",
       "revision": "b2f884...",
       "includes": [
         "com.github.haexmas.haex-hive.constitution"

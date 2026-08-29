@@ -64,8 +64,8 @@ You will see the v2 shape:
   "identity": "com.github.haexmas.haex-hive",
   "atoms": [
     {
-      "source": "https://github.com/haexmas/haex-hive.git",
-      "revision": "b2f884158dc90fbd4ab956f00ee100a82b6ec3eb",
+      "source": "https://github.com/haexmas/haex-hive",
+      "revision": "<manifest-commit-a-sha>",
       "includes": [
         "com.github.haexmas.haex-hive.constitution"
       ],
@@ -130,18 +130,22 @@ No LLM is invoked (single-source). Two files are written atomically:
 
   ```json
   {
-    "haex_hive_version": "2",
-    "generated_by": "haex 2.0.0",
-    "constitution": {
-      "sources": [
+  "constitution": {
+    "assembled_by": {
+      "tool": "haex",
+      "version": "2.0.0"
+    },
+    "content_integrity": "sha256-<base64-of-d15-one-file-tree-sha256>",
+    "sources": [
         {
           "id": "com.github.haexmas.haex-hive.constitution",
-          "revision": "b2f884158dc90fbd4ab956f00ee100a82b6ec3eb",
-          "source": "https://github.com/haexmas/haex-hive.git"
+          "revision": "<manifest-commit-a-sha>",
+          "source": "https://github.com/haexmas/haex-hive"
         }
-      ],
-      "content_integrity": "sha256-<base64-of-constitution-md-sha256>"
-    }
+    ]
+  },
+  "generated_by": "haex 2.0.0",
+  "haex_hive_version": "2"
   }
   ```
 
@@ -149,8 +153,11 @@ No LLM is invoked (single-source). Two files are written atomically:
 
 ```bash
 haex constitution assemble
-diff <(cat .haex-hive/constitution.md) <(git show HEAD:.haex-hive/constitution.md)  # empty
-diff <(cat .haex-hive/install.lock)   <(git show HEAD:.haex-hive/install.lock)      # empty
+cp .haex-hive/constitution.md /tmp/constitution.first
+cp .haex-hive/install.lock /tmp/install-lock.first
+haex constitution assemble
+cmp /tmp/constitution.first .haex-hive/constitution.md
+cmp /tmp/install-lock.first .haex-hive/install.lock
 ```
 
 Two runs → byte-identical outputs. This proves FR-031 and FR-036.
@@ -200,11 +207,23 @@ After committing the multi-source-assembled `.haex-hive/constitution.md` and `.h
 
 ```bash
 git pull
-sha256sum .haex-hive/constitution.md
-# base64-encode: "sha256-<base64>"
-# compare with:
+python - <<'PY'
+import base64
+import hashlib
+from pathlib import Path
+
+body = Path(".haex-hive/constitution.md").read_bytes()
+tree = (
+    b"haex-hive-tree-v1\0F\0"
+    + b"100644\0"
+    + b"15\0constitution.md"
+    + str(len(body)).encode("ascii") + b"\0" + body + b"\0"
+)
+print("sha256-" + base64.b64encode(hashlib.sha256(tree).digest()).decode("ascii"))
+PY
+# Compare that complete value with:
 jq -r '.constitution.content_integrity' .haex-hive/install.lock
-# equal.
+# The values are equal.
 ```
 
 `haex constitution assemble` is NOT re-run on this device; the committed file is verified via `install.lock`.
@@ -232,9 +251,9 @@ haex constitution show
 
 Output:
 
-```
+```text
 # Assembled from
-- com.github.haexmas.haex-hive.constitution @ b2f8841 (https://github.com/haexmas/haex-hive.git)
+- com.github.haexmas.haex-hive.constitution @ <manifest-commit-a-short-sha> (https://github.com/haexmas/haex-hive)
 
 ---
 
@@ -293,5 +312,7 @@ This applies uniformly to every `haex` verb (FR-006).
 | `haex migrate` exits 2 with `key=permission-only-entry` | v1 file has a permission-only `harness_sources[]` entry (bare repo or repo+revision only) | Manually edit the v1 file to remove the permission-only entry OR replace it with a concrete atom reference before migrating. |
 | `haex migrate` exits 3 with `key=missing-remote-origin` | The repo has no `remote.origin.url` configured | `git remote add origin <url>` and retry. |
 | `haex constitution assemble` exits 2 with `key=atom-manifest-not-found` | Publisher's root `manifest.json` maps the atom-id but the atom directory has no `manifest.json` at that SHA | Verify with `git show <sha>:<path>/manifest.json` in the publisher clone. |
-| `haex constitution show` exits 3 with `key=install-lock-missing` | `haex constitution assemble` has never run in this repo | Run `haex constitution assemble` first. |
+| `haex constitution show` exits 2 with `key=constitution-not-assembled` | `constitution.md` is absent | Run `haex constitution assemble` first. |
+| `haex constitution show` exits 3 with `key=install-lock-missing` | `install.lock` is absent | Run `haex constitution assemble` first. |
+| `haex constitution show` exits 6 with `key=constitution-integrity-mismatch` | The constitution body and recorded D15 digest differ | Run `git pull` or `haex constitution assemble` to restore a matched generation. |
 | Multi-source assemble hangs after prompting on stdout | `--llm=stdio` is waiting for EOF on stdin | Send the merged content followed by Ctrl-D (Unix) or Ctrl-Z+Enter (Windows), OR use `--llm=file` for explicit two-phase flow. |
