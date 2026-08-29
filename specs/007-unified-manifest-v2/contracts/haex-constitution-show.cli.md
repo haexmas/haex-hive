@@ -22,7 +22,7 @@ Print the current effective constitution to stdout. Before emitting any stdout, 
 ## Inputs
 
 - **File on disk**: `<repo-root>/.haex-hive/constitution.md`. MUST exist and be readable.
-- **File on disk**: `<repo-root>/.haex-hive/install.lock`. MUST exist and validate against `install-lock.v2.schema.json`. Its `constitution.sources[]` MUST be non-empty.
+- **File on disk**: `<repo-root>/.haex-hive/install.lock`. MUST exist, pass `install-lock.v2.schema.json`, and pass the required post-schema semantic validation: `constitution.sources[].id` is unique and entries are in ascending bytewise UTF-8 ID order. Its `constitution.sources[]` MUST be non-empty.
 - **Transaction state**: `<repo-root>/.haex-hive/constitution-transaction.json` MUST be absent. Its presence means an interrupted assembly is awaiting recovery; this read-only command refuses without modifying it.
 
 ## Outputs

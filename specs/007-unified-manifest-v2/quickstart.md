@@ -126,7 +126,7 @@ No LLM is invoked (single-source). Two files are written atomically:
   # digests match.
   ```
 
-- `.haex-hive/install.lock`:
+- `.haex-hive/install.lock` (the Spec-007-authored subset; Spec 008 later adds top-level `atoms` and `generated_content_integrity`):
 
   ```json
   {

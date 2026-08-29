@@ -173,7 +173,7 @@ source.
 
 **Canonical `source` normalization**: before de-duplication, cache-key
 derivation, profile expansion, or any network access, `haex migrate`, `haex
-add`, `haex install`, and `haex verify` normalize every `source` URL
+constitution assemble`, `haex add`, `haex install`, and `haex verify` normalize every `source` URL
 identically. The normalization: (1) recognize credential-free SCP remotes
 (`git@host:path`) and the SSH transport user in `ssh://git@host/path`, then
 normalize both to `ssh://host/path`; (2) lowercase the scheme and host; (3)
@@ -184,7 +184,7 @@ any non-`https` or non-`ssh` scheme, including unencrypted `git://`. The
 normalized, userinfo-free URL is what appears in `.haex-hive.json`, `install.lock`, and
 `(source, full revision, atom-id)` collision keys. Consumer-supplied
 credentials never round-trip through the manifest, and rejection precedes
-every cache lookup, git clone, and profile-expansion step (including
+every cache lookup, publisher-manifest or contribution read, git clone, and profile-expansion step (including
 transitive `includes[]` from profile atoms).
 
 **Consequence**: existing example IDs from PR #8 (`haex-hive-constitution`,

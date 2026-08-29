@@ -44,7 +44,7 @@ All three are one-shot reads, execute in <200ms, and require no long-lived state
 
 - **`pygit2`** — libgit2 bindings; adds a compiled dependency; on Windows the wheel history has been intermittent (some Python-3.13 wheels missing at times). Overkill for three reads.
 - **`GitPython`** — pure-Python wrapper over subprocess `git`. Adds a dependency that itself just shells out — no value over raw `subprocess`, plus slower cold-start.
-- **`dulwich`** — pure-Python git implementation; interesting for offline-only worlds, but our reads want the exact bytes `git show` produces (which handles LFS, `.gitattributes`, filters). Diverging semantics would surprise the operator.
+- **`dulwich`** — pure-Python git implementation; interesting for offline-only worlds, but our reads need the exact raw blob bytes `git show <sha>:<path>` produces. `git show` does not apply Git LFS or `.gitattributes` checkout filters, which is the required pinned-SHA contract; fixtures cover a filtered-path blob to prevent accidental checkout-content reads.
 
 ## R4. Unified-diff generation
 
@@ -71,9 +71,9 @@ All three are one-shot reads, execute in <200ms, and require no long-lived state
 
 ## R6. Crash-safe file publication on Windows
 
-**Decision**: Use `haex_hive.io.atomic.write_replace(target: Path, data: bytes)` for one-file writes. For the `constitution.md` + `install.lock` pair, use `haex_hive.io.transaction.publish_pair(...)`: write and fsync generation-staged files plus pre-generation backups, atomically write and fsync a journal containing the generation, target paths, and digests, replace each target, fsync the directory, then remove the journal. Startup recovery deterministically completes valid staged output or restores both backups. Readers refuse while a journal exists, so they never present a mixed pair.
+**Decision**: Use `haex_hive.io.atomic.write_replace(target: Path, data: bytes)` for one-file writes. For the `constitution.md` + `install.lock` pair, use `haex_hive.io.transaction.publish_pair(...)` with the sole journal path `.haex-hive/constitution-transaction.json`: write and fsync generation-staged files plus pre-generation backups; write a journal containing the generation, staged and backup paths, target paths, digests, and recovery phase; fsync the journal file and its parent directory on POSIX before replacing either target; replace each target; fsync the directory; then remove the journal and fsync the directory again. On Windows, use `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH` and `FlushFileBuffers` for staged files, backups, and the journal. Startup recovery deterministically completes valid staged output or restores both backups. Readers refuse while this journal exists, so they never present a mixed pair.
 
-**Rationale**: `os.replace` is Python's cross-platform wrapper: on POSIX it is `rename(2)` (atomic within a filesystem); on Windows it uses `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING`, which is atomic within an NTFS volume. It makes each pathname atomic, but cannot make two pathnames a transaction. The journal gives the pair a durable generation and recovery point. Same-directory staging guarantees one filesystem; directory fsync on POSIX ensures metadata durability. Windows has no direct directory fsync, but completed `MoveFileEx` provides the available platform durability boundary.
+**Rationale**: `os.replace` is Python's cross-platform wrapper: on POSIX it is `rename(2)` (atomic within a filesystem); on Windows, the explicit `MoveFileExW` write-through path gives an equivalent per-file durability barrier. It makes each pathname atomic, but cannot make two pathnames a transaction. The persisted journal gives the pair a durable generation and recovery point before the first replacement. Same-directory staging guarantees one filesystem; directory fsync on POSIX ensures metadata durability. Windows has no direct directory fsync, so each journal and target transition uses write-through plus handle flushing.
 
 **Alternatives considered**:
 
@@ -81,6 +81,8 @@ All three are one-shot reads, execute in <200ms, and require no long-lived state
 - **Write-in-place** — non-atomic; a crash mid-write leaves a truncated file. FR-035 forbids this.
 - **`tempfile.NamedTemporaryFile(dir=target.parent)` + rename** — same guarantee, but the `NamedTemporaryFile` context manager `close()`s and deletes the file on error, which conflicts with the intent of leaving the tmp file in place on failure (we then explicitly unlink it in an error handler). Wrapping in a try/finally with manual unlink is what we do anyway; use `mkstemp` directly.
 - **`fcntl.flock` + write-in-place** — locking prevents concurrent writers but not partial writes; still not atomic on crash.
+
+**Required interruption coverage**: integration tests simulate interruption immediately after the journal is durable, after replacing `constitution.md`, and after replacing `install.lock`; each subsequent `haex constitution assemble` invocation must recover to exactly one generation. A read-only `haex constitution show` during each live-journal state must refuse without stdout or writes.
 
 ## R7. LLM invocation abstraction for multi-source `haex constitution assemble`
 

@@ -13,7 +13,7 @@ haex constitution assemble [--llm=<method>] [--accept-merged <path>]
 
 ## Description
 
-Resolve every `atoms[]` entry in `.haex-hive.json`, identify the atoms whose manifest declares `contributes.constitution`, load their contributed constitution content at the pinned SHAs, and produce the effective `.haex-hive/constitution.md` file. Record its content-hash and source-attribution in `.haex-hive/install.lock`.
+Canonicalize every `atoms[]` entry's source by D3 before any clone, publisher-manifest, atom-manifest, or contribution lookup; this normalizes permitted SCP/SSH transport forms and refuses credentials or non-canonical sources. Then resolve every included atom, identify manifests declaring `contributes.constitution`, load their contributed content at the pinned SHAs, and produce the effective `.haex-hive/constitution.md` file. Record its content-hash and source-attribution in `.haex-hive/install.lock`.
 
 Three paths, selected mechanically by the number of resolved constitution sources:
 
@@ -49,7 +49,7 @@ Success creates or replaces two files atomically:
 - `<repo-root>/.haex-hive/constitution.md` — the effective constitution content. In single-source: byte-identical to the source file at the pinned SHA. In multi-source: LLM-merged content, no prepended header (FR-029).
 - `<repo-root>/.haex-hive/install.lock` — populated with the `constitution` section per data-model.md §ConstitutionLockSection. Existing top-level fields not owned by Spec 007 (e.g., future Spec-008 `atoms[]`) MUST be preserved (FR-030 forward-compat).
 
-Both writes use the journaled generation protocol in FR-035: staged files and a durable journal make startup recovery converge both targets to the same generation. On startup, `assemble` recovers a live journal before resolving sources; read-only commands refuse instead of reading a mixed pair.
+Both writes use the journaled generation protocol in FR-035. Its sole journal path is `<repo-root>/.haex-hive/constitution-transaction.json`; it names the staged files, pre-generation backups, target paths, generation, and digests. On startup, `assemble` recovers a live journal before resolving sources; `haex constitution show` checks this same path and refuses instead of reading a mixed pair.
 
 ## Exit codes
 
@@ -95,8 +95,9 @@ error: exit=4 key=llm-required-for-multi-source
 
 ## Filesystem-atomicity guarantees
 
-- A durable journal records every output generation before either target is replaced. On the next assemble invocation, recovery completes or restores the pair so both targets have one generation; read-only commands refuse rather than expose a mixed state (FR-035).
-- On refuse codes 2/3/4/6/7, neither `.haex-hive/constitution.md` nor `.haex-hive/install.lock` is modified from its pre-command state.
+- A durable journal at `.haex-hive/constitution-transaction.json` records every output generation before either target is replaced. On the next assemble invocation, recovery completes or restores the pair so both targets have one generation; read-only commands refuse rather than expose a mixed state (FR-035).
+- Before either target replacement, staged files and pre-generation backups are fsynced; the journal records every recovery path and phase, then is fsynced with its parent directory on POSIX. Windows uses write-through replacement and flushed handles. Integration tests interrupt after durable journal creation and after each replacement.
+- Startup recovery establishes the stable paired-output baseline. After that baseline is reached, refuse codes 2/3/4/6/7 do not modify `.haex-hive/constitution.md` or `.haex-hive/install.lock`; recovery itself may replace either target before a later refusal.
 - On refuse code 5, `.haex-hive/constitution.merge.pending.json` is written atomically; the two output files are untouched.
 
 ## Not in scope
