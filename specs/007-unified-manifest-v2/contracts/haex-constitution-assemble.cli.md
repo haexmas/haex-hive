@@ -29,9 +29,9 @@ In both successful paths, the same `.haex-hive/install.lock` write records prove
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--llm` | one of `stdio`, `file`, `none` | Auto-detect (see below) | Selects the merge-LLM method for the multi-source path. Ignored in the single-source path. See R7 for method descriptions. |
-| `--accept-merged` | path | (none) | Two-phase completion for the `--llm=file` method. Reads the merged constitution content from the given path, validates against the pending state recorded in `.haex-hive/constitution.merge.pending.json`, and commits the assembled output. See "Two-phase file flow" below. |
+| `--accept-merged` | path | (none) | Selects the `file` phase-two completion path before any `--llm`, environment, or TTY auto-detection. Reads the merged constitution content from the given path, validates against the pending state recorded in `.haex-hive/constitution.merge.pending.json`, and commits the assembled output. It is mutually exclusive with `--llm`; see "Two-phase file flow" below. |
 
-`--llm` precedence (highest → lowest): explicit `--llm=<method>` flag → `HAEX_LLM=<method>` env var → auto-detect. Auto-detect chooses `stdio` if stdin is a TTY, otherwise `none`.
+When `--accept-merged` is present, it selects phase two of `file` before all method selection. Otherwise `--llm` precedence (highest → lowest) is: explicit `--llm=<method>` flag → `HAEX_LLM=<method>` env var → auto-detect. Auto-detect chooses `stdio` if stdin is a TTY, otherwise `none`.
 
 ## Inputs
 
@@ -69,6 +69,7 @@ Both writes use the journaled generation protocol in FR-035. Its sole journal pa
 | 11 | Merge not confirmed | `key=merge-not-confirmed`; the `stdio` adapter received a decline or EOF at the final explicit confirmation. No journal or output target is written. |
 | 12 | Pending merge inputs mismatch | `key=pending-merge-inputs-mismatch`; the stored pending ID, decoded pending content, and freshly resolved current contributions are not the same phase-one input. Pending state is retained; no output target is written. |
 | 13 | Terminal-unsafe contribution | `key=terminal-unsafe-contribution`; `stdio` refused a source or candidate containing a non-allowlisted terminal control before displaying its body. No output target is written. |
+| 64 | Usage error | `--accept-merged` and `--llm` were supplied together. No filesystem mutation. |
 
 ## Two-phase file flow (`--llm=file`)
 
