@@ -6,10 +6,10 @@ import argparse
 import os
 from pathlib import Path
 
-from haex_hive.cli.diagnostics import emit_refuse
 from haex_hive.cli.main import INSTALLED_VERSION_STRING
 from haex_hive.constitution.assemble import assemble_multi_source, assemble_single_source
 from haex_hive.constitution.resolve import resolve_constitution_contributions
+from haex_hive.constitution.show import show as render_constitution
 from haex_hive.io import transaction
 from haex_hive.io.writer_lock import ConstitutionWriterLock
 from haex_hive.model.consumer_manifest import ConsumerManifest
@@ -108,18 +108,28 @@ def run_assemble(args: argparse.Namespace) -> int:
         ) from exc
 
 
-def run_show(args: argparse.Namespace) -> int:  # noqa: ARG001
-    """Execute the `haex constitution show` command (not yet implemented).
+def run_show(args: argparse.Namespace) -> int:
+    """Execute the `haex constitution show` command.
+
+    Verifies the on-disk constitution against install.lock's content_integrity
+    before printing the (optionally prefaced) byte-for-byte body.
 
     Returns:
-        exit_codes.USAGE (command not available in this release).
+        exit_codes.SUCCESS on successful, verified output.
+
+    Raises:
+        HaexError: On a missing/incomplete transaction, missing constitution or
+            install.lock, corrupt install.lock, or an integrity mismatch.
     """
-    emit_refuse(
-        HaexError(
-            message="haex constitution show is not available in this release",
-            diagnostic_key="not-implemented",
-            exit_code=exit_codes.USAGE,
-            hint="Constitution show ships in a later phase.",
-        )
-    )
-    return exit_codes.USAGE
+    repo_root = Path(args.repo_root).resolve()
+    try:
+        render_constitution(repo_root, no_preface=args.no_preface)
+        return exit_codes.SUCCESS
+    except HaexError:
+        raise
+    except (OSError, ValueError) as exc:
+        raise HaexError(
+            message=f"constitution show failed: {exc}",
+            diagnostic_key="constitution-show-failed",
+            exit_code=exit_codes.INPUT_REFUSE,
+        ) from exc
