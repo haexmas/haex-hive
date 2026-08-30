@@ -99,6 +99,44 @@ def test_load_pending_round_trips(tmp_path: Path) -> None:
     assert pending.sources[0].id == "com.a.a"
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"not-json",
+        b"[]",
+        json.dumps({"sources": [], "task_prompt": "prompt", "pending_id": "id"}).encode(),
+        json.dumps(
+            {
+                "sources": [{"id": "com.a.a"}],
+                "task_prompt": "prompt",
+                "pending_id": "id",
+            }
+        ).encode(),
+        json.dumps(
+            {
+                "sources": [
+                    {
+                        "id": "com.a.a",
+                        "revision": "0" * 40,
+                        "source": "https://example.com/a",
+                        "body_base64": 42,
+                    }
+                ],
+                "task_prompt": "prompt",
+                "pending_id": "id",
+            }
+        ).encode(),
+    ],
+)
+def test_load_pending_rejects_malformed_state(tmp_path: Path, payload: bytes) -> None:
+    path = pending_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_bytes(payload)
+
+    with pytest.raises(PendingMergeInputsMismatchError):
+        load_pending(tmp_path)
+
+
 def test_verify_pending_matches_current_accepts_identical_state(tmp_path: Path) -> None:
     contributions = [_contribution("com.a.a", "0" * 40, "https://github.com/a/a", b"body")]
     pending_bytes = serialize_pending(contributions, "merge prompt")
@@ -121,3 +159,16 @@ def test_verify_pending_matches_current_rejects_drift(tmp_path: Path) -> None:
     drifted = [_contribution("com.a.a", "0" * 40, "https://github.com/a/a", b"different body")]
     with pytest.raises(PendingMergeInputsMismatchError):
         verify_pending_matches_current(pending, drifted)
+
+
+def test_verify_pending_matches_current_rejects_invalid_base64(tmp_path: Path) -> None:
+    contributions = [_contribution("com.a.a", "0" * 40, "https://github.com/a/a", b"body")]
+    data = json.loads(serialize_pending(contributions, "merge prompt").decode("utf-8"))
+    data["sources"][0]["body_base64"] = "not-base64!"
+    path = pending_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(data))
+
+    pending = load_pending(tmp_path)
+    with pytest.raises(PendingMergeInputsMismatchError):
+        verify_pending_matches_current(pending, contributions)

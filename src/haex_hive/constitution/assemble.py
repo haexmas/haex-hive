@@ -162,9 +162,10 @@ def assemble_multi_source(
     if accept_merged_path is not None and llm_method is not None:
         raise UsageError(message="--accept-merged and --llm are mutually exclusive")
 
-    sorted_sources = tuple(
-        sorted((c.source for c in contributions), key=lambda s: s.id.encode("utf-8"))
+    ordered_contributions = sorted(
+        contributions, key=lambda c: c.source.id.encode("utf-8")
     )
+    sorted_sources = tuple(c.source for c in ordered_contributions)
 
     if accept_merged_path is not None:
         candidate = accept_merged_path.read_bytes()
@@ -186,7 +187,7 @@ def assemble_multi_source(
     adapter = _select_adapter(llm_method, repo_root)
 
     try:
-        result = adapter.merge(contributions, task_prompt)
+        result = adapter.merge(ordered_contributions, task_prompt)
     except PendingMergeWritten:
         return exit_codes.SYSTEM_REFUSE
 
