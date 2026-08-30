@@ -8,7 +8,7 @@ from pathlib import Path
 
 from haex_hive.cli.diagnostics import emit_refuse
 from haex_hive.cli.main import INSTALLED_VERSION_STRING
-from haex_hive.constitution.assemble import assemble_single_source
+from haex_hive.constitution.assemble import assemble_multi_source, assemble_single_source
 from haex_hive.constitution.resolve import resolve_constitution_contributions
 from haex_hive.io import transaction
 from haex_hive.io.writer_lock import ConstitutionWriterLock
@@ -73,21 +73,31 @@ def run_assemble(args: argparse.Namespace) -> int:
             manifest = _load_consumer_manifest(repo_root)
             contributions = resolve_constitution_contributions(manifest, _state_root())
 
+            if args.accept_merged is not None:
+                return assemble_multi_source(
+                    contributions,
+                    repo_root,
+                    llm_method=args.llm,
+                    accept_merged_path=args.accept_merged,
+                    tool_version=INSTALLED_VERSION_STRING,
+                )
+
             if not contributions:
                 raise NoSourcesDeclaredError(message="no constitution sources declared")
 
-            if len(contributions) > 1:
-                raise HaexError(
-                    message="multi-source constitution assemble is not available in this release",
-                    diagnostic_key="not-implemented",
-                    exit_code=exit_codes.USAGE,
-                    hint="Multi-source assembly ships in a later phase.",
+            if len(contributions) == 1:
+                assemble_single_source(
+                    contributions[0], repo_root, tool_version=INSTALLED_VERSION_STRING
                 )
+                return exit_codes.SUCCESS
 
-            assemble_single_source(
-                contributions[0], repo_root, tool_version=INSTALLED_VERSION_STRING
+            return assemble_multi_source(
+                contributions,
+                repo_root,
+                llm_method=args.llm,
+                accept_merged_path=None,
+                tool_version=INSTALLED_VERSION_STRING,
             )
-            return exit_codes.SUCCESS
     except HaexError:
         raise
     except (OSError, ValueError) as exc:
