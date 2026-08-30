@@ -1,14 +1,16 @@
 {
-  "haex_hive_version": "1",
-  "identity": "github.com/haexmas/haex-hive",
-  "harness_sources": [
+  "active_feature": null,
+  "atoms": [
     {
-      "role": "constitution",
-      "repository": "self",
+      "includes": [
+        "com.github.haexmas.haex-hive.constitution"
+      ],
       "revision": "cc5fa948264369fa58f91b61fbd7bec62ebf6c69",
-      "path": ".specify/memory/constitution.md"
+      "source": "https://github.com/haexmas/haex-hive"
     }
   ],
   "groups": [],
-  "active_feature": null
+  "haex_hive_min_version": ">=2.0.0",
+  "haex_hive_version": "2",
+  "identity": "com.github.haexmas.haex-hive"
 }
