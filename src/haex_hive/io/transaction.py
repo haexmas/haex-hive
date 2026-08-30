@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import sys
 import tempfile
 from collections.abc import Callable
@@ -27,6 +28,15 @@ CONSTITUTION_NAME = "constitution.md"
 INSTALL_LOCK_NAME = "install.lock"
 WRITER_LOCK_NAME = "constitution-transaction.lock"
 HAEX_HIVE_DIR = ".haex-hive"
+
+
+def _crash_after(point: str) -> None:
+    """FR-035/SC-008 crash-safety test seam: abruptly terminate this process
+    immediately after the named durability boundary, if requested via env var.
+    """
+    if os.environ.get("HAEX_HIVE_CRASH_AFTER") != point:
+        return
+    os.kill(os.getpid(), signal.SIGTERM if _IS_WINDOWS else signal.SIGKILL)
 
 
 @dataclass(frozen=True)
@@ -267,9 +277,11 @@ def publish_pair(
 
         journal = _journal_path(repo_root)
         _write_journal(journal, entries)
+        _crash_after("journal")
 
         for entry in entries:
             os.replace(str(entry.staged), str(entry.target))
+            _crash_after(entry.logical)
         _fsync_dir(hive_dir)
 
         if post_write_verify is not None:
