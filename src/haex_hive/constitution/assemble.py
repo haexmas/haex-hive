@@ -72,7 +72,7 @@ def _publish_constitution(
 
     Computes content integrity, preserves unknown top-level lock fields from
     any existing lock, and publishes both files under the durable-journal
-    protocol with post-write verification.
+    protocol with post-write verification of both outputs.
 
     Args:
         sources: Constitution sources represented in the generated lock.
@@ -101,15 +101,21 @@ def _publish_constitution(
     lock_bytes = lock.to_json_bytes()
 
     def post_write_verify() -> None:
-        """Verify on-disk constitution.md matches recorded content_integrity.
+        """Verify the published constitution and install.lock agree on integrity.
 
         Raises:
             PostWriteValidationError: If digest mismatch detected.
         """
         constitution_path = repo_root / transaction.HAEX_HIVE_DIR / transaction.CONSTITUTION_NAME
+        lock_path = repo_root / transaction.HAEX_HIVE_DIR / transaction.INSTALL_LOCK_NAME
         on_disk = constitution_path.read_bytes()
         actual = d15_one_file_tree_digest(on_disk)
-        if actual != content_integrity:
+        published_lock = InstallLock.from_json(lock_path.read_bytes())
+        if (
+            actual != content_integrity
+            or published_lock.constitution is None
+            or actual != published_lock.constitution.content_integrity
+        ):
             raise PostWriteValidationError(
                 message="on-disk constitution.md does not match recorded content_integrity",
             )
