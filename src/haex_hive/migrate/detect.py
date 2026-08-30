@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Literal
 
-from haex_hive.util.errors import HaexError
+from haex_hive.util.errors import HaexError, InvalidHaexHiveManifestError
 
 
 @dataclass
@@ -19,7 +19,10 @@ class UnsupportedHaexHiveVersionError(HaexError):
 def detect_version(raw: bytes) -> Literal[1, 2]:
     data = json.loads(raw.decode("utf-8"))
     if not isinstance(data, dict):
-        raise ValueError("manifest root must be a JSON object")
+        raise InvalidHaexHiveManifestError(
+            message=".haex-hive.json root must be a JSON object",
+            context={"got": type(data).__name__},
+        )
     version = data.get("haex_hive_version")
     if version == "1":
         return 1

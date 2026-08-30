@@ -29,7 +29,10 @@ def emit_refuse(
         merged.update(extra)
     for key, value in merged.items():
         text = str(value)
-        if text == "" or any(ch.isspace() for ch in text) or '"' in text:
+        if text == "" or any(
+            ch.isspace() or ch == '"' or ord(ch) < 0x20 or ord(ch) == 0x7F
+            for ch in text
+        ):
             text = json.dumps(text)
         parts.append(f"{key}={text}")
     stream.write(" ".join(parts) + "\n")

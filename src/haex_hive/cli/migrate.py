@@ -120,8 +120,11 @@ def run(args: argparse.Namespace) -> int:
 
 
 def _unified_diff(before: bytes, after: bytes, name: str) -> str:
-    before_lines = before.decode("utf-8").splitlines(keepends=True)
-    after_lines = after.decode("utf-8").splitlines(keepends=True)
+    def normalize_line_endings(raw: bytes) -> str:
+        return raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+
+    before_lines = normalize_line_endings(before).splitlines(keepends=True)
+    after_lines = normalize_line_endings(after).splitlines(keepends=True)
     diff = difflib.unified_diff(
         before_lines,
         after_lines,

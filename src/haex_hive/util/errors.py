@@ -66,6 +66,13 @@ class IdentityMismatchError(HaexError):
 
 
 @dataclass
+class InvalidHaexHiveManifestError(HaexError):
+    diagnostic_key: str = "haex-hive-json-invalid"
+    exit_code: int = exit_codes.INPUT_REFUSE
+    hint: str = "Fix .haex-hive.json and retry the migration."
+
+
+@dataclass
 class MissingRemoteOriginError(HaexError):
     diagnostic_key: str = "missing-remote-origin"
     exit_code: int = exit_codes.IO_REFUSE

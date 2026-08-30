@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import json
+from io import StringIO
 from pathlib import Path
 
 import pytest
 
+from haex_hive.cli.diagnostics import emit_refuse
 from haex_hive.cli.main import main
 from haex_hive.constitution.safety import (
     validate_no_plaintext_secrets,
     validate_terminal_safe_display,
 )
 from haex_hive.io import json_deterministic, transaction
+from haex_hive.migrate import detect
 from haex_hive.migrate.transform import (
     _glob_matches,
     _select_atom_for_path,
@@ -24,6 +27,7 @@ from haex_hive.model.install_lock import InstallLock
 from haex_hive.model.publisher_manifest import PublisherManifest
 from haex_hive.schema.validator import _json_pointer
 from haex_hive.util.errors import (
+    HaexError,
     IdentityMismatchError,
     InstallLockSchemaInvalidError,
     MissingAtomManifestError,
@@ -56,6 +60,11 @@ def test_migrate_invalid_manifest_shape_is_typed(
     )
     assert main(["--repo-root", str(tmp_path), "migrate", "--dry-run"]) == 2
     assert "key=haex-hive-json-invalid" in capsys.readouterr().err
+
+
+def test_detect_non_object_manifest_is_shape_error() -> None:
+    with pytest.raises(detect.InvalidHaexHiveManifestError):
+        detect.detect_version(b"[]")
 
 
 def test_missing_identity_is_an_identity_refusal() -> None:
@@ -103,6 +112,26 @@ def test_rejects_openpgp_private_key() -> None:
 def test_deterministic_json_rejects_non_finite_numbers() -> None:
     with pytest.raises(ValueError):
         json_deterministic.dumps({"value": float("nan")})
+
+
+def test_diagnostics_quote_control_characters() -> None:
+    stream = StringIO()
+    emit_refuse(HaexError(message="bad", context={"value": "a\x00\x1bb"}), stream=stream)
+    assert 'value="a\\u0000\\u001bb"' in stream.getvalue()
+
+
+def test_install_lock_freezes_unknown_nested_values() -> None:
+    lock = InstallLock.from_json(
+        json.dumps(
+            {
+                "haex_hive_version": "2",
+                "generated_by": "haex 2.0.0",
+                "future": {"nested": [1]},
+            }
+        ).encode()
+    )
+    with pytest.raises(TypeError):
+        lock.unknown_top_level["future"]["nested"][0] = 2
 
 
 def test_install_lock_parse_failures_are_typed() -> None:
@@ -176,4 +205,31 @@ def test_recovery_validates_all_paths_before_mutating(tmp_path: Path) -> None:
         transaction.recover_if_journaled(tmp_path)
     assert constitution.read_bytes() == b"keep"
     assert outside.read_bytes() == b"do not touch"
+    assert journal.exists()
+
+
+def test_recovery_rejects_incomplete_journal_before_mutating(tmp_path: Path) -> None:
+    hive = tmp_path / transaction.HAEX_HIVE_DIR
+    hive.mkdir()
+    constitution = hive / transaction.CONSTITUTION_NAME
+    constitution.write_bytes(b"keep")
+    journal = hive / transaction.JOURNAL_NAME
+    journal.write_text(
+        json.dumps(
+            {
+                "targets": [
+                    {
+                        "logical": "constitution",
+                        "target": ".haex-hive/constitution.md",
+                        "staged": ".haex-hive/constitution.staged.tmp",
+                        "prior_state": "absent",
+                        "backup": None,
+                    }
+                ]
+            }
+        )
+    )
+    with pytest.raises(ValueError):
+        transaction.recover_if_journaled(tmp_path)
+    assert constitution.read_bytes() == b"keep"
     assert journal.exists()
