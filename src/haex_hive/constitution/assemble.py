@@ -19,6 +19,10 @@ TOOL_NAME = "haex"
 
 
 def _read_existing_lock(repo_root: Path) -> InstallLock | None:
+    """Read the existing install.lock if present, returning None on error or absence.
+
+    Best-effort forward-compat preservation; corrupt locks are treated as absent.
+    """
     lock_path = repo_root / transaction.HAEX_HIVE_DIR / transaction.INSTALL_LOCK_NAME
     if not lock_path.exists():
         return None
@@ -36,6 +40,21 @@ def assemble_single_source(
     *,
     tool_version: str,
 ) -> None:
+    """Assemble a single-source constitution and install.lock under durable-journal protocol.
+
+    Validates no plaintext secrets, computes content integrity, preserves unknown
+    top-level lock fields from any existing lock, and publishes both constitution.md
+    and install.lock atomically with post-write verification.
+
+    Args:
+        contribution: Resolved constitution source with body bytes.
+        repo_root: Repository root path.
+        tool_version: Tool version string for install.lock metadata.
+
+    Raises:
+        PlaintextSecretDetectedError: If contribution body contains secrets.
+        PostWriteValidationError: If on-disk content_integrity mismatch after write.
+    """
     validate_no_plaintext_secrets(
         contribution.body, location=f"constitution source {contribution.source.id}"
     )
@@ -58,6 +77,11 @@ def assemble_single_source(
     lock_bytes = lock.to_json_bytes()
 
     def post_write_verify() -> None:
+        """Verify on-disk constitution.md matches recorded content_integrity.
+
+        Raises:
+            PostWriteValidationError: If digest mismatch detected.
+        """
         constitution_path = repo_root / transaction.HAEX_HIVE_DIR / transaction.CONSTITUTION_NAME
         on_disk = constitution_path.read_bytes()
         actual = d15_one_file_tree_digest(on_disk)
