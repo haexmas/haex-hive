@@ -96,3 +96,82 @@ def self_migration_fixture(tmp_path: Path, git_binary: str) -> dict:
         "commit_a": commit_a,
         "canonical": canonical,
     }
+
+
+@pytest.fixture
+def single_source_constitution_fixture(tmp_path: Path, git_binary: str) -> dict:
+    """Publisher repo with exactly one constitution atom, plus a v2 consumer repo."""
+
+    atom_id = "com.github.example.publisher.constitution"
+    canonical = "https://github.com/example/publisher"
+
+    publisher = tmp_path / "publisher"
+    publisher.mkdir()
+    _init_repo(publisher)
+    _git(publisher, "remote", "add", "origin", canonical)
+
+    (publisher / "manifest.json").write_text(
+        json.dumps(
+            {
+                "haex_hive_version": "2",
+                "publisher": "com.github.example.publisher",
+                "atoms": {
+                    atom_id: {"path": "constitution", "version": "1.0.0"},
+                },
+            },
+            sort_keys=True,
+        )
+    )
+    (publisher / "constitution").mkdir()
+    (publisher / "constitution" / "manifest.json").write_text(
+        json.dumps(
+            {
+                "haex_hive_version": "2",
+                "id": atom_id,
+                "version": "1.0.0",
+                "contributes": {"constitution": "constitution.md"},
+            },
+            sort_keys=True,
+        )
+    )
+    (publisher / "constitution" / "constitution.md").write_bytes(
+        b"# Example Constitution\n\nBe kind.\n"
+    )
+    _git(publisher, "add", ".")
+    _git(publisher, "commit", "-q", "-m", "publish constitution atom")
+    commit_sha = _git(publisher, "rev-parse", "HEAD")
+
+    state_root = tmp_path / "state"
+    from haex_hive.migrate.transform import clone_dir
+
+    clone_target = clone_dir(state_root, canonical)
+    clone_target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(publisher, clone_target)
+
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    (consumer / ".haex-hive.json").write_text(
+        json.dumps(
+            {
+                "haex_hive_version": "2",
+                "identity": "com.github.example.consumer",
+                "atoms": [
+                    {
+                        "source": canonical,
+                        "revision": commit_sha,
+                        "includes": [atom_id],
+                    }
+                ],
+            },
+            indent=2,
+        )
+    )
+
+    return {
+        "publisher": publisher,
+        "consumer": consumer,
+        "state_root": state_root,
+        "commit_sha": commit_sha,
+        "canonical": canonical,
+        "atom_id": atom_id,
+    }
