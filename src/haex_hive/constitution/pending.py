@@ -10,6 +10,7 @@ ID order.
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import json
 from dataclasses import dataclass
@@ -87,24 +88,64 @@ def serialize_pending(
 
 def load_pending(repo_root: Path) -> PendingMerge:
     raw = pending_path(repo_root).read_bytes()
-    data = json.loads(raw.decode("utf-8"))
-    sources = tuple(
-        PendingContribution(
-            id=s["id"], revision=s["revision"], source=s["source"], body_base64=s["body_base64"]
-        )
-        for s in data["sources"]
-    )
+    try:
+        data = json.loads(raw.decode("utf-8"))
+        if not isinstance(data, dict):
+            raise TypeError("pending merge state must be a JSON object")
+
+        raw_sources = data["sources"]
+        task_prompt = data["task_prompt"]
+        pending_id = data["pending_id"]
+        if (
+            not isinstance(raw_sources, list)
+            or not raw_sources
+            or not isinstance(task_prompt, str)
+            or not isinstance(pending_id, str)
+        ):
+            raise TypeError("pending merge state has invalid top-level fields")
+
+        parsed_sources: list[PendingContribution] = []
+        for source in raw_sources:
+            if not isinstance(source, dict):
+                raise TypeError("pending merge source must be a JSON object")
+            fields = ("id", "revision", "source", "body_base64")
+            if any(not isinstance(source.get(field), str) for field in fields):
+                raise TypeError("pending merge source has invalid required fields")
+            parsed_sources.append(
+                PendingContribution(
+                    id=source["id"],
+                    revision=source["revision"],
+                    source=source["source"],
+                    body_base64=source["body_base64"],
+                )
+            )
+    except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        raise PendingMergeInputsMismatchError(
+            message="pending merge state is malformed or incomplete",
+        ) from exc
+
     return PendingMerge(
-        sources=sources, task_prompt=data["task_prompt"], pending_id=data["pending_id"]
+        sources=tuple(parsed_sources), task_prompt=task_prompt, pending_id=pending_id
     )
 
 
 def verify_pending_matches_current(
     pending: PendingMerge, freshly_resolved: list[ResolvedConstitutionContribution]
 ) -> None:
-    decoded_entries = [
-        (s.id, s.revision, s.source, base64.b64decode(s.body_base64)) for s in pending.sources
-    ]
+    try:
+        decoded_entries = [
+            (
+                s.id,
+                s.revision,
+                s.source,
+                base64.b64decode(s.body_base64, validate=True),
+            )
+            for s in pending.sources
+        ]
+    except (binascii.Error, TypeError, ValueError) as exc:
+        raise PendingMergeInputsMismatchError(
+            message="pending merge state contains invalid base64 source bodies",
+        ) from exc
     decoded_id = derive_pending_id(decoded_entries)
 
     fresh_entries = [
