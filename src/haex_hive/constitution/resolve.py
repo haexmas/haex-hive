@@ -29,6 +29,8 @@ from haex_hive.util.errors import (
 
 @dataclass(frozen=True)
 class ResolvedConstitutionContribution:
+    """A resolved constitution contribution with source metadata and body content."""
+
     source: ConstitutionSource
     body: bytes
 
@@ -36,6 +38,27 @@ class ResolvedConstitutionContribution:
 def resolve_constitution_contributions(
     manifest: ConsumerManifest, state_root: Path
 ) -> list[ResolvedConstitutionContribution]:
+    """Resolve constitution contributions from consumer manifest atoms.
+
+    For each atom entry, fetches the publisher manifest and atom manifest from
+    the cloned publisher repo, validates consistency, and collects constitution
+    contributions. Atoms that resolve but do not declare `contributes.constitution`
+    are silently filtered out.
+
+    Args:
+        manifest: Consumer manifest containing atom entries with source/revision/includes.
+        state_root: Path to haex-hive state directory containing publisher clones.
+
+    Returns:
+        List of resolved contributions with source metadata and body bytes.
+
+    Raises:
+        PublisherCloneUnavailableError: If a publisher clone is not found.
+        MissingPublisherManifestError: If publisher manifest is missing or invalid.
+        MissingAtomManifestError: If atom manifest is missing, invalid, or inconsistent.
+        AtomIdCollisionError: If an atom-id resolves to multiple (source, revision) pairs.
+        ContributionFileNotFoundError: If a declared contribution file is not found.
+    """
     contributions: list[ResolvedConstitutionContribution] = []
     seen: dict[str, tuple[str, str]] = {}
 

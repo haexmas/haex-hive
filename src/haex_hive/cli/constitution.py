@@ -18,12 +18,18 @@ from haex_hive.util.errors import HaexError, NoSourcesDeclaredError
 
 
 def _state_root() -> Path:
+    """Return the haex-hive state directory path from env or default location."""
     if os.environ.get("HAEX_HIVE_STATE"):
         return Path(os.environ["HAEX_HIVE_STATE"])
     return Path.home() / ".local" / "share" / "haex-hive"
 
 
 def _load_consumer_manifest(repo_root: Path) -> ConsumerManifest:
+    """Load and parse the v2 consumer manifest from .haex-hive.json.
+
+    Raises:
+        HaexError: If .haex-hive.json is missing or invalid.
+    """
     manifest_path = repo_root / ".haex-hive.json"
     if not manifest_path.exists():
         raise HaexError(
@@ -46,6 +52,17 @@ def _load_consumer_manifest(repo_root: Path) -> ConsumerManifest:
 
 
 def run_assemble(args: argparse.Namespace) -> int:
+    """Execute the `haex constitution assemble` command.
+
+    Resolves constitution contributions from the consumer manifest and assembles
+    a single-source constitution under writer lock with durable-journal protocol.
+
+    Returns:
+        exit_codes.SUCCESS on successful assembly.
+
+    Raises:
+        HaexError: On manifest errors, no sources declared, or assembly failure.
+    """
     repo_root = Path(args.repo_root).resolve()
     lock_path = repo_root / transaction.HAEX_HIVE_DIR / transaction.WRITER_LOCK_NAME
 
@@ -82,6 +99,11 @@ def run_assemble(args: argparse.Namespace) -> int:
 
 
 def run_show(args: argparse.Namespace) -> int:  # noqa: ARG001
+    """Execute the `haex constitution show` command (not yet implemented).
+
+    Returns:
+        exit_codes.USAGE (command not available in this release).
+    """
     emit_refuse(
         HaexError(
             message="haex constitution show is not available in this release",
