@@ -175,3 +175,88 @@ def single_source_constitution_fixture(tmp_path: Path, git_binary: str) -> dict:
         "canonical": canonical,
         "atom_id": atom_id,
     }
+
+
+@pytest.fixture
+def multi_source_constitution_fixture(tmp_path: Path, git_binary: str) -> dict:
+    """Publisher repo with two constitution atoms, plus a v2 consumer repo referencing both."""
+
+    canonical = "https://github.com/example/multi-publisher"
+    atom_id_a = "com.github.example.multi-publisher.atom-a"
+    atom_id_b = "com.github.example.multi-publisher.atom-b"
+
+    publisher = tmp_path / "publisher"
+    publisher.mkdir()
+    _init_repo(publisher)
+    _git(publisher, "remote", "add", "origin", canonical)
+
+    (publisher / "manifest.json").write_text(
+        json.dumps(
+            {
+                "haex_hive_version": "2",
+                "publisher": "com.github.example.multi-publisher",
+                "atoms": {
+                    atom_id_a: {"path": "atom-a", "version": "1.0.0"},
+                    atom_id_b: {"path": "atom-b", "version": "1.0.0"},
+                },
+            },
+            sort_keys=True,
+        )
+    )
+    for path, atom_id, body in (
+        ("atom-a", atom_id_a, b"# Constitution A\n\nBe kind.\n"),
+        ("atom-b", atom_id_b, b"# Constitution B\n\nBe bold.\n"),
+    ):
+        atom_dir = publisher / path
+        atom_dir.mkdir()
+        (atom_dir / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "haex_hive_version": "2",
+                    "id": atom_id,
+                    "version": "1.0.0",
+                    "contributes": {"constitution": "constitution.md"},
+                },
+                sort_keys=True,
+            )
+        )
+        (atom_dir / "constitution.md").write_bytes(body)
+    _git(publisher, "add", ".")
+    _git(publisher, "commit", "-q", "-m", "publish two constitution atoms")
+    commit_sha = _git(publisher, "rev-parse", "HEAD")
+
+    state_root = tmp_path / "state"
+    from haex_hive.migrate.transform import clone_dir
+
+    clone_target = clone_dir(state_root, canonical)
+    clone_target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(publisher, clone_target)
+
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    (consumer / ".haex-hive.json").write_text(
+        json.dumps(
+            {
+                "haex_hive_version": "2",
+                "identity": "com.github.example.consumer",
+                "atoms": [
+                    {
+                        "source": canonical,
+                        "revision": commit_sha,
+                        "includes": [atom_id_a, atom_id_b],
+                    }
+                ],
+            },
+            indent=2,
+        )
+    )
+
+    return {
+        "publisher": publisher,
+        "consumer": consumer,
+        "state_root": state_root,
+        "commit_sha": commit_sha,
+        "canonical": canonical,
+        "atom_id_a": atom_id_a,
+        "atom_id_b": atom_id_b,
+    }
