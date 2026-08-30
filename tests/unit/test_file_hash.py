@@ -1,0 +1,31 @@
+from __future__ import annotations
+
+import base64
+import hashlib
+
+from haex_hive.io.file_hash import d15_one_file_tree_digest
+
+
+def _reference(body: bytes) -> str:
+    path = b"constitution.md"
+    tree = (
+        b"haex-hive-tree-v1\x00F\x00"
+        + b"100644\x00"
+        + str(len(path)).encode("ascii")
+        + b"\x00"
+        + path
+        + str(len(body)).encode("ascii")
+        + b"\x00"
+        + body
+        + b"\x00"
+    )
+    return "sha256-" + base64.b64encode(hashlib.sha256(tree).digest()).decode("ascii")
+
+
+def test_empty_body_matches_reference() -> None:
+    assert d15_one_file_tree_digest(b"") == _reference(b"")
+
+
+def test_non_empty_body_matches_reference() -> None:
+    body = b"# Constitution\n\nHello world.\n"
+    assert d15_one_file_tree_digest(body) == _reference(body)

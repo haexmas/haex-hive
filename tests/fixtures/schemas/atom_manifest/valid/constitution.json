@@ -1,0 +1,9 @@
+{
+  "haex_hive_version": "2",
+  "id": "com.github.example.publisher.constitution",
+  "version": "1.0.0",
+  "priority": 10,
+  "contributes": {
+    "constitution": "constitution.md"
+  }
+}
