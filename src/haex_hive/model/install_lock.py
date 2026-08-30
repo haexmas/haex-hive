@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from haex_hive.io import json_deterministic
 from haex_hive.schema import validator as schema_validator
-from haex_hive.util.errors import InstallLockSourcesNotCanonicalError
+from haex_hive.util.errors import (
+    InstallLockSchemaInvalidError,
+    InstallLockSourcesNotCanonicalError,
+)
 
 
 @dataclass(frozen=True)
@@ -40,7 +43,7 @@ class ConstitutionLockSection:
 class InstallLock:
     haex_hive_version: str
     generated_by: str
-    constitution: Optional[ConstitutionLockSection] = None
+    constitution: ConstitutionLockSection | None = None
     unknown_top_level: dict[str, Any] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
@@ -48,11 +51,17 @@ class InstallLock:
             self.unknown_top_level = {}
 
     @staticmethod
-    def from_json(raw: bytes) -> "InstallLock":
-        data = json.loads(raw.decode("utf-8"))
-        schema_validator.validate(data, "install-lock.v2.schema.json")
+    def from_json(raw: bytes) -> InstallLock:
+        try:
+            data = json.loads(raw.decode("utf-8"))
+            schema_validator.validate(data, "install-lock.v2.schema.json")
+        except (UnicodeError, ValueError) as exc:
+            raise InstallLockSchemaInvalidError(
+                message="install.lock is not valid against install-lock.v2.schema.json",
+                context={"schema": "install-lock.v2.schema.json"},
+            ) from exc
 
-        constitution: Optional[ConstitutionLockSection] = None
+        constitution: ConstitutionLockSection | None = None
         if "constitution" in data:
             section = data["constitution"]
             sources = tuple(

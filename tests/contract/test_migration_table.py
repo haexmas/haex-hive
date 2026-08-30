@@ -17,7 +17,6 @@ from haex_hive.util.errors import (
     PlaintextSecretDetectedError,
 )
 
-
 pytestmark = pytest.mark.skipif(
     shutil.which("git") is None, reason="git binary required"
 )

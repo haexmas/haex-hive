@@ -14,10 +14,11 @@ import json
 import os
 import sys
 import tempfile
-import uuid
+from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Callable, Optional
+from pathlib import Path, PureWindowsPath
+from typing import Any, cast
 
 _IS_WINDOWS = sys.platform == "win32"
 
@@ -33,7 +34,7 @@ class _TargetEntry:
     target: Path
     staged: Path
     prior_state: str  # "existed" | "absent"
-    backup: Optional[Path]
+    backup: Path | None
 
 
 def _fsync_dir(path: Path) -> None:
@@ -99,10 +100,8 @@ def _backup_existing(logical: str, target: Path) -> Path:
 
 
 def _remove_if_exists(path: Path) -> None:
-    try:
+    with suppress(FileNotFoundError):
         path.unlink()
-    except FileNotFoundError:
-        pass
 
 
 def _journal_path(repo_root: Path) -> Path:
@@ -113,9 +112,9 @@ def is_journaled(repo_root: Path) -> bool:
     return _journal_path(repo_root).exists()
 
 
-def _read_journal(journal: Path) -> dict:
+def _read_journal(journal: Path) -> dict[str, Any]:
     with open(journal, "rb") as fh:
-        return json.loads(fh.read().decode("utf-8"))
+        return cast(dict[str, Any], json.loads(fh.read().decode("utf-8")))
 
 
 def _write_journal(journal: Path, entries: list[_TargetEntry]) -> None:
@@ -159,25 +158,72 @@ def recover_if_journaled(repo_root: Path) -> bool:
     if not journal.exists():
         return False
     payload = _read_journal(journal)
-    for entry in payload.get("targets", []):
-        target = repo_root / entry["target"]
+    raw_entries = payload.get("targets")
+    if not isinstance(raw_entries, list):
+        raise ValueError("transaction journal targets must be a list")
+
+    hive_dir = (repo_root / HAEX_HIVE_DIR).resolve()
+    fixed_targets = {
+        "constitution": hive_dir / CONSTITUTION_NAME,
+        "install_lock": hive_dir / INSTALL_LOCK_NAME,
+    }
+    validated_entries: list[tuple[Path, str, Path | None, Path]] = []
+    seen_logical: set[str] = set()
+    for entry in raw_entries:
+        if not isinstance(entry, dict):
+            raise ValueError("transaction journal target entry must be an object")
+        logical = entry.get("logical")
+        if logical not in fixed_targets or logical in seen_logical:
+            raise ValueError("transaction journal contains an invalid logical target")
+        seen_logical.add(logical)
+
+        target = _validate_journal_path(repo_root, entry.get("target"), hive_dir)
+        if target != fixed_targets[logical]:
+            raise ValueError("transaction journal target does not match its logical target")
+        staged = _validate_journal_path(repo_root, entry.get("staged"), hive_dir)
+        raw_backup = entry.get("backup")
+        backup = (
+            _validate_journal_path(repo_root, raw_backup, hive_dir)
+            if raw_backup is not None
+            else None
+        )
         prior = entry.get("prior_state")
-        backup = entry.get("backup")
-        staged = entry.get("staged")
+        if prior not in {"existed", "absent"}:
+            raise ValueError("transaction journal contains an invalid prior state")
+        if prior == "existed" and backup is None:
+            raise ValueError("existing transaction target is missing its backup")
+        validated_entries.append((target, prior, backup, staged))
+
+    for target, prior, backup, staged in validated_entries:
         if prior == "existed" and backup:
-            backup_path = repo_root / backup
-            if backup_path.exists():
-                os.replace(str(backup_path), str(target))
+            if backup.exists():
+                os.replace(str(backup), str(target))
             _fsync_dir(target.parent)
         elif prior == "absent":
             _remove_if_exists(target)
-        if staged:
-            _remove_if_exists(repo_root / staged)
+        _remove_if_exists(staged)
         if backup:
-            _remove_if_exists(repo_root / backup)
+            _remove_if_exists(backup)
     _remove_if_exists(journal)
     _fsync_dir(journal.parent)
     return True
+
+
+def _validate_journal_path(repo_root: Path, raw_path: object, hive_dir: Path) -> Path:
+    if not isinstance(raw_path, str) or not raw_path:
+        raise ValueError("transaction journal path must be a non-empty string")
+    path = Path(raw_path)
+    windows_path = PureWindowsPath(raw_path)
+    if path.is_absolute() or windows_path.is_absolute() or windows_path.drive:
+        raise ValueError("transaction journal paths must be relative")
+    if ".." in path.parts or ".." in windows_path.parts:
+        raise ValueError("transaction journal paths must not contain traversal")
+    resolved = (repo_root / path).resolve()
+    try:
+        resolved.relative_to(hive_dir)
+    except ValueError:
+        raise ValueError("transaction journal path escapes .haex-hive") from None
+    return resolved
 
 
 def publish_pair(
@@ -185,7 +231,7 @@ def publish_pair(
     constitution_body: bytes,
     install_lock_bytes: bytes,
     *,
-    post_write_verify: Optional[Callable[[], None]] = None,
+    post_write_verify: Callable[[], None] | None = None,
 ) -> None:
     """Atomically publish both targets under the durable journal protocol."""
 

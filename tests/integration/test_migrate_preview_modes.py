@@ -11,7 +11,6 @@ from pathlib import Path
 
 import pytest
 
-
 pytestmark = pytest.mark.skipif(
     shutil.which("git") is None, reason="git binary required"
 )
@@ -51,7 +50,9 @@ def _prepare_consumer(fixture: dict, tmp_path: Path) -> Path:
     return consumer
 
 
-def test_dry_run_and_check_produce_identical_stdout(self_migration_fixture: dict, tmp_path: Path) -> None:
+def test_dry_run_and_check_produce_identical_stdout(
+    self_migration_fixture: dict, tmp_path: Path
+) -> None:
     consumer = _prepare_consumer(self_migration_fixture, tmp_path)
     dry = _run_haex(consumer, "migrate", "--dry-run",
                     state_root=self_migration_fixture["state_root"])
@@ -72,7 +73,9 @@ def test_write_mode_invalidates_stale_sidecar(self_migration_fixture: dict, tmp_
     assert stale.read_bytes() != b"{}"
 
 
-def test_preview_mode_preserves_existing_sidecar(self_migration_fixture: dict, tmp_path: Path) -> None:
+def test_preview_mode_preserves_existing_sidecar(
+    self_migration_fixture: dict, tmp_path: Path
+) -> None:
     consumer = _prepare_consumer(self_migration_fixture, tmp_path)
     stale = consumer / ".haex-hive.json.migrated"
     stale.write_bytes(b"{\"preserved\": true}")

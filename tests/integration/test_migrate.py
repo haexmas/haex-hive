@@ -11,7 +11,6 @@ from pathlib import Path
 
 import pytest
 
-
 pytestmark = pytest.mark.skipif(
     shutil.which("git") is None, reason="git binary required"
 )
@@ -51,7 +50,9 @@ def _prepare_consumer(fixture: dict, tmp_path: Path, extra: dict | None = None) 
 
 def test_dry_run_prints_diff_no_sidecar(self_migration_fixture: dict, tmp_path: Path) -> None:
     consumer = _prepare_consumer(self_migration_fixture, tmp_path)
-    proc = _run_haex(consumer, "migrate", "--dry-run", state_root=self_migration_fixture["state_root"])
+    proc = _run_haex(
+        consumer, "migrate", "--dry-run", state_root=self_migration_fixture["state_root"]
+    )
     assert proc.returncode == 0, proc.stderr
     assert "@@" in proc.stdout
     assert not (consumer / ".haex-hive.json.migrated").exists()
@@ -87,7 +88,9 @@ def test_already_v2_no_write(self_migration_fixture: dict, tmp_path: Path) -> No
     assert not (consumer / ".haex-hive.json.migrated").exists()
 
 
-def test_dry_run_and_check_conflict_is_usage_error(self_migration_fixture: dict, tmp_path: Path) -> None:
+def test_dry_run_and_check_conflict_is_usage_error(
+    self_migration_fixture: dict, tmp_path: Path
+) -> None:
     consumer = _prepare_consumer(self_migration_fixture, tmp_path)
     proc = _run_haex(consumer, "migrate", "--dry-run", "--check",
                       state_root=self_migration_fixture["state_root"])

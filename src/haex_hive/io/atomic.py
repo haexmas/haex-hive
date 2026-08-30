@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 
 _IS_WINDOWS = sys.platform == "win32"
@@ -45,10 +46,8 @@ def _write_replace_posix(target: Path, data: bytes) -> None:
             os.fsync(fh.fileno())
         os.replace(str(tmp), str(target))
     except BaseException:
-        try:
+        with suppress(FileNotFoundError):
             tmp.unlink()
-        except FileNotFoundError:
-            pass
         raise
     _fsync_parent_dir(target)
 
@@ -81,10 +80,8 @@ def _write_replace_windows(target: Path, data: bytes) -> None:
         if not result:
             raise ctypes.WinError()
     except BaseException:
-        try:
+        with suppress(FileNotFoundError):
             tmp.unlink()
-        except FileNotFoundError:
-            pass
         raise
 
 

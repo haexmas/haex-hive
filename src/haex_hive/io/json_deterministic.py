@@ -17,6 +17,7 @@ def dumps(obj: Any) -> bytes:
         indent=2,
         ensure_ascii=False,
         separators=(",", ": "),
+        allow_nan=False,
     )
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     return (text + "\n").encode("utf-8")

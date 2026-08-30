@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
+from haex_hive.model._immutable import freeze_json
 from haex_hive.model.atom_id import AtomId
 from haex_hive.model.repo_relative_path import RepoRelativePath
 from haex_hive.schema import validator as schema_validator
@@ -13,8 +15,8 @@ from haex_hive.schema import validator as schema_validator
 
 @dataclass(frozen=True)
 class ContributesBlock:
-    constitution: Optional[str] = None
-    spec: Optional[str] = None
+    constitution: str | None = None
+    spec: str | None = None
     rules: tuple[str, ...] = ()
     hooks: tuple[str, ...] = ()
     skills: tuple[str, ...] = ()
@@ -26,13 +28,13 @@ class AtomManifest:
     id: str
     version: str
     priority: int = 100
-    contributes: Optional[ContributesBlock] = None
+    contributes: ContributesBlock | None = None
     includes: tuple[str, ...] = ()
-    defaults: dict[str, Any] = field(default_factory=dict)
-    config_schema: Optional[str] = None
+    defaults: Mapping[str, Any] = field(default_factory=dict)
+    config_schema: str | None = None
 
     @staticmethod
-    def from_json(raw: bytes) -> "AtomManifest":
+    def from_json(raw: bytes) -> AtomManifest:
         data = json.loads(raw.decode("utf-8"))
         schema_validator.validate(data, "atom-manifest.v2.schema.json")
 
@@ -81,6 +83,6 @@ class AtomManifest:
             priority=data.get("priority", 100),
             contributes=contributes,
             includes=includes,
-            defaults=defaults,
+            defaults=freeze_json(defaults),
             config_schema=config_schema,
         )

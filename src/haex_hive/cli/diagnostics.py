@@ -8,6 +8,7 @@ only non-sensitive metadata into `context`/`extra`.
 
 from __future__ import annotations
 
+import json
 import sys
 from typing import TextIO
 
@@ -27,7 +28,10 @@ def emit_refuse(
     if extra:
         merged.update(extra)
     for key, value in merged.items():
-        parts.append(f"{key}={value}")
+        text = str(value)
+        if text == "" or any(ch.isspace() for ch in text) or '"' in text:
+            text = json.dumps(text)
+        parts.append(f"{key}={text}")
     stream.write(" ".join(parts) + "\n")
     if exc.message:
         stream.write(f"  {exc.message}\n")

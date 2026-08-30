@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from haex_hive.io import json_deterministic
+from haex_hive.model._immutable import freeze_json, thaw_json
 from haex_hive.model.atom_id import AtomId
 from haex_hive.model.source_url import canonicalize
 from haex_hive.model.version_constraint import VersionConstraint
@@ -18,8 +20,8 @@ _SHA40_RE = re.compile(r"^[0-9a-f]{40}$")
 
 @dataclass(frozen=True)
 class ConfigEntry:
-    priority: Optional[int] = None
-    values: dict[str, Any] = field(default_factory=dict)
+    priority: int | None = None
+    values: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -27,8 +29,8 @@ class AtomEntry:
     source: str
     revision: str
     includes: tuple[str, ...]
-    track: Optional[str] = None
-    config: dict[str, ConfigEntry] = field(default_factory=dict)
+    track: str | None = None
+    config: Mapping[str, ConfigEntry] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -36,13 +38,13 @@ class ConsumerManifest:
     haex_hive_version: str
     identity: str
     atoms: tuple[AtomEntry, ...]
-    haex_hive_min_version: Optional[VersionConstraint] = None
+    haex_hive_min_version: VersionConstraint | None = None
     groups: tuple[str, ...] = ()
-    active_feature: Optional[str] = None
-    identity_note: Optional[str] = None
+    active_feature: str | None = None
+    identity_note: str | None = None
 
     @staticmethod
-    def from_json(raw: bytes) -> "ConsumerManifest":
+    def from_json(raw: bytes) -> ConsumerManifest:
         data = json.loads(raw.decode("utf-8"))
         schema_validator.validate(data, "haex-hive.v2.schema.json")
 
@@ -60,7 +62,9 @@ class ConsumerManifest:
                     f"atoms[].source must be canonical: got {source!r}, expected {canonical!r}"
                 )
             if not _SHA40_RE.match(entry["revision"]):
-                raise ValueError(f"atoms[].revision must be 40 lowercase hex: {entry['revision']!r}")
+                raise ValueError(
+                    f"atoms[].revision must be 40 lowercase hex: {entry['revision']!r}"
+                )
             includes = tuple(AtomId.parse(a) for a in entry["includes"])
             if len(set(includes)) != len(includes):
                 raise ValueError("atoms[].includes must be unique")
@@ -71,7 +75,7 @@ class ConsumerManifest:
                     raise ValueError(f"atoms[].config[{key!r}] not resolved via includes")
                 config[key] = ConfigEntry(
                     priority=value.get("priority"),
-                    values=value.get("values", {}),
+                    values=freeze_json(value.get("values", {})),
                 )
             atoms.append(
                 AtomEntry(
@@ -79,7 +83,7 @@ class ConsumerManifest:
                     revision=entry["revision"],
                     includes=includes,
                     track=entry.get("track"),
-                    config=config,
+                    config=freeze_json(config),
                 )
             )
 
@@ -106,7 +110,7 @@ class ConsumerManifest:
                             "config": {
                                 k: {
                                     **({"priority": v.priority} if v.priority is not None else {}),
-                                    **({"values": v.values} if v.values else {}),
+                                    **({"values": thaw_json(v.values)} if v.values else {}),
                                 }
                                 for k, v in a.config.items()
                             }

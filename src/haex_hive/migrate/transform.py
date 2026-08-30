@@ -19,6 +19,7 @@ from haex_hive.model.atom_id import AtomId
 from haex_hive.model.publisher_manifest import PublisherManifest
 from haex_hive.model.repo_relative_path import RepoRelativePath
 from haex_hive.model.source_url import canonicalize
+from haex_hive.schema import validator as schema_validator
 from haex_hive.util.errors import (
     AtomIdCollisionError,
     IdentityMismatchError,
@@ -67,6 +68,37 @@ def _relative_path_segments(path: str) -> list[str]:
     return [_nfc(seg) for seg in path.split("/")]
 
 
+def _glob_matches(pattern: str, path: str) -> bool:
+    """Match slash-separated globs where ``*`` stays within one segment."""
+
+    pattern_segments = pattern.split("/")
+    path_segments = path.split("/")
+
+    def segment_matches(segment_pattern: str, segment: str) -> bool:
+        regex = "".join(
+            "[^/]*" if char == "*" else "[^/]" if char == "?" else re.escape(char)
+            for char in segment_pattern
+        )
+        return re.fullmatch(regex, segment) is not None
+
+    def matches(pattern_index: int, path_index: int) -> bool:
+        if pattern_index == len(pattern_segments):
+            return path_index == len(path_segments)
+        segment = pattern_segments[pattern_index]
+        if segment == "**":
+            return any(
+                matches(pattern_index + 1, candidate)
+                for candidate in range(path_index, len(path_segments) + 1)
+            )
+        return (
+            path_index < len(path_segments)
+            and segment_matches(segment, path_segments[path_index])
+            and matches(pattern_index + 1, path_index + 1)
+        )
+
+    return matches(0, 0)
+
+
 @dataclass
 class _ResolvedEntry:
     source: str
@@ -95,17 +127,25 @@ def _select_atom_for_path(
             f"{entry.path}/manifest.json",
             not_found_error=MissingAtomManifestError,
         )
-        atom_data = json.loads(atom_manifest_bytes.decode("utf-8"))
+        try:
+            atom_data = json.loads(atom_manifest_bytes.decode("utf-8"))
+            schema_validator.validate(atom_data, "atom-manifest.v2.schema.json")
+        except (UnicodeError, ValueError) as exc:
+            raise MissingAtomManifestError(
+                message=f"atom manifest at {entry.path!r} is invalid",
+                context={"path": entry.path, "sha_short": revision[:12]},
+            ) from exc
         contributes = atom_data.get("contributes") or {}
         declared = contributes.get(contributes_key)
         if declared is None:
             continue
         relative = "/".join(path_segments[len(atom_segments) :])
-        if isinstance(declared, str):
-            if _nfc(declared) == relative:
-                matches.append(atom_id)
-        else:
-            continue
+        is_exact_match = isinstance(declared, str) and _nfc(declared) == relative
+        is_glob_match = isinstance(declared, list) and any(
+            _glob_matches(_nfc(pattern), relative) for pattern in declared
+        )
+        if is_exact_match or is_glob_match:
+            matches.append(atom_id)
     if not matches:
         raise MissingAtomManifestError(
             message=f"no atom in publisher matches path {v1_path!r} for role {role!r}",
@@ -185,13 +225,27 @@ def migrate_v1_to_v2(raw_v1: bytes, repo_root: Path, state_root: Path) -> bytes:
     validate_no_plaintext_secrets(raw_v1, location="original .haex-hive.json")
 
     data = json.loads(raw_v1.decode("utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("manifest root must be a JSON object")
     if data.get("haex_hive_version") != "1":
         raise ValueError("migrate_v1_to_v2 called on non-v1 input")
 
-    identity = _convert_identity(data["identity"])
+    identity_value = data.get("identity")
+    if not isinstance(identity_value, str) or not identity_value:
+        raise IdentityMismatchError(
+            message="v1 manifest does not declare a valid identity",
+            context={"field": "identity"},
+        )
+    identity = _convert_identity(identity_value)
+
+    harness_sources = data.get("harness_sources", [])
+    if not isinstance(harness_sources, list):
+        raise ValueError("harness_sources must be a JSON array")
 
     resolved: list[_ResolvedEntry] = []
-    for i, entry in enumerate(data.get("harness_sources", [])):
+    for i, entry in enumerate(harness_sources):
+        if not isinstance(entry, dict):
+            raise ValueError(f"harness_sources[{i}] must be a JSON object")
         resolved.append(_resolve_v1_entry(entry, i, repo_root, state_root))
 
     grouped: dict[tuple[str, str], list[str]] = {}

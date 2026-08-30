@@ -21,7 +21,7 @@ class VersionConstraint:
     version: tuple[int, int, int]
 
     @staticmethod
-    def parse(s: str) -> "VersionConstraint":
+    def parse(s: str) -> VersionConstraint:
         if not isinstance(s, str):
             raise ValueError(f"version constraint must be a string, got {type(s).__name__}")
         match = _VERSION_RE.match(s)

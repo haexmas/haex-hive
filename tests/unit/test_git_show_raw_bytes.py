@@ -11,7 +11,6 @@ import pytest
 from haex_hive.git.show import show_bytes
 from haex_hive.util.errors import ContributionFileNotFoundError
 
-
 pytestmark = pytest.mark.skipif(
     shutil.which("git") is None, reason="git binary required"
 )
@@ -40,7 +39,9 @@ def test_show_bytes_returns_blob_content(tmp_path: Path) -> None:
     _git(tmp_path, "add", "constitution.md")
     _git(tmp_path, "commit", "-q", "-m", "seed")
     sha = _git(tmp_path, "rev-parse", "HEAD")
-    body = show_bytes(tmp_path, sha, "constitution.md", not_found_error=ContributionFileNotFoundError)
+    body = show_bytes(
+        tmp_path, sha, "constitution.md", not_found_error=ContributionFileNotFoundError
+    )
     assert body == b"# Body\nline\n"
 
 
@@ -52,7 +53,9 @@ def test_show_bytes_bypasses_gitattributes_filter(tmp_path: Path) -> None:
     _git(tmp_path, "add", "constitution.md")
     _git(tmp_path, "commit", "-q", "-m", "seed")
     sha = _git(tmp_path, "rev-parse", "HEAD")
-    body = show_bytes(tmp_path, sha, "constitution.md", not_found_error=ContributionFileNotFoundError)
+    body = show_bytes(
+        tmp_path, sha, "constitution.md", not_found_error=ContributionFileNotFoundError
+    )
     assert body in (b"crlf\r\nnormal\n", b"crlf\nnormal\n")
 
 
@@ -63,4 +66,6 @@ def test_show_bytes_raises_on_missing_path(tmp_path: Path) -> None:
     _git(tmp_path, "commit", "-q", "-m", "seed")
     sha = _git(tmp_path, "rev-parse", "HEAD")
     with pytest.raises(ContributionFileNotFoundError):
-        show_bytes(tmp_path, sha, "does-not-exist.md", not_found_error=ContributionFileNotFoundError)
+        show_bytes(
+            tmp_path, sha, "does-not-exist.md", not_found_error=ContributionFileNotFoundError
+        )

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -50,7 +49,9 @@ def test_post_write_verify_rollback_restores_previous(tmp_path: Path) -> None:
         raise PostWriteValidationError(message="mismatch")
 
     with pytest.raises(PostWriteValidationError):
-        transaction.publish_pair(tmp_path, b"bad", b"{\"bad\": true}", post_write_verify=failing_verify)
+        transaction.publish_pair(
+            tmp_path, b"bad", b"{\"bad\": true}", post_write_verify=failing_verify
+        )
 
     constitution, lock, journal = _paths(tmp_path)
     assert constitution.read_bytes() == b"good"
@@ -161,6 +162,5 @@ def test_concurrent_writer_refused(tmp_path: Path) -> None:
     lock = writer_lock.ConstitutionWriterLock(lock_path)
     with lock:
         second = writer_lock.ConstitutionWriterLock(lock_path)
-        with pytest.raises(ConstitutionWriterBusyError):
-            with second:
-                pass
+        with pytest.raises(ConstitutionWriterBusyError), second:
+            pass

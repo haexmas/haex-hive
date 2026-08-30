@@ -18,4 +18,4 @@ def test_sort_keys_and_trailing_newline() -> None:
 
 def test_unicode_not_escaped() -> None:
     data = json_deterministic.dumps({"snowman": "☃"})
-    assert "☃".encode("utf-8") in data
+    assert "☃".encode() in data

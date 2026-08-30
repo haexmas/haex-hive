@@ -17,7 +17,6 @@ import os
 import sys
 from pathlib import Path
 from types import TracebackType
-from typing import Optional
 
 from haex_hive.util.errors import ConstitutionWriterBusyError
 
@@ -31,10 +30,10 @@ class ConstitutionWriterLock:
 
     def __init__(self, lock_path: Path) -> None:
         self._lock_path = lock_path
-        self._fd: Optional[int] = None
+        self._fd: int | None = None
         self._handle = None
 
-    def __enter__(self) -> "ConstitutionWriterLock":
+    def __enter__(self) -> ConstitutionWriterLock:
         self._lock_path.parent.mkdir(parents=True, exist_ok=True)
         if _IS_WINDOWS:
             self._acquire_windows()
@@ -44,9 +43,9 @@ class ConstitutionWriterLock:
 
     def __exit__(
         self,
-        exc_type: Optional[type[BaseException]],
-        exc: Optional[BaseException],
-        tb: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
     ) -> None:
         if _IS_WINDOWS:
             self._release_windows()
@@ -83,6 +82,7 @@ class ConstitutionWriterLock:
         from ctypes import wintypes
 
         kernel32 = ctypes.windll.kernel32
+        kernel32.CreateFileW.restype = wintypes.HANDLE
         GENERIC_READ = 0x80000000
         GENERIC_WRITE = 0x40000000
         FILE_SHARE_READ = 0x1

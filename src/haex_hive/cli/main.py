@@ -3,17 +3,32 @@
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import json
-import sys
+import re
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional, Sequence
 
 from haex_hive.cli.diagnostics import emit_refuse
 from haex_hive.model.version_constraint import VersionConstraint
 from haex_hive.util import exit_codes
 from haex_hive.util.errors import HaexError, VersionBelowMinError
 
-INSTALLED_VERSION = (2, 0, 0)
+_VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
+
+
+def _installed_version() -> tuple[int, int, int]:
+    try:
+        version = importlib.metadata.version("haex-hive")
+    except importlib.metadata.PackageNotFoundError:
+        return (2, 0, 0)
+    match = _VERSION_RE.match(version)
+    if not match:
+        return (2, 0, 0)
+    return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+
+INSTALLED_VERSION = _installed_version()
 
 
 def _check_min_version(repo_root: Path) -> None:
@@ -54,7 +69,9 @@ def _build_parser() -> argparse.ArgumentParser:
     constitution = subparsers.add_parser("constitution", help="constitution commands")
     constitution_sub = constitution.add_subparsers(dest="constitution_command", required=True)
 
-    assemble = constitution_sub.add_parser("assemble", help="produce constitution.md + install.lock")
+    assemble = constitution_sub.add_parser(
+        "assemble", help="produce constitution.md + install.lock"
+    )
     assemble.add_argument("--llm", choices=["stdio", "file", "none"])
     assemble.add_argument("--accept-merged", type=Path)
 
@@ -64,7 +81,7 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from pathlib import Path
 
 from haex_hive.io import atomic
@@ -14,10 +15,8 @@ def sidecar_path(repo_root: Path) -> Path:
 
 
 def invalidate_stale_sidecar(repo_root: Path) -> None:
-    try:
+    with suppress(FileNotFoundError):
         sidecar_path(repo_root).unlink()
-    except FileNotFoundError:
-        pass
 
 
 def publish_sidecar(repo_root: Path, v2_bytes: bytes) -> None:
