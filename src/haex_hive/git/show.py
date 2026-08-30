@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from typing import Type
 
 from haex_hive.util.errors import HaexError
 
@@ -19,7 +18,7 @@ def show_bytes(
     sha: str,
     path: str,
     *,
-    not_found_error: Type[HaexError],
+    not_found_error: type[HaexError],
 ) -> bytes:
     proc = subprocess.run(
         ["git", "-C", str(repo_dir), "show", f"{sha}:{path}"],

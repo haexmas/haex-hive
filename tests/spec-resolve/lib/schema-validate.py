@@ -40,6 +40,26 @@ def _get(schema: dict, key: str, default=None):
     return schema.get(key, default)
 
 
+def _matches_type(type_name: str, instance) -> bool:
+    return (
+        (type_name == "object" and isinstance(instance, dict))
+        or (type_name == "array" and isinstance(instance, list))
+        or (type_name == "string" and isinstance(instance, str))
+        or (type_name == "null" and instance is None)
+        or (
+            type_name == "integer"
+            and isinstance(instance, int)
+            and not isinstance(instance, bool)
+        )
+        or (
+            type_name == "number"
+            and isinstance(instance, (int, float))
+            and not isinstance(instance, bool)
+        )
+        or (type_name == "boolean" and isinstance(instance, bool))
+    )
+
+
 def _resolve_ref(root: dict, ref: str) -> dict:
     if not ref.startswith("#/"):
         raise SchemaError(f"only local refs supported: {ref}")
@@ -70,36 +90,24 @@ def _validate(schema: dict, instance, root: dict, path: str = "$") -> None:
         types = [expected] if isinstance(expected, str) else list(expected)
         matches = False
         for t in types:
-            if t == "object" and isinstance(instance, dict):
-                matches = True
-            elif t == "array" and isinstance(instance, list):
-                matches = True
-            elif t == "string" and isinstance(instance, str):
-                matches = True
-            elif t == "null" and instance is None:
-                matches = True
-            elif t == "integer" and isinstance(instance, int) and not isinstance(instance, bool):
-                matches = True
-            elif t == "number" and isinstance(instance, (int, float)) and not isinstance(instance, bool):
-                matches = True
-            elif t == "boolean" and isinstance(instance, bool):
+            if _matches_type(t, instance):
                 matches = True
         if not matches:
             raise ValidationError(f"{path}: type {expected} expected")
 
-    if "const" in schema:
-        if instance != schema["const"]:
-            raise ValidationError(
-                f"{path}: expected const {schema['const']!r}, got {instance!r}"
-            )
+    if "const" in schema and instance != schema["const"]:
+        raise ValidationError(
+            f"{path}: expected const {schema['const']!r}, got {instance!r}"
+        )
 
-    if "enum" in schema:
-        if instance not in schema["enum"]:
-            raise ValidationError(
-                f"{path}: value {instance!r} not in enum {schema['enum']!r}"
-            )
+    if "enum" in schema and instance not in schema["enum"]:
+        raise ValidationError(
+            f"{path}: value {instance!r} not in enum {schema['enum']!r}"
+        )
 
-    if "pattern" in schema and isinstance(instance, str):
+    if "pattern" in schema and isinstance(instance, str) and not re.fullmatch(
+        schema["pattern"], instance
+    ):
         # fullmatch, not search. Draft-07 `pattern` uses search
         # semantics, but every pattern in this repo's schema is
         # explicitly whole-value anchored (`^…$`) and paired with a
@@ -109,18 +117,15 @@ def _validate(schema: dict, instance, root: dict, path: str = "$") -> None:
         # the tool; fullmatch keeps schema-side and tool-side in
         # agreement, which is what test-schema-tool-agreement.sh
         # asserts.
-        if not re.fullmatch(schema["pattern"], instance):
-            raise ValidationError(
-                f"{path}: value {instance!r} does not match pattern {schema['pattern']!r}"
-            )
+        raise ValidationError(
+            f"{path}: value {instance!r} does not match pattern {schema['pattern']!r}"
+        )
 
-    if "minLength" in schema and isinstance(instance, str):
-        if len(instance) < schema["minLength"]:
-            raise ValidationError(f"{path}: string shorter than minLength")
+    if "minLength" in schema and isinstance(instance, str) and len(instance) < schema["minLength"]:
+        raise ValidationError(f"{path}: string shorter than minLength")
 
-    if "minItems" in schema and isinstance(instance, list):
-        if len(instance) < schema["minItems"]:
-            raise ValidationError(f"{path}: array shorter than minItems")
+    if "minItems" in schema and isinstance(instance, list) and len(instance) < schema["minItems"]:
+        raise ValidationError(f"{path}: array shorter than minItems")
 
     if isinstance(instance, dict):
         if "required" in schema:
@@ -146,7 +151,7 @@ def _validate(schema: dict, instance, root: dict, path: str = "$") -> None:
             _validate(schema["items"], item, root, f"{path}[{i}]")
 
     if "allOf" in schema:
-        for i, sub in enumerate(schema["allOf"]):
+        for sub in schema["allOf"]:
             _validate(sub, instance, root, path)
 
     if "oneOf" in schema:

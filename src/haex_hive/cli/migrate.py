@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 
 from haex_hive.cli.diagnostics import emit_refuse
-from haex_hive.constitution.safety import validate_no_plaintext_secrets
 from haex_hive.migrate import detect, sidecar, transform
 from haex_hive.schema import validator as schema_validator
 from haex_hive.util import exit_codes
@@ -53,6 +52,26 @@ def run(args: argparse.Namespace) -> int:
     except HaexError as exc:
         emit_refuse(exc)
         return exc.exit_code
+    except OSError:
+        refusal = HaexError(
+            message="could not read .haex-hive.json",
+            context={"path": str(v1_path)},
+            diagnostic_key="haex-hive-json-unreadable",
+            exit_code=exit_codes.IO_REFUSE,
+            hint="Check that .haex-hive.json is readable and try again.",
+        )
+        emit_refuse(refusal)
+        return refusal.exit_code
+    except ValueError:
+        refusal = HaexError(
+            message=".haex-hive.json is not valid JSON",
+            context={"path": str(v1_path)},
+            diagnostic_key="haex-hive-json-invalid",
+            exit_code=exit_codes.INPUT_REFUSE,
+            hint="Fix .haex-hive.json and retry the migration.",
+        )
+        emit_refuse(refusal)
+        return refusal.exit_code
 
     if version == 2:
         sys.stderr.write("already migrated to v2 (haex_hive_version: 2)\n")
@@ -65,6 +84,18 @@ def run(args: argparse.Namespace) -> int:
             sidecar.invalidate_stale_sidecar(repo_root)
         emit_refuse(exc)
         return exc.exit_code
+    except (OSError, ValueError):
+        if write_mode:
+            sidecar.invalidate_stale_sidecar(repo_root)
+        refusal = HaexError(
+            message=".haex-hive.json is not a valid v1 migration input",
+            context={"path": str(v1_path)},
+            diagnostic_key="haex-hive-json-invalid",
+            exit_code=exit_codes.INPUT_REFUSE,
+            hint="Fix the v1 manifest shape and retry the migration.",
+        )
+        emit_refuse(refusal)
+        return refusal.exit_code
 
     try:
         schema_validator.validate(json.loads(v2_bytes.decode("utf-8")), "haex-hive.v2.schema.json")

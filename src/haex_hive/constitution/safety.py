@@ -18,7 +18,7 @@ from haex_hive.util.errors import (
     TerminalUnsafeContributionError,
 )
 
-_PRIVATE_KEY_RE = re.compile(rb"-----BEGIN [A-Z ]*PRIVATE KEY-----")
+_PRIVATE_KEY_RE = re.compile(rb"-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----")
 _ASSIGNMENT_RE = re.compile(
     rb"""(?ix)
     \b(?:password|secret|token|api[_\-]?key|access[_\-]?key)\b
@@ -77,6 +77,7 @@ def validate_terminal_safe_display(body: bytes) -> None:
             0x200E, 0x200F,  # LTR/RTL marks
             0x202A, 0x202B, 0x202C, 0x202D, 0x202E,  # bidi embedding overrides
             0x2066, 0x2067, 0x2068, 0x2069,  # bidi isolates
+            0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF,  # invisible format controls
         ):
             raise TerminalUnsafeContributionError(
                 message="bidi control character in body",

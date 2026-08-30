@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Optional
 
+from haex_hive.model._immutable import freeze_json
 from haex_hive.model.atom_id import AtomId
 from haex_hive.model.repo_relative_path import RepoRelativePath
 from haex_hive.schema import validator as schema_validator
@@ -15,17 +16,17 @@ from haex_hive.schema import validator as schema_validator
 class PublisherAtomEntry:
     path: str
     version: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
 @dataclass(frozen=True)
 class PublisherManifest:
     haex_hive_version: str
     publisher: str
-    atoms: dict[str, PublisherAtomEntry]
+    atoms: Mapping[str, PublisherAtomEntry]
 
     @staticmethod
-    def from_json(raw: bytes) -> "PublisherManifest":
+    def from_json(raw: bytes) -> PublisherManifest:
         data = json.loads(raw.decode("utf-8"))
         schema_validator.validate(data, "publisher-manifest.v2.schema.json")
 
@@ -47,5 +48,5 @@ class PublisherManifest:
         return PublisherManifest(
             haex_hive_version=data["haex_hive_version"],
             publisher=publisher,
-            atoms=atoms,
+            atoms=freeze_json(atoms),
         )

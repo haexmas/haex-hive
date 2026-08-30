@@ -18,14 +18,14 @@ _SCP_RE = re.compile(r"^([^@:/\s]+)@([^:/\s]+):(.+)$")
 _ALLOWED_SCHEMES = frozenset({"https", "ssh"})
 
 
-def _refuse_credentials(url: str) -> None:
+def _refuse_credentials() -> None:
     raise CredentialInUrlError(
-        message=f"source URL contains credentials",
+        message="source URL contains credentials",
         context={"scheme": "redacted"},
     )
 
 
-def _refuse_scheme(scheme: str, url: str) -> None:
+def _refuse_scheme(scheme: str) -> None:
     raise UnsupportedSchemeError(
         message=f"unsupported source URL scheme: {scheme!r}",
         context={"scheme": scheme},
@@ -40,22 +40,22 @@ def canonicalize(url: str) -> str:
     if scp_match and "://" not in url:
         user, host, path = scp_match.groups()
         if user != "git":
-            _refuse_credentials(url)
+            _refuse_credentials()
         url = f"ssh://{host.lower()}/{path}"
 
     parts = urlsplit(url)
     scheme = parts.scheme.lower()
     if scheme not in _ALLOWED_SCHEMES:
-        _refuse_scheme(scheme, url)
+        _refuse_scheme(scheme)
 
     userinfo = parts.username
     if userinfo is not None:
         if scheme == "ssh" and userinfo == "git" and not parts.password:
             userinfo = None
         else:
-            _refuse_credentials(url)
+            _refuse_credentials()
     if parts.password:
-        _refuse_credentials(url)
+        _refuse_credentials()
 
     host = (parts.hostname or "").lower()
     if not host:

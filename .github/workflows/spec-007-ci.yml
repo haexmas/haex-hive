@@ -7,6 +7,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     strategy:
@@ -17,6 +20,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -27,6 +32,8 @@ jobs:
       - name: Run default pytest selection
         run: pytest -q
       - name: Run slow pytest selection
-        run: pytest -q -o addopts="" -m slow
+        run: >-
+          python -c "import pytest, sys; code = pytest.main(['-q', '-o', 'addopts=', '-m', 'slow']);
+          sys.exit(0 if code == pytest.ExitCode.NO_TESTS_COLLECTED else code)"
       - name: Run ruff
         run: ruff check .

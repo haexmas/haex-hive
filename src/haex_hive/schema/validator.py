@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import jsonschema
 from jsonschema import Draft202012Validator
 
 from haex_hive.schema import loader
@@ -33,7 +32,9 @@ class SchemaValidationError(ValueError):
 def _json_pointer(path: list[Any]) -> str:
     if not path:
         return "/"
-    return "/" + "/".join(str(p) for p in path)
+    return "/" + "/".join(
+        str(token).replace("~", "~0").replace("/", "~1") for token in path
+    )
 
 
 def validate(data: Any, schema_name: str) -> None:

@@ -51,7 +51,7 @@ def test_rejects_esc_control() -> None:
 
 def test_rejects_bidi_marker() -> None:
     with pytest.raises(TerminalUnsafeContributionError):
-        validate_terminal_safe_display("legitimate‮text".encode("utf-8"))
+        validate_terminal_safe_display("legitimate‮text".encode())
 
 
 def test_rejects_hide_from_operator() -> None:
