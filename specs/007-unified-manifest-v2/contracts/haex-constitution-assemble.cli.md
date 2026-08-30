@@ -57,11 +57,11 @@ Both writes use the journaled generation protocol in FR-035. Its sole journal pa
 | Code | Meaning | Notes |
 |---|---|---|
 | 0 | Success | |
-| 2 | Resolution refuse — zero constitution sources or one or more atoms could not be resolved | For zero sources: `no constitution sources declared`; existing output files are untouched. Other cases include missing publisher manifest, missing atom manifest, absent `contributes.constitution`, schema violation, or collision. See FR-025. |
+| 2 | Resolution refuse — zero constitution sources or one or more atoms could not be resolved | For zero sources: `key=no-sources-declared`, message `no constitution sources declared`; existing output files are untouched. Other cases carry more specific keys (e.g. `key=publisher-manifest-not-found`, `key=atom-manifest-not-found`, `key=missing-contribution`, `key=atom-id-collision`) and include missing publisher manifest, missing atom manifest, absent `contributes.constitution`, schema violation, or collision. See FR-025. |
 | 3 | I/O refuse — publisher clone unavailable OR pinned SHA not in clone OR contribution file not found at SHA | See spec Edge Cases. |
 | 4 | Multi-source LLM refuse — `--llm=none` was resolved, or `--llm=stdio` lacks an operator-attached local LLM | FR-028. `.haex-hive/constitution.md` and `.haex-hive/install.lock` untouched. |
 | 5 | Pending merge state | Emitted only under `--llm=file` after writing `.haex-hive/constitution.merge.pending.json`. Operator/agent produces the merged output out-of-process; re-invocation with `--accept-merged` completes the transaction. `.haex-hive/constitution.md` and `.haex-hive/install.lock` untouched. |
-| 6 | Post-write validation refuse — the produced `constitution.md` failed a post-write integrity check | Should not happen; indicates a bug. Both output files rolled back to their pre-command state. |
+| 6 | Post-write validation refuse — the produced `constitution.md` failed a post-write integrity check | `key=post-write-validation-failed`; should not happen — indicates a bug or storage-layer corruption. Both output files are rolled back to their pre-command state via the FR-035 journal's recorded backups (or removed when the recorded prior state was `absent`). |
 | 7 | System refuse — `.haex-hive.json` missing or version mismatch (FR-034) | |
 | 8 | Constitution safety refuse — a multi-source candidate violates Principle VIII | `key=constitution-concealment-instruction`; candidate is not staged and both output files are untouched. |
 | 9 | Constitution writer busy | `key=constitution-writer-busy`; another `assemble` owns the process-lifetime lock, so this invocation does not inspect, recover, replace, or remove its journal or targets. |
