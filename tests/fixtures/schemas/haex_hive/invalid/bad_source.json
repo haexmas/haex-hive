@@ -1,0 +1,11 @@
+{
+  "haex_hive_version": "2",
+  "identity": "com.github.example.project",
+  "atoms": [
+    {
+      "source": "https://user:pass@github.com/example/repo",
+      "revision": "0000000000000000000000000000000000000000",
+      "includes": ["com.example.repo.constitution"]
+    }
+  ]
+}

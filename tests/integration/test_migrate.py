@@ -1,0 +1,94 @@
+"""T040 — end-to-end `haex migrate` integration coverage for US1."""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+
+pytestmark = pytest.mark.skipif(
+    shutil.which("git") is None, reason="git binary required"
+)
+
+
+def _run_haex(repo_root: Path, *args: str, state_root: Path) -> subprocess.CompletedProcess:
+    env = os.environ.copy()
+    env["HAEX_HIVE_STATE"] = str(state_root)
+    return subprocess.run(
+        [sys.executable, "-m", "haex_hive", "--repo-root", str(repo_root), *args],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def _prepare_consumer(fixture: dict, tmp_path: Path, extra: dict | None = None) -> Path:
+    consumer = tmp_path / "consumer"
+    shutil.copytree(fixture["publisher"], consumer)
+    v1 = {
+        "haex_hive_version": "1",
+        "identity": "github.com/haexmas/haex-hive",
+        "harness_sources": [
+            {
+                "role": "constitution",
+                "repository": "self",
+                "revision": fixture["commit_a"],
+                "path": ".specify/memory/constitution.md",
+            }
+        ],
+    }
+    if extra:
+        v1.update(extra)
+    (consumer / ".haex-hive.json").write_text(json.dumps(v1, indent=2))
+    return consumer
+
+
+def test_dry_run_prints_diff_no_sidecar(self_migration_fixture: dict, tmp_path: Path) -> None:
+    consumer = _prepare_consumer(self_migration_fixture, tmp_path)
+    proc = _run_haex(consumer, "migrate", "--dry-run", state_root=self_migration_fixture["state_root"])
+    assert proc.returncode == 0, proc.stderr
+    assert "@@" in proc.stdout
+    assert not (consumer / ".haex-hive.json.migrated").exists()
+
+
+def test_write_mode_creates_sidecar(self_migration_fixture: dict, tmp_path: Path) -> None:
+    consumer = _prepare_consumer(self_migration_fixture, tmp_path)
+    proc = _run_haex(consumer, "migrate", state_root=self_migration_fixture["state_root"])
+    assert proc.returncode == 0, proc.stderr
+    sidecar = consumer / ".haex-hive.json.migrated"
+    assert sidecar.exists()
+    data = json.loads(sidecar.read_text())
+    assert data["haex_hive_version"] == "2"
+    assert data["identity"] == "com.github.haexmas.haex-hive"
+
+
+def test_already_v2_no_write(self_migration_fixture: dict, tmp_path: Path) -> None:
+    consumer = tmp_path / "consumer"
+    shutil.copytree(self_migration_fixture["publisher"], consumer)
+    (consumer / ".haex-hive.json").write_text(
+        json.dumps(
+            {
+                "haex_hive_version": "2",
+                "identity": "com.github.haexmas.haex-hive",
+                "atoms": [],
+            },
+            indent=2,
+        )
+    )
+    proc = _run_haex(consumer, "migrate", state_root=self_migration_fixture["state_root"])
+    assert proc.returncode == 0
+    assert "already migrated to v2" in proc.stderr
+    assert not (consumer / ".haex-hive.json.migrated").exists()
+
+
+def test_dry_run_and_check_conflict_is_usage_error(self_migration_fixture: dict, tmp_path: Path) -> None:
+    consumer = _prepare_consumer(self_migration_fixture, tmp_path)
+    proc = _run_haex(consumer, "migrate", "--dry-run", "--check",
+                      state_root=self_migration_fixture["state_root"])
+    assert proc.returncode == 64

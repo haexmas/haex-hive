@@ -1,0 +1,32 @@
+name: spec-007-ci
+
+on:
+  push:
+    branches: [main, "007-*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.10", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install package with dev extras
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Run default pytest selection
+        run: pytest -q
+      - name: Run slow pytest selection
+        run: pytest -q -o addopts="" -m slow
+      - name: Run ruff
+        run: ruff check .
