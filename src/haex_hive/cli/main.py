@@ -29,6 +29,7 @@ def _installed_version() -> tuple[int, int, int]:
 
 
 INSTALLED_VERSION = _installed_version()
+INSTALLED_VERSION_STRING = ".".join(str(n) for n in INSTALLED_VERSION)
 
 
 def _check_min_version(repo_root: Path) -> None:

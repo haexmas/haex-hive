@@ -25,6 +25,7 @@ _IS_WINDOWS = sys.platform == "win32"
 JOURNAL_NAME = "constitution-transaction.json"
 CONSTITUTION_NAME = "constitution.md"
 INSTALL_LOCK_NAME = "install.lock"
+WRITER_LOCK_NAME = "constitution-transaction.lock"
 HAEX_HIVE_DIR = ".haex-hive"
 
 
