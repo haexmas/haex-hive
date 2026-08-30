@@ -39,8 +39,8 @@ from haex_hive.util.errors import (
 def test_constitution_commands_refuse_without_traceback(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert main(["--repo-root", str(tmp_path), "constitution", "show"]) == 64
-    assert "key=not-implemented" in capsys.readouterr().err
+    assert main(["--repo-root", str(tmp_path), "constitution", "show"]) == 2
+    assert "key=constitution-not-assembled" in capsys.readouterr().err
 
 
 def test_migrate_invalid_manifest_is_typed(

@@ -188,12 +188,12 @@ Single-project Python CLI. Source under [src/haex_hive/](../../src/haex_hive/), 
 
 ### Tests for US4
 
-- [ ] T063 [P] [US4] Integration test [tests/integration/test_show.py](../../tests/integration/test_show.py) covering: preface + body byte-identity, `--no-preface` scripting mode, missing-constitution refusal (exit 2 `key=constitution-not-assembled`), missing-lock refusal (exit 3), install-lock schema-invalid vs. sources-not-canonical refusals (exit 4 with distinct keys), integrity-mismatch refusal (exit 6 `key=constitution-integrity-mismatch`), live-journal refusal (exit 7 `key=incomplete-assembly-transaction`).
+- [X] T063 [P] [US4] Integration test [tests/integration/test_show.py](../../tests/integration/test_show.py) covering: preface + body byte-identity, `--no-preface` scripting mode, missing-constitution refusal (exit 2 `key=constitution-not-assembled`), missing-lock refusal (exit 3), install-lock schema-invalid vs. sources-not-canonical refusals (exit 4 with distinct keys), integrity-mismatch refusal (exit 6 `key=constitution-integrity-mismatch`), live-journal refusal (exit 7 `key=incomplete-assembly-transaction`).
 
 ### Implementation for US4
 
-- [ ] T064 [US4] Implement [src/haex_hive/constitution/show.py](../../src/haex_hive/constitution/show.py) `show(repo_root, *, no_preface: bool) -> None`: refuse if a live transaction journal exists (T017 has an `is_journaled` helper); load and validate `install.lock` (schema + `constitution.sources[]` uniqueness/sort — reusing T025); recompute D15 digest of `constitution.md` and compare against `content_integrity`; on a match, synthesize the "Assembled from" preface (unless `--no-preface`) followed by `---` and the byte-for-byte body; depends on T015, T017, T025.
-- [ ] T065 [US4] Wire the `haex constitution show` handler in [src/haex_hive/cli/constitution.py](../../src/haex_hive/cli/constitution.py) with a `--no-preface` flag and the exact exit-code mapping in [contracts/haex-constitution-show.cli.md](contracts/haex-constitution-show.cli.md).
+- [X] T064 [US4] Implement [src/haex_hive/constitution/show.py](../../src/haex_hive/constitution/show.py) `show(repo_root, *, no_preface: bool) -> None`: refuse if a live transaction journal exists (T017 has an `is_journaled` helper); load and validate `install.lock` (schema + `constitution.sources[]` uniqueness/sort — reusing T025); recompute D15 digest of `constitution.md` and compare against `content_integrity`; on a match, synthesize the "Assembled from" preface (unless `--no-preface`) followed by `---` and the byte-for-byte body; depends on T015, T017, T025.
+- [X] T065 [US4] Wire the `haex constitution show` handler in [src/haex_hive/cli/constitution.py](../../src/haex_hive/cli/constitution.py) with a `--no-preface` flag and the exact exit-code mapping in [contracts/haex-constitution-show.cli.md](contracts/haex-constitution-show.cli.md).
 
 **Checkpoint**: All four user stories are independently functional.
 

@@ -1,0 +1,163 @@
+"""T063 — end-to-end `haex constitution show` (US4)."""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git binary required")
+
+
+def _run_haex(
+    repo_root: Path,
+    *args: str,
+    state_root: Path,
+    stdin_bytes: bytes | None = None,
+) -> subprocess.CompletedProcess:
+    env = os.environ.copy()
+    env["HAEX_HIVE_STATE"] = str(state_root)
+    return subprocess.run(
+        [sys.executable, "-m", "haex_hive", "--repo-root", str(repo_root), *args],
+        input=stdin_bytes if stdin_bytes is not None else b"",
+        capture_output=True,
+        env=env,
+    )
+
+
+def _assemble(consumer: Path, state_root: Path) -> None:
+    proc = _run_haex(consumer, "constitution", "assemble", state_root=state_root)
+    assert proc.returncode == 0, proc.stderr.decode()
+
+
+def _assemble_multi(consumer: Path, state_root: Path, merged: bytes) -> None:
+    candidate = f"Content-Length: {len(merged)}\n".encode("ascii") + merged
+    confirm = b"--haex-confirm: yes\n"
+    proc = _run_haex(
+        consumer,
+        "constitution",
+        "assemble",
+        "--llm=stdio",
+        state_root=state_root,
+        stdin_bytes=candidate + confirm,
+    )
+    assert proc.returncode == 0, proc.stderr.decode()
+
+
+def _show(consumer: Path, *args: str, state_root: Path) -> subprocess.CompletedProcess:
+    return _run_haex(consumer, "constitution", "show", *args, state_root=state_root)
+
+
+def test_preface_and_body_byte_identity(single_source_constitution_fixture: dict) -> None:
+    consumer = single_source_constitution_fixture["consumer"]
+    state_root = single_source_constitution_fixture["state_root"]
+    _assemble(consumer, state_root)
+
+    proc = _show(consumer, state_root=state_root)
+    assert proc.returncode == 0, proc.stderr.decode()
+
+    atom_id = single_source_constitution_fixture["atom_id"]
+    commit_sha = single_source_constitution_fixture["commit_sha"]
+    canonical = single_source_constitution_fixture["canonical"]
+    body = (consumer / ".haex-hive" / "constitution.md").read_bytes()
+    expected = (
+        f"# Assembled from\n- {atom_id} @ {commit_sha[:7]} ({canonical})\n\n---\n\n"
+    ).encode() + body
+    assert proc.stdout == expected
+
+
+def test_no_preface_prints_only_body(single_source_constitution_fixture: dict) -> None:
+    consumer = single_source_constitution_fixture["consumer"]
+    state_root = single_source_constitution_fixture["state_root"]
+    _assemble(consumer, state_root)
+
+    proc = _show(consumer, "--no-preface", state_root=state_root)
+    assert proc.returncode == 0, proc.stderr.decode()
+
+    body = (consumer / ".haex-hive" / "constitution.md").read_bytes()
+    assert proc.stdout == body
+
+
+def test_missing_constitution_refuses(tmp_path: Path) -> None:
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+
+    proc = _show(consumer, state_root=tmp_path / "state")
+    assert proc.returncode == 2
+    assert b"key=constitution-not-assembled" in proc.stderr
+
+
+def test_missing_lock_refuses(single_source_constitution_fixture: dict) -> None:
+    consumer = single_source_constitution_fixture["consumer"]
+    state_root = single_source_constitution_fixture["state_root"]
+    _assemble(consumer, state_root)
+    (consumer / ".haex-hive" / "install.lock").unlink()
+
+    proc = _show(consumer, state_root=state_root)
+    assert proc.returncode == 3
+    assert b"key=install-lock-missing" in proc.stderr
+
+
+def test_install_lock_schema_invalid_refuses(single_source_constitution_fixture: dict) -> None:
+    consumer = single_source_constitution_fixture["consumer"]
+    state_root = single_source_constitution_fixture["state_root"]
+    _assemble(consumer, state_root)
+
+    lock_path = consumer / ".haex-hive" / "install.lock"
+    data = json.loads(lock_path.read_text())
+    del data["constitution"]["content_integrity"]
+    lock_path.write_text(json.dumps(data))
+
+    proc = _show(consumer, state_root=state_root)
+    assert proc.returncode == 4
+    assert b"key=install-lock-schema-invalid" in proc.stderr
+
+
+def test_install_lock_sources_not_canonical_refuses(
+    multi_source_constitution_fixture: dict,
+) -> None:
+    consumer = multi_source_constitution_fixture["consumer"]
+    state_root = multi_source_constitution_fixture["state_root"]
+    merged = b"# Merged Constitution\n\nBe kind.\nBe bold.\n"
+    _assemble_multi(consumer, state_root, merged)
+
+    lock_path = consumer / ".haex-hive" / "install.lock"
+    data = json.loads(lock_path.read_text())
+    data["constitution"]["sources"].reverse()
+    lock_path.write_text(json.dumps(data))
+
+    proc = _show(consumer, state_root=state_root)
+    assert proc.returncode == 4
+    assert b"key=install-lock-sources-not-canonical" in proc.stderr
+
+
+def test_integrity_mismatch_refuses(single_source_constitution_fixture: dict) -> None:
+    consumer = single_source_constitution_fixture["consumer"]
+    state_root = single_source_constitution_fixture["state_root"]
+    _assemble(consumer, state_root)
+
+    constitution_path = consumer / ".haex-hive" / "constitution.md"
+    constitution_path.write_bytes(constitution_path.read_bytes() + b"tampered\n")
+
+    proc = _show(consumer, state_root=state_root)
+    assert proc.returncode == 6
+    assert b"key=constitution-integrity-mismatch" in proc.stderr
+    assert proc.stdout == b""
+
+
+def test_live_journal_refuses(single_source_constitution_fixture: dict) -> None:
+    consumer = single_source_constitution_fixture["consumer"]
+    state_root = single_source_constitution_fixture["state_root"]
+    _assemble(consumer, state_root)
+
+    (consumer / ".haex-hive" / "constitution-transaction.json").write_text("{}")
+
+    proc = _show(consumer, state_root=state_root)
+    assert proc.returncode == 7
+    assert b"key=constitution-transaction-incomplete" in proc.stderr
+    assert proc.stdout == b""
