@@ -18,13 +18,16 @@ pytestmark = [
 ]
 
 
-def _run_haex(repo_root: Path, *args: str, state_root: Path) -> subprocess.CompletedProcess:
+def _run_haex(
+    repo_root: Path, *args: str, state_root: Path, timeout: float
+) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env["HAEX_HIVE_STATE"] = str(state_root)
     return subprocess.run(
         [sys.executable, "-m", "haex_hive", "--repo-root", str(repo_root), *args],
         capture_output=True,
         env=env,
+        timeout=timeout,
     )
 
 
@@ -51,7 +54,11 @@ def test_migrate_dry_run_completes_under_5s(self_migration_fixture: dict, tmp_pa
 
     start = time.monotonic()
     proc = _run_haex(
-        consumer, "migrate", "--dry-run", state_root=self_migration_fixture["state_root"]
+        consumer,
+        "migrate",
+        "--dry-run",
+        state_root=self_migration_fixture["state_root"],
+        timeout=5.0,
     )
     elapsed = time.monotonic() - start
 
@@ -64,7 +71,14 @@ def test_assemble_refuses_missing_llm_under_1s(multi_source_constitution_fixture
     state_root = multi_source_constitution_fixture["state_root"]
 
     start = time.monotonic()
-    proc = _run_haex(consumer, "constitution", "assemble", "--llm=none", state_root=state_root)
+    proc = _run_haex(
+        consumer,
+        "constitution",
+        "assemble",
+        "--llm=none",
+        state_root=state_root,
+        timeout=1.0,
+    )
     elapsed = time.monotonic() - start
 
     assert proc.returncode == 4
