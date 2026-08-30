@@ -194,6 +194,9 @@ def recover_if_journaled(repo_root: Path) -> bool:
             raise ValueError("existing transaction target is missing its backup")
         validated_entries.append((target, prior, backup, staged))
 
+    if seen_logical != set(fixed_targets):
+        raise ValueError("transaction journal must contain both logical targets")
+
     for target, prior, backup, staged in validated_entries:
         if prior == "existed" and backup:
             if backup.exists():

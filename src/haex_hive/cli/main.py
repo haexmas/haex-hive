@@ -40,6 +40,8 @@ def _check_min_version(repo_root: Path) -> None:
         data = json.loads(raw.decode("utf-8"))
     except (OSError, ValueError):
         return
+    if not isinstance(data, dict):
+        return
     min_version_raw = data.get("haex_hive_min_version")
     if not min_version_raw:
         return

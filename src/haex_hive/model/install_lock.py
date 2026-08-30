@@ -8,10 +8,12 @@ and bytewise UTF-8 sort order.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 from haex_hive.io import json_deterministic
+from haex_hive.model._immutable import freeze_json, thaw_json
 from haex_hive.schema import validator as schema_validator
 from haex_hive.util.errors import (
     InstallLockSchemaInvalidError,
@@ -44,11 +46,7 @@ class InstallLock:
     haex_hive_version: str
     generated_by: str
     constitution: ConstitutionLockSection | None = None
-    unknown_top_level: dict[str, Any] = None  # type: ignore[assignment]
-
-    def __post_init__(self) -> None:
-        if self.unknown_top_level is None:
-            self.unknown_top_level = {}
+    unknown_top_level: Mapping[str, Any] = field(default_factory=dict)
 
     @staticmethod
     def from_json(raw: bytes) -> InstallLock:
@@ -81,7 +79,7 @@ class InstallLock:
             )
 
         known = {"haex_hive_version", "generated_by", "constitution"}
-        unknown = {k: v for k, v in data.items() if k not in known}
+        unknown = freeze_json({k: v for k, v in data.items() if k not in known})
         return InstallLock(
             haex_hive_version=data["haex_hive_version"],
             generated_by=data["generated_by"],
@@ -105,9 +103,9 @@ class InstallLock:
                     {"id": s.id, "revision": s.revision, "source": s.source}
                     for s in self.constitution.sources
                 ],
-            }
+        }
         for k, v in self.unknown_top_level.items():
-            obj.setdefault(k, v)
+            obj.setdefault(k, thaw_json(v))
         return json_deterministic.dumps(obj)
 
 
