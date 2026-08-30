@@ -188,7 +188,7 @@ Single-project Python CLI. Source under [src/haex_hive/](../../src/haex_hive/), 
 
 ### Tests for US4
 
-- [X] T063 [P] [US4] Integration test [tests/integration/test_show.py](../../tests/integration/test_show.py) covering: preface + body byte-identity, `--no-preface` scripting mode, missing-constitution refusal (exit 2 `key=constitution-not-assembled`), missing-lock refusal (exit 3), install-lock schema-invalid vs. sources-not-canonical refusals (exit 4 with distinct keys), integrity-mismatch refusal (exit 6 `key=constitution-integrity-mismatch`), live-journal refusal (exit 7 `key=incomplete-assembly-transaction`).
+- [X] T063 [P] [US4] Integration test [tests/integration/test_show.py](../../tests/integration/test_show.py) covering: preface + body byte-identity, `--no-preface` scripting mode, missing-constitution refusal (exit 2 `key=constitution-not-assembled`), missing-lock refusal (exit 3), install-lock schema-invalid vs. sources-not-canonical refusals (exit 4 with distinct keys), integrity-mismatch refusal (exit 6 `key=constitution-integrity-mismatch`), live-journal refusal (exit 7 `key=constitution-transaction-incomplete`).
 
 ### Implementation for US4
 
