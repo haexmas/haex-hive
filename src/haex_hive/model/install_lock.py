@@ -78,6 +78,15 @@ class InstallLock:
                 content_integrity=section["content_integrity"],
             )
 
+        ownership = data.get("ownership")
+        if ownership is not None:
+            paths = [record["path"] for record in ownership["paths"]]
+            if len(paths) != len(set(paths)):
+                raise InstallLockSchemaInvalidError(
+                    message="ownership.paths contains duplicate path values",
+                    context={"field_path": "/ownership/paths/path"},
+                )
+
         known = {"haex_hive_version", "generated_by", "constitution"}
         unknown = freeze_json({k: v for k, v in data.items() if k not in known})
         return InstallLock(
