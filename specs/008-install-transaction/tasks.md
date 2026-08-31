@@ -63,6 +63,12 @@ Single-project Python CLI (Spec 007 baseline). Source lives under [src/haex_hive
 - [ ] T019 Extend [src/haex_hive/io/writer_lock.py](../../src/haex_hive/io/writer_lock.py) with shared device-local path helpers and an exclusive-with-owner-metadata lock primitive (`fcntl.flock(LOCK_EX | LOCK_NB)` on POSIX, `msvcrt.locking(fd, LK_NBLCK, 1)` on Windows) that reads/writes the `install.mutex` layout defined in data-model.md, including in-place wall-clock heartbeat updates. Derive the canonical project identity from the git remote or `.harness-id`, hash it to the filesystem-safe `<repo-key>`, derive a device-local `<checkout-key>` from the resolved checkout path, and store the full identity in `repo-identity.v1.json`. Existing constitution-writer callsites use the new paths while discovering legacy lock/journal artifacts for compatibility; new callers pass an `OwnerToken` (from T013) at acquisition. Depends on T013 and T017.
 - [ ] T020 Generalise [src/haex_hive/io/transaction.py](../../src/haex_hive/io/transaction.py) to accept a multi-participant plan (list of per-file staged writes) instead of a single-file assemble; use the shared device-local journal path, migrate a valid legacy constitution journal before opening the Spec-008 JSONL journal, and preserve the constitution-assemble callsite as a single-participant special case per research §R9. Depends on T014 and T018.
 
+The device-local state root owns the mutex, identity record, journal, and other
+durable transaction metadata. Staging and rollback/pre-image trees remain
+same-filesystem siblings of their checkout targets as required by FR-003;
+they are transaction-owned temporary content, not alternate state-root
+artifacts, and are removed by journaled cleanup after publication.
+
 **Checkpoint**: Foundation ready — the install subpackage compiles, schemas validate against their fixtures, and constitution assemble still passes its existing tests. User story implementation can now begin.
 
 ---
@@ -132,7 +138,7 @@ Single-project Python CLI (Spec 007 baseline). Source lives under [src/haex_hive
 ### Implementation for User Story 3
 
 - [ ] T042 [US3] Implement journal replay/rollback state machine in [src/haex_hive/install/journal.py](../../src/haex_hive/install/journal.py) per data-model.md: verify tail-hash chain, walk entries, dispatch to complete-forward or roll-back per last consistent state. Depends on T014.
-- [ ] T043 [US3] Implement rollback + prior-generation restore in [src/haex_hive/install/stage.py](../../src/haex_hive/install/stage.py): for each `stage_file` entry with a completed replace, restore the pre-image (kept under `<root>.rollback.<prev-gen>/` sibling); on marker roll-back, restore prior `visibility.json`. Depends on T026, T042.
+- [ ] T043 [US3] Implement rollback + prior-generation restore in [src/haex_hive/install/stage.py](../../src/haex_hive/install/stage.py): for each `stage_file` entry with a completed replace, restore the pre-image (kept under the same-filesystem `<root>.rollback.<prev-gen>/` sibling); on marker roll-back, restore prior `visibility.json`. These temporary trees are not durable state-root artifacts and are removed by journaled cleanup. Depends on T026, T042.
 - [ ] T044 [US3] Add `--recover` CLI flag handling in [src/haex_hive/cli/install.py](../../src/haex_hive/cli/install.py): acquires exclusive lock (T019), replays or rolls back via T042/T043, reports "recovered generation `<gen>`" (either completed or rolled back), exit 0. Depends on T028, T042.
 - [ ] T045 [US3] Implement stale-staging cleanup at the start of every successful exclusive-lock acquisition in [src/haex_hive/cli/install.py](../../src/haex_hive/cli/install.py) or [src/haex_hive/install/stage.py](../../src/haex_hive/install/stage.py): discover leftover `<root>.staging.<gen>/` and `<root>.rollback.<prev-gen>/` from a pre-lock crash, `rmtree` those not referenced by a journal-in-flight. Depends on T042.
 
