@@ -5,7 +5,7 @@
 
 ## Summary
 
-Package an opt-in atom — not part of haex-hive's core constitution — that any adopting repo (including haex-hive itself) can add to `.haex-hive.json` to require agents to consult the project's `graphify` knowledge graph before authoring new named code, preferring extension of existing artifacts over duplication. The atom contributes a constitution principle (merged via the existing `haex constitution assemble` mechanism), a pair of cross-platform Python git hooks that keep `graphify-out/` current on tracked branches and snapshot it into new worktrees, and an installer that handles the atom's one external dependency (the `graphify` CLI) without silently mutating the operator's environment. `graphify` owns and writes the freshness marker; the atom's refresh helper only invokes the CLI. All open design questions were resolved in a prior brainstorm ([design doc](../../../docs/plans/2026-08-31-graphify-first-authoring-design.md)) and a `/speckit.clarify` pass (two tool-failure-semantics questions, both resolved to warn-and-continue); nothing here needs further research to begin implementation.
+Package an opt-in atom — not part of haex-hive's core constitution — that any adopting repo (including haex-hive itself) can add to `.haex-hive.json` to require agents to consult the project's `graphify` knowledge graph before authoring new named code, preferring extension of existing artifacts over duplication. The atom contributes a constitution principle (merged via the existing `haex constitution assemble` mechanism), a pair of cross-platform Python git hooks that keep `graphify-out/` current on tracked branches and snapshot it into new worktrees, and an installer that handles the atom's one external dependency (the `graphify` CLI) without silently mutating the operator's environment. `graphify` owns the graph outputs; the atom's refresh helper invokes the CLI and records the freshness marker after a successful update. All open design questions were resolved in a prior brainstorm ([design doc](../../../docs/plans/2026-08-31-graphify-first-authoring-design.md)) and a `/speckit.clarify` pass (two tool-failure-semantics questions, both resolved to warn-and-continue); nothing here needs further research to begin implementation.
 
 ## Technical Context
 
@@ -71,8 +71,8 @@ This feature does not fit the generic src/tests application template — its pri
 ├── hooks/
 │   ├── post-commit                          # thin entrypoint; shebang resolved by install.py
 │   ├── post-checkout                        # thin entrypoint; shebang resolved by install.py
-│   ├── _refresh.py                          # invokes graphify update; graphify writes the freshness marker
-│   └── _snapshot.py                         # copies graphify-out/ from the parent worktree
+│   ├── _refresh.py                          # invokes graphify update; records the freshness marker
+│   └── _snapshot.py                         # copies graphify-out/ from the explicitly selected parent worktree
 ├── install.py                               # dependency check, hook install, .gitignore entry
 └── README.md                                # operator adoption docs
 

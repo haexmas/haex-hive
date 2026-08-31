@@ -41,14 +41,15 @@ Not owned by this atom — it is `graphify`'s own artifact directory. This atom 
 
 ## FreshnessMarker (graphify-out/.meta.json)
 
-Written by `graphify` itself at index/refresh time. The atom does not synthesize
-or rewrite this marker; `_refresh.py` only invokes the graphify process.
+Written by this atom's `_refresh.py` after a successful `graphify update`.
+`graphify` owns the graph outputs; the wrapper records the commit revision that
+the completed output reflects.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `indexed_at_sha` | string (git SHA) | The commit the graph currently reflects. |
 
-**Lifecycle**: on a tracked branch, missing `graph.json` triggers bootstrap; a missing/invalid marker or marker differing from current `HEAD` triggers refresh; otherwise the graph is current. On a feature-branch snapshot, it is intentionally frozen at the fork point and never compared against the feature branch's own advancing `HEAD` or refreshed. If bootstrap or refresh fails, the agent warns, continues, and flags the incomplete refresh for a later manual check.
+**Lifecycle**: on a tracked branch, missing `graph.json` triggers bootstrap; a missing/invalid marker or marker differing from current `HEAD` triggers refresh; otherwise the graph is current. On a feature-branch snapshot, it is intentionally frozen at the fork point and never compared against the feature branch's own advancing `HEAD` or refreshed. If a feature snapshot is incomplete, the agent warns and continues with failed-consultation handling without running graphify against feature `HEAD`. If tracked-branch bootstrap or refresh fails, the agent warns, continues, and flags the incomplete refresh for a later manual check.
 
 ## InstallerState (ephemeral — install.py's own run-time checks, not persisted)
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -10,12 +11,13 @@ import _snapshot  # noqa: E402
 import pytest
 
 
-def _git(repo: Path, *args: str) -> str:
+def _git(repo: Path, *args: str, env: dict[str, str] | None = None) -> str:
     proc = subprocess.run(
         ["git", "-C", str(repo), *args],
         capture_output=True,
         text=True,
         check=True,
+        env=env,
     )
     return proc.stdout.strip()
 
@@ -48,12 +50,17 @@ def parent_with_graph(tmp_path: Path) -> tuple[Path, Path]:
     (graph / "nodes.jsonl").write_text('{"id": "n1"}\n')
 
     child = tmp_path / "child"
-    _git(parent, "worktree", "add", "-q", "-b", "feature/x", str(child))
+    env = os.environ.copy()
+    env[_snapshot._PARENT_WORKTREE_ENV] = str(parent)
+    _git(parent, "worktree", "add", "-q", "-b", "feature/x", str(child), env=env)
     return parent, child
 
 
-def test_copies_when_absent_locally(parent_with_graph: tuple[Path, Path]) -> None:
+def test_copies_when_absent_locally(
+    parent_with_graph: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
     parent, child = parent_with_graph
+    monkeypatch.setenv(_snapshot._PARENT_WORKTREE_ENV, str(parent))
     assert not (child / "graphify-out").exists()
     assert _snapshot.snapshot(child) is True
     assert (child / "graphify-out" / ".meta.json").is_file()
@@ -78,8 +85,11 @@ def test_noop_when_already_present(parent_with_graph: tuple[Path, Path]) -> None
     )
 
 
-def test_replaces_incomplete_destination(parent_with_graph: tuple[Path, Path]) -> None:
-    _, child = parent_with_graph
+def test_replaces_incomplete_destination(
+    parent_with_graph: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    parent, child = parent_with_graph
+    monkeypatch.setenv(_snapshot._PARENT_WORKTREE_ENV, str(parent))
     existing = child / "graphify-out"
     existing.mkdir()
     (existing / ".meta.json").write_text("{}")
@@ -101,13 +111,27 @@ def test_noop_when_parent_has_no_graph(tmp_path: Path) -> None:
     _git(parent, "commit", "-q", "-m", "init")
 
     child = tmp_path / "child"
-    _git(parent, "worktree", "add", "-q", "-b", "feature/x", str(child))
+    env = os.environ.copy()
+    env[_snapshot._PARENT_WORKTREE_ENV] = str(parent)
+    _git(parent, "worktree", "add", "-q", "-b", "feature/x", str(child), env=env)
     incomplete_graph = parent / "graphify-out"
     incomplete_graph.mkdir()
     (incomplete_graph / ".meta.json").write_text("{}")
 
     assert _snapshot.snapshot(child) is False
     assert not (child / "graphify-out").exists()
+
+
+def test_noop_without_explicit_parent_signal(
+    parent_with_graph: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, child = parent_with_graph
+    graph = child / "graphify-out"
+    assert not graph.exists()
+
+    monkeypatch.delenv(_snapshot._PARENT_WORKTREE_ENV, raising=False)
+    assert _snapshot.snapshot(child) is False
+    assert not graph.exists()
 
 
 def test_snapshot_never_raises_when_outside_git(tmp_path: Path) -> None:

@@ -69,10 +69,10 @@ Per plan.md's Structure Decision — not the generic `src/`/`tests/` application
 
 **Independent Test**: Commit a change on the tracked branch through plain `git commit` (no agent involved). Verify `graphify-out/` reflects the new commit afterward.
 
-- [X] T009 [P] [US2] Implement refresh logic in `.specify/atoms/graphify-first-authoring/hooks/_refresh.py`: invoke `graphify update <repo-root>`; `graphify` itself writes `graphify-out/.meta.json`'s `indexed_at_sha` during indexing/refresh; on failure, warn to stderr and return normally rather than raising (contracts/git-hooks.md, FR-006)
+- [X] T009 [P] [US2] Implement refresh logic in `.specify/atoms/graphify-first-authoring/hooks/_refresh.py`: invoke `graphify update <repo-root>`, verify it produces `graphify-out/graph.json`, and record the current `HEAD` in `graphify-out/.meta.json`; on failure, warn to stderr and return normally rather than raising (contracts/git-hooks.md, FR-006)
 - [X] T010 [US2] Implement the `post-commit` hook entrypoint in `.specify/atoms/graphify-first-authoring/hooks/post-commit`: check `_tracked_branches.is_tracked()` (no-op if false), call `_refresh.py`, always exit 0 regardless of outcome (depends on T003, T009)
-- [X] T011 [P] [US2] Unit tests for refresh logic in `tests/atoms/graphify_first_authoring/test_refresh.py`: the simulated graphify process writes the freshness marker as graphify would, and the real refresh path invokes that process successfully; simulated `graphify` failure warns without raising (depends on T009)
-- [X] T012 [US2] Integration test in `tests/atoms/graphify_first_authoring/test_post_commit_hook.py`: real `git commit` on a tracked branch triggers the installed hook and the graphify stub writes `graphify-out/.meta.json`'s `indexed_at_sha` through the real `_refresh.py` path, matching the new `HEAD` (depends on T010)
+- [X] T011 [P] [US2] Unit tests for refresh logic in `tests/atoms/graphify_first_authoring/test_refresh.py`: the simulated graphify process writes only the graph output, and the real refresh path records the freshness marker; simulated `graphify` failure warns without raising (depends on T009)
+- [X] T012 [US2] Integration test in `tests/atoms/graphify_first_authoring/test_post_commit_hook.py`: real `git commit` on a tracked branch triggers the installed hook and the real `_refresh.py` path records `graphify-out/.meta.json`'s `indexed_at_sha`, matching the new `HEAD` (depends on T010)
 
 **Checkpoint**: User Stories 1 AND 2 both work independently.
 
@@ -84,7 +84,7 @@ Per plan.md's Structure Decision — not the generic `src/`/`tests/` application
 
 **Independent Test**: On a repo with an existing tracked-branch graph, create a new worktree off it. Verify the new worktree's `graphify-out/` is populated immediately, matching the parent's graph.
 
-- [X] T013 [P] [US3] Implement snapshot logic in `.specify/atoms/graphify-first-authoring/hooks/_snapshot.py`: locate the parent worktree via `git worktree list --porcelain`, copy a complete parent `graphify-out/` containing `graph.json` recursively if no complete graph exists locally, replace an incomplete destination directory, and no-op for an absent/incomplete parent graph or complete destination (contracts/git-hooks.md, FR-008)
+- [X] T013 [P] [US3] Implement snapshot logic in `.specify/atoms/graphify-first-authoring/hooks/_snapshot.py`: read and validate the explicit `GRAPHIFY_PARENT_WORKTREE` source against `git worktree list --porcelain`, copy a complete parent `graphify-out/` containing `graph.json` recursively if no complete graph exists locally, replace an incomplete destination directory, and no-op for an absent/incomplete parent graph or complete destination (contracts/git-hooks.md, FR-008)
 - [X] T014 [US3] Implement the `post-checkout` hook entrypoint in `.specify/atoms/graphify-first-authoring/hooks/post-checkout`: check the third argument is `1` (branch checkout), call `_snapshot.py`, always exit 0 regardless of outcome (depends on T013)
 - [X] T015 [P] [US3] Unit tests for snapshot logic in `tests/atoms/graphify_first_authoring/test_snapshot.py`: copies when absent locally, no-op when already present, no-op when parent has none (depends on T013)
 - [X] T016 [US3] Integration test in `tests/atoms/graphify_first_authoring/test_post_checkout_hook.py`: real `git worktree add` from a repo with an existing `graphify-out/` produces a populated copy in the new worktree (depends on T014)

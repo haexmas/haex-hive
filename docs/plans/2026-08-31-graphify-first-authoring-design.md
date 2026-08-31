@@ -51,7 +51,7 @@ one is not a special case).
     post-commit          # thin entrypoint → _refresh.py
     post-checkout        # thin entrypoint → _snapshot.py
     _refresh.py          # freshness check + incremental graphify reindex
-    _snapshot.py         # copies graphify-out/ from the parent worktree
+    _snapshot.py         # copies graphify-out/ from the explicitly selected parent worktree
   install.py             # see "Adoption" below
   README.md              # operator docs: adoption, config, escape hatch
 ```
@@ -96,14 +96,15 @@ snapshot represents the pre-branch state and is the correct baseline for
 "does this already exist?" questions during the branch's life. The snapshot
 is discarded with the branch — `graphify-out/` is git-ignored everywhere.
 
-**Bootstrap when absent or incomplete, refresh when stale.** If
-`graphify-out/` or its required `graph.json` is missing, the agent MUST run
-`graphify update <path>` to index the repo before authoring. If the freshness marker is
-missing/invalid or HEAD has advanced past the graph's recorded revision on a
-tracked branch, the agent MUST run `graphify update <path>` before authoring.
-On a feature branch/worktree, a complete snapshot is used as-is and is never
-refreshed against feature `HEAD`; an incomplete snapshot is warned about and
-handled as a failed consultation. To consult the graph, the agent runs `graphify query "<question>"`, `graphify path A B`, or
+**Bootstrap when absent or incomplete, refresh when stale.** On a tracked
+branch, if `graphify-out/` or its required `graph.json` is missing, the agent
+MUST run `graphify update <path>` to index the repo before authoring. On a
+tracked branch, if the freshness marker is missing/invalid or its
+`indexed_at_sha` differs from `HEAD`, the agent MUST run `graphify update
+<path>` before authoring. On a feature branch/worktree, a complete snapshot is
+used as-is and is never refreshed against feature `HEAD`; an incomplete
+snapshot is warned about and handled as a failed consultation without running
+graphify. To consult the graph, the agent runs `graphify query "<question>"`, `graphify path A B`, or
 `graphify explain X` as appropriate — these are plain CLI invocations, not
 tied to any one agent harness.
 
@@ -143,17 +144,21 @@ read correctly regardless of which harness executes it.
   the graph is missing).
 - **Worktree/feature-branch creation** fires `post-checkout`, which copies
   (not symlinks — Windows-portable, and semantically correct as a fork-point
-  view) the parent worktree's `graphify-out/` in. Feature branches and their
-  snapshots are discarded together; nothing survives the branch.
+  view) the explicitly selected parent worktree's `graphify-out/` in. The
+  supported creation command supplies `GRAPHIFY_PARENT_WORKTREE`; the hook
+  never assumes the first entry from `git worktree list --porcelain` is the
+  source. Feature branches and their snapshots are discarded together; nothing
+  survives the branch.
 - **Merging a feature branch back into a tracked branch** needs no special
   graph-merge logic — the merge commit lands *on* the tracked branch and
   fires the same `post-commit` hook as any other commit.
-- **Freshness marker**: `graphify` itself owns
-  `graphify-out/.meta.json` and writes `indexed_at_sha` whenever it indexes or
-  incrementally refreshes the graph. The agent compares this to current HEAD
-  on tracked branches to decide bootstrap vs. refresh vs. proceed. Feature
-  branch/worktree snapshots are frozen at their fork point and are not
-  freshness-compared or refreshed against feature `HEAD`.
+- **Freshness marker**: `graphify` owns the graph outputs; after a successful
+  `graphify update <path>`, this atom's `_refresh.py` writes
+  `graphify-out/.meta.json` with the current `indexed_at_sha`. The agent
+  compares this to current HEAD on tracked branches to decide bootstrap vs.
+  refresh vs. proceed. Feature branch/worktree snapshots are frozen at their
+  fork point and are not freshness-compared or refreshed against feature
+  `HEAD`.
 - **Bootstrap/refresh failure**: if either operation errors or times out, the
   agent warns, continues with graph consultation and authoring, and flags the
   incomplete refresh for a later manual check. The failure does not block
@@ -309,9 +314,10 @@ design.
   a future spec.
 - Hook-collision policy beyond "refuse and instruct" — revisit if it becomes
   a real friction point.
-- `graphify-out/.meta.json` freshness marker — `graphify` owns the marker and
-  must write `indexed_at_sha` at index and incremental-refresh time. T009
-  invokes that real refresh path; the atom does not synthesize the marker.
+- `graphify-out/.meta.json` freshness marker — `_refresh.py` writes
+  `indexed_at_sha` after `graphify update` has successfully produced
+  `graphify-out/graph.json`. T009 invokes that real refresh path and verifies
+  the marker; graphify remains the owner of the graph outputs themselves.
 - `haex blueprint install <atom-id>` or equivalent CLI surface for
   cross-repo hydration — deferred to Spec 010, same as the base constitution
   atom's own cross-repo consumption story.

@@ -63,7 +63,7 @@ def _install_hook(repo: Path, interpreter: str) -> None:
 
 
 def _make_graphify_stub(bin_dir: Path, meta_target_repo: Path) -> Path:
-    """Install a cross-platform graphify stub that writes the freshness marker."""
+    """Install a cross-platform graphify stub that writes a graph file."""
     bin_dir.mkdir(parents=True, exist_ok=True)
     implementation = bin_dir / "graphify_stub.py"
     implementation.write_text(
@@ -76,12 +76,8 @@ def _make_graphify_stub(bin_dir: Path, meta_target_repo: Path) -> Path:
         "    target_repo = Path(sys.argv[2])\n"
         "    meta_dir = target_repo / 'graphify-out'\n"
         "    meta_dir.mkdir(parents=True, exist_ok=True)\n"
-        "    sha = subprocess.check_output(\n"
-        "        ['git', '-C', str(target_repo), 'rev-parse', 'HEAD'],\n"
-        "        text=True,\n"
-        "    ).strip()\n"
-        "    (meta_dir / '.meta.json').write_text(\n"
-        "        json.dumps({'indexed_at_sha': sha}) + '\\n'\n"
+        "    (meta_dir / 'graph.json').write_text(\n"
+        "        json.dumps({'nodes': [], 'edges': []}) + '\\n'\n"
         "    )\n"
     )
     if os.name == "nt":

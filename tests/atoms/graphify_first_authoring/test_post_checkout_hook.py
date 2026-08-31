@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import stat
 import subprocess
@@ -15,12 +16,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _ATOM_HOOKS = _REPO_ROOT / ".specify" / "atoms" / "graphify-first-authoring" / "hooks"
 
 
-def _git(repo: Path, *args: str) -> str:
+def _git(repo: Path, *args: str, env: dict[str, str] | None = None) -> str:
     proc = subprocess.run(
         ["git", "-C", str(repo), *args],
         capture_output=True,
         text=True,
         check=True,
+        env=env,
     )
     return proc.stdout.strip()
 
@@ -75,7 +77,18 @@ def test_worktree_add_triggers_snapshot_copy(
     tmp_path: Path,
 ) -> None:
     child = tmp_path / "child"
-    _git(parent_repo_with_hook, "worktree", "add", "-q", "-b", "feature/x", str(child))
+    env = os.environ.copy()
+    env["GRAPHIFY_PARENT_WORKTREE"] = str(parent_repo_with_hook)
+    _git(
+        parent_repo_with_hook,
+        "worktree",
+        "add",
+        "-q",
+        "-b",
+        "feature/x",
+        str(child),
+        env=env,
+    )
 
     child_graph = child / "graphify-out"
     assert child_graph.is_dir(), (
@@ -85,6 +98,45 @@ def test_worktree_add_triggers_snapshot_copy(
     assert meta.is_file()
     parent_head = _git(parent_repo_with_hook, "rev-parse", "HEAD")
     assert json.loads(meta.read_text())["indexed_at_sha"] == parent_head
+
+
+def test_worktree_add_from_linked_worktree_uses_that_parent(
+    parent_repo_with_hook: Path,
+    tmp_path: Path,
+) -> None:
+    linked = tmp_path / "linked"
+    main_env = os.environ.copy()
+    main_env["GRAPHIFY_PARENT_WORKTREE"] = str(parent_repo_with_hook)
+    _git(
+        parent_repo_with_hook,
+        "worktree",
+        "add",
+        "-q",
+        "-b",
+        "linked/x",
+        str(linked),
+        env=main_env,
+    )
+    linked_marker = linked / "graphify-out" / ".meta.json"
+    linked_marker.write_text('{"indexed_at_sha": "linked-parent"}\n')
+
+    child = tmp_path / "child-from-linked"
+    linked_env = os.environ.copy()
+    linked_env["GRAPHIFY_PARENT_WORKTREE"] = str(linked)
+    _git(
+        linked,
+        "worktree",
+        "add",
+        "-q",
+        "-b",
+        "feature/from-linked",
+        str(child),
+        env=linked_env,
+    )
+
+    assert json.loads(
+        (child / "graphify-out" / ".meta.json").read_text()
+    )["indexed_at_sha"] == "linked-parent"
 
 
 def test_hook_exits_zero_when_snapshot_would_fail(
@@ -98,15 +150,28 @@ def test_hook_exits_zero_when_snapshot_would_fail(
     parent = _init_parent(tmp_path / "parent")
     _install_post_checkout_hook_globally(parent, sys.executable)
 
-    # Turn parent's graphify-out/ into a file so shutil.copytree() throws.
+    child = tmp_path / "child"
+    env = os.environ.copy()
+    env["GRAPHIFY_PARENT_WORKTREE"] = str(parent)
+    _git(
+        parent,
+        "worktree",
+        "add",
+        "-q",
+        "-b",
+        "feature/x",
+        str(child),
+        env=env,
+    )
+    shutil.rmtree(child / "graphify-out")
+
+    # Turn parent's graphify-out/ into an invalid source so the hook no-ops.
     graph = parent / "graphify-out"
     for child_path in graph.iterdir():
         child_path.unlink()
     graph.rmdir()
     graph.write_text("not a directory")
 
-    child = tmp_path / "child"
-    child.mkdir()
     hook = parent / ".git" / "hooks" / "post-checkout"
 
     # Invoke the hook directly with git's post-checkout argv: prev, new, flag=1.
@@ -115,6 +180,7 @@ def test_hook_exits_zero_when_snapshot_would_fail(
         capture_output=True,
         text=True,
         cwd=str(child),
+        env=env,
     )
     assert proc.returncode == 0, (
         f"hook must exit 0 even when its underlying snapshot fails; "

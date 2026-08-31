@@ -1,7 +1,8 @@
 """Fork-point snapshot of ``graphify-out/`` for the post-checkout hook.
 
 Per contracts/git-hooks.md §post-checkout and FR-008: when a new worktree is
-created off a parent worktree, copy the parent's complete ``graphify-out/``
+created with ``GRAPHIFY_PARENT_WORKTREE`` set to its parent, copy that
+parent's complete ``graphify-out/``
 (including ``graph.json``) into the new one so the feature branch sees a
 correct fork-point graph immediately. Never overwrite an existing
 complete ``graphify-out/`` in the new worktree. An incomplete destination is
@@ -14,20 +15,31 @@ affected.
 from __future__ import annotations
 
 import contextlib
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+_PARENT_WORKTREE_ENV = "GRAPHIFY_PARENT_WORKTREE"
+
 
 def _parent_worktree(current: Path) -> Path | None:
-    """Return the "main" worktree path (the one listed first by porcelain).
+    """Return the explicit source worktree selected for this checkout.
 
-    ``git worktree list --porcelain`` prints all worktrees for the repository,
-    with the first block being the main worktree (the one containing
-    ``.git/`` proper). That is the intended parent for a freshly-added feature
-    worktree.
+    Git's ``post-checkout`` hook receives no source-worktree path. The supported
+    worktree creation path therefore passes ``GRAPHIFY_PARENT_WORKTREE`` and
+    this function validates that path against the repository's registered
+    worktrees instead of guessing from list order.
     """
+    source_value = os.environ.get(_PARENT_WORKTREE_ENV)
+    if not source_value:
+        return None
+
+    source = Path(source_value).expanduser().resolve()
+    if source == current.resolve():
+        return None
+
     try:
         proc = subprocess.run(
             ["git", "-C", str(current), "worktree", "list", "--porcelain"],
@@ -39,20 +51,23 @@ def _parent_worktree(current: Path) -> Path | None:
         return None
     for line in proc.stdout.splitlines():
         if line.startswith("worktree "):
-            first = Path(line[len("worktree "):].strip())
-            return first if first != current.resolve() else None
+            registered = Path(line[len("worktree "):].strip()).resolve()
+            if registered == source:
+                return source
     return None
 
 
 def snapshot(current_worktree: Path) -> bool:
-    """Copy the parent worktree's ``graphify-out/`` into ``current_worktree``.
+    """Copy the explicitly selected parent graph into ``current_worktree``.
 
     Returns ``True`` if a copy was performed, ``False`` on any no-op or
     failure. A ``False`` return is silent when the situation is a legitimate
     no-op (destination exists, no parent, parent has no complete graph) and
     warns to stderr only on genuine failure (a partial copy that had to be
-    rolled back). An incomplete destination directory is removed only after a
-    complete parent graph has been found. Never raises.
+    rolled back). Without ``GRAPHIFY_PARENT_WORKTREE`` or with an unregistered
+    source, it is a silent no-op so the agent-side backstop can handle it. An
+    incomplete destination directory is removed only after a complete parent
+    graph has been found. Never raises.
     """
     dest = current_worktree / "graphify-out"
     if dest.exists() and (

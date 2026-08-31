@@ -77,6 +77,23 @@ $ git commit --allow-empty -m "chore: test graphify-out refresh"
 $ ls graphify-out/.meta.json   # should reflect the new HEAD
 ```
 
+When creating a feature worktree, pass the source worktree explicitly so the
+hook can snapshot the correct fork-point graph (Git does not provide this path
+to `post-checkout`):
+
+```console
+# Linux / macOS / WSL2
+$ GRAPHIFY_PARENT_WORKTREE="$PWD" git worktree add -b feature/x ../hive-feature
+
+# PowerShell
+PS> $env:GRAPHIFY_PARENT_WORKTREE = (Get-Location).Path
+PS> git worktree add -b feature/x ..\hive-feature
+```
+
+Without this signal, the hook leaves the destination untouched rather than
+guessing which linked worktree was the parent; the agent-side rule handles the
+missing snapshot according to the branch type.
+
 ## Suspending the rule for one session
 
 Tell the agent explicitly: "skip graphify check" — this holds only for the current session and must be re-issued next time.
