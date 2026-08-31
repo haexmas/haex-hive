@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 from pathlib import Path
 
 from haex_hive.cli.main import INSTALLED_VERSION_STRING
@@ -66,56 +67,47 @@ def run_assemble(args: argparse.Namespace) -> int:
 
     try:
         paths = transaction_paths(repo_root, state_root)
-        legacy_lock_was_present = paths.legacy_mutex.exists()
-        legacy_lock_acquired = False
-        try:
+        with ExitStack() as stack:
             # Acquire the legacy lock first so old Spec-007 writers and new
             # shared-state writers cannot publish concurrently during migration.
-            # A newly-created compatibility file is removed after the operation.
-            with ConstitutionWriterLock(paths.legacy_mutex):
-                legacy_lock_acquired = True
-                with ConstitutionWriterLock(paths.mutex):
-                    transaction.recover_if_journaled(repo_root, state_root=state_root)
+            # The compatibility pathname remains stable for legacy writers.
+            stack.enter_context(ConstitutionWriterLock(paths.legacy_mutex))
+            stack.enter_context(ConstitutionWriterLock(paths.mutex))
+            transaction.recover_if_journaled(repo_root, state_root=state_root)
 
-                    manifest = _load_consumer_manifest(repo_root)
-                    contributions = resolve_constitution_contributions(manifest, state_root)
+            manifest = _load_consumer_manifest(repo_root)
+            contributions = resolve_constitution_contributions(manifest, state_root)
 
-                    if args.accept_merged is not None:
-                        return assemble_multi_source(
-                            contributions,
-                            repo_root,
-                            llm_method=args.llm,
-                            accept_merged_path=args.accept_merged,
-                            tool_version=INSTALLED_VERSION_STRING,
-                            state_root=state_root,
-                        )
+            if args.accept_merged is not None:
+                return assemble_multi_source(
+                    contributions,
+                    repo_root,
+                    llm_method=args.llm,
+                    accept_merged_path=args.accept_merged,
+                    tool_version=INSTALLED_VERSION_STRING,
+                    state_root=state_root,
+                )
 
-                    if not contributions:
-                        raise NoSourcesDeclaredError(message="no constitution sources declared")
+            if not contributions:
+                raise NoSourcesDeclaredError(message="no constitution sources declared")
 
-                    if len(contributions) == 1:
-                        assemble_single_source(
-                            contributions[0],
-                            repo_root,
-                            tool_version=INSTALLED_VERSION_STRING,
-                            state_root=state_root,
-                        )
-                        return exit_codes.SUCCESS
+            if len(contributions) == 1:
+                assemble_single_source(
+                    contributions[0],
+                    repo_root,
+                    tool_version=INSTALLED_VERSION_STRING,
+                    state_root=state_root,
+                )
+                return exit_codes.SUCCESS
 
-                    return assemble_multi_source(
-                        contributions,
-                        repo_root,
-                        llm_method=args.llm,
-                        accept_merged_path=None,
-                        tool_version=INSTALLED_VERSION_STRING,
-                        state_root=state_root,
-                    )
-        finally:
-            # Remove the transient pathname only after both lock context
-            # managers have released their handles; Windows otherwise returns
-            # ERROR_SHARING_VIOLATION.
-            if legacy_lock_acquired and not legacy_lock_was_present:
-                paths.legacy_mutex.unlink(missing_ok=True)
+            return assemble_multi_source(
+                contributions,
+                repo_root,
+                llm_method=args.llm,
+                accept_merged_path=None,
+                tool_version=INSTALLED_VERSION_STRING,
+                state_root=state_root,
+            )
     except HaexError:
         raise
     except (OSError, ValueError) as exc:
