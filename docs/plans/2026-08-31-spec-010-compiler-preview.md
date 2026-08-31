@@ -19,7 +19,7 @@ The `haex compile` (or equivalent) machinery that turns a project's adopted atom
 - Multi-tool prose delivery (CLAUDE.md, AGENTS.md, GEMINI.md, …) via import syntax where available and byte-copy fallback otherwise.
 - Per-tool structured-config translation (`.claude/settings.json`, `.codex/config.toml`, …) from one canonical structured source.
 - New `contributes.*` types on the atom-manifest schema so atoms can carry instructions, per-agent settings, and MCP-server declarations.
-- Adapter interface for supporting arbitrary agent CLIs over time (initial three, target twenty-four).
+- Adapter interface for supporting arbitrary agent CLIs over time (initial three, target twenty-two — matching graphify's current platform set).
 
 ## What this does NOT cover (deliberately)
 
@@ -39,18 +39,37 @@ The `haex compile` (or equivalent) machinery that turns a project's adopted atom
 
 - The operator maintains a **personal harness repo** — a normal atom-publisher repo where the operator composes their preferred harness by including atoms from any number of external publishers (haex-hive, secana-specs, third-party MCP molecules, …).
 - This personal harness repo publishes one or more **profile atoms**: atom manifests with `includes[]` populated (and typically no direct `contributes.*`). This uses Spec 007's already-supported publisher-side `includes[]` — verified against [atom-manifest.v2.schema.json](../../specs/007-unified-manifest-v2/contracts/atom-manifest.v2.schema.json). No schema change needed for composition itself.
-- Each consuming project's `.haex-hive.json` adopts the personal harness molecule at a pinned SHA — one entry, one pin, the atom mechanism transitively resolves the rest.
+- Each consuming project's `.haex-hive.json` adopts the personal harness molecule at a pinned SHA — one entry, one pin at the top of the resolution tree.
 - Adding a new atom to the personal harness → bump the harness's version → bump the `revision`-pin in each consumer project. Consistency across N projects is the operator's discipline (or a batch tool later), not a registry service.
 - Multiple personal harnesses are fine — `my-python-harness`, `my-work-harness`, etc. — each project picks one (or more).
 - **Publishers remain passive**: secana-specs (or any external publisher) publishes atoms; it does not know or declare who adopts them. The connection is made in the operator's personal harness repo.
+
+### Transitive resolution requires per-atom immutable references
+
+Spec 007's current `includes[]` stores atom IDs and resolves them relative to the parent manifest's pinned `source` and `revision`. That is sufficient when every transitive atom lives in the same publisher repo as its parent, but the personal harness molecule explicitly composes atoms from **different** publisher repos (haex-hive, secana-specs, third-party MCP molecules). The parent's pin cannot locate them.
+
+Spec 010 therefore requires — as a schema extension carried by the personal harness's manifest — that every entry in `includes[]` carry an immutable triple:
+
+- **`source`** — the publisher's canonical URL (e.g. `https://github.com/haexmas/secana-specs`).
+- **`revision`** — the full 40-hex commit SHA. Branch names, tags, `HEAD`, or short SHAs are refused (Principle IV).
+- **`atomId`** — the atom's stable ID within that publisher's repo.
+
+Resolution walks each `includes[]` entry using its own declared `(source, revision, atomId)`, not the parent's pin. Any transitive atom for which any of the three is missing, unresolved, or mutable (a moving reference) fails the compile with a diagnostic naming the offending entry. Whether this triple lives directly in the atom manifest's `includes[]` or in an install-lock-side resolution table is a Spec 010 design-phase decision; the requirement is that the triple exists and is verified before compile emits any output.
 
 ## Compiler behaviour
 
 ### Invocation and scope
 
 - On-demand `haex compile` subcommand (or an equivalent name). No always-on daemon in Spec 010.
-- Write scope limited to (a) per-tool structured-config files and (b) per-tool prose files. Nothing else.
-- Idempotent: unchanged inputs → zero writes. A repeated compile on unchanged state must be a no-op.
+- Write scope (exhaustive — the full list of artifact classes `haex compile` may materialize):
+  1. **Per-tool structured-config files** — e.g. `.claude/settings.json`, `.codex/config.toml`, `mcp-servers.yaml`.
+  2. **Per-tool prose files** — e.g. `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` (either an import-directive stub or a byte-copy of the canonical assembled markdown; see prose-delivery section).
+  3. **The canonical assembled markdown** the import-directive files point at (source-owned or hash-tracked; see drift section).
+  4. **Adapter auxiliaries** declared by an adapter that owns them — skill directories, plugin files, workflow files (see adapter interface). Each auxiliary path is owned by exactly one adapter; write ownership is declared, not inferred.
+  5. **Hook artifacts** — the payload files (script content, hook manifests) contributed by atoms and materialized under the layout Spec 009 defines for `haex hook run` to consume.
+- **Compile emits hook artifacts; it never executes them.** Execution of any hook — before, during, or after compile — is exclusively the responsibility of `haex hook run` per Spec 009. Compile's contract on hooks is strictly filesystem: write the payloads, do not invoke them.
+- Nothing outside those five classes is written. In particular: no touching of project source, no `.git/` writes, no user-shell config.
+- Idempotent: unchanged inputs → zero writes across every class above. A repeated compile on unchanged state must be a no-op.
 
 ### Prose delivery: import syntax preferred, byte-copy fallback
 
@@ -58,15 +77,23 @@ The `haex compile` (or equivalent) machinery that turns a project's adopted atom
 - Per-tool prose files (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, …) resolve to a single canonical assembled markdown at read time.
 - Where the target tool supports a file-import directive (Claude Code's `@file`, Codex's `@file` in `AGENTS.md`), the per-tool file is a minimal file whose content is that import directive.
 - Where the target tool does not support such an import, the compiler emits a byte-copy of the canonical markdown carrying a compiler-managed integrity marker; drift-detection then applies to that copy.
+- **The canonical assembled markdown file itself is compiler-owned and drift-protected on equal footing with the byte-copies.** In import mode the import directive still points at a real file on disk, and a hand-edit there would otherwise slip past the drift check silently. The compiler records an integrity marker (content hash + generation timestamp) for the canonical file in the install lock and validates it before every compile write. A drifted canonical file follows the same drift-on-recompile flow (§below) as any other compiler-owned output. Operators who want a hand-authored prose file adopt it as an atom-contributed instruction, not by hand-editing the compiled canonical.
 - **Import-syntax availability per tool must be verified during Spec 010 plan phase.** Claude Code `@file` is known-supported. Codex `@file` in `AGENTS.md` is expected — needs verification. Other CLIs need per-tool investigation.
 
 ### Layer merge semantics: strictly additive
 
-- Layer order: `global + molecule/atom + per-project` (or however the atom-inclusion order resolves).
-- Arrays: union with dedupe.
-- Maps: deep-merge; later layers may add keys but **must never overwrite** existing ones.
+- **Deterministic layer order** — flattened by depth-first walk of the resolved atom graph in declaration order, then followed by the per-project layer. Formally: `global → depth-first(personal-harness includes[]) → per-project`. Given the same resolved `(source, revision, atomId)` triples (§Transitive resolution) the traversal produces one canonical sequence.
+- **Arrays: union with dedupe, using a per-key identity.** Every array field the compiler merges declares its identity key in the schema. Baseline conventions for known fields:
+  - `mcpServers[]` — identity = `name`.
+  - `hooks[]` — identity = `(event, id)`.
+  - `permissions.allow[]` / `permissions.deny[]` — identity = the literal string entry.
+  - Scalar arrays with no natural key — identity = the value itself.
+  - Array fields for which no identity is declared are refused at schema-validation time, not merged silently.
+  Two entries sharing an identity but differing in any other field are a **conflict**, not a merge candidate: the compiler refuses (aligned with the no-overwrite rule) and names the two atoms plus the differing fields.
+- **Canonical output order for arrays**: after dedupe, entries are sorted by identity (lexicographic on the identity tuple's string form) — not by discovery order — so identical inputs always produce byte-identical output. Structured-config emitters preserve this order in the serialized form.
+- Maps: deep-merge; later layers may add keys but **must never overwrite** existing ones. Serialized map key order is lexicographic in the compiled output.
 - **No removal or replacement mechanism.** A per-project layer attempting to subtract or overwrite an inherited value is a clean refusal from the compiler.
-- Rationale: pushes classification into the atom/molecule composition layer instead of ad-hoc per-project overrides. A project that needs a genuine subtraction is a signal that it should adopt a differently-composed molecule, not carry a local exception.
+- Rationale: pushes classification into the atom/molecule composition layer instead of ad-hoc per-project overrides. A project that needs a genuine subtraction is a signal that it should adopt a differently-composed molecule, not carry a local exception. Deterministic identity + canonical ordering is what makes the idempotence guarantee (§Invocation and scope) and the drift check (§Drift-on-recompile) stable.
 
 ### Drift-on-recompile behaviour
 
@@ -93,18 +120,38 @@ The compiler must not hardcode a fixed enum of supported tools. Adding a new age
 
 ### Perspective set (roadmap, matching graphify's supported platforms)
 
-`graphify install --platform` supports these 24 today; Spec 010 adapters should cover them over time in priority order the operator declares:
+`graphify install --platform` supports these 22 today (verified against `graphify install --help`); Spec 010 adapters should cover them over time in priority order the operator declares:
 
-claude, codex, opencode, kilo, aider, copilot, claw, droid, trae, trae-cn, hermes, kiro, pi, codebuddy, antigravity, antigravity-windows, windows, kimi, amp, devin, gemini, cursor, vscode
+claude, codex, opencode, kilo, aider, copilot, claw, droid, trae, trae-cn, hermes, kiro, pi, codebuddy, antigravity, antigravity-windows, windows, kimi, amp, devin, gemini, cursor
 
 They fall into families that map to different adapter shapes:
 
-- **AGENTS.md family** (codex, opencode, aider, claw, droid, trae, trae-cn, kimi, amp, …) — write a section into a shared `AGENTS.md`.
+- **AGENTS.md family** (codex, opencode, aider, claw, droid, trae, trae-cn, kimi, amp, …) — write a section into a shared `AGENTS.md`. Requires the shared-file sectioning contract below before any adapter in this family lands.
 - **Own-prose-file family** (claude → `CLAUDE.md`, gemini → `GEMINI.md`).
 - **Skills-directory family** (copilot, hermes, kiro, pi, devin) — write a skill folder under `~/.<tool>/skills/` or `.<tool>/skills/`.
 - **Native-plugin/config family** (opencode plugin, kilo plugin, antigravity `.agents/`, cursor `.cursor/`).
 
 The adapter interface must accommodate all four families without special-casing.
+
+### Shared-file sectioning contract (AGENTS.md family)
+
+File-level drift detection cannot distinguish one adapter's content from another's when several adapters target the same file. Before any AGENTS.md-family adapter lands, Spec 010 must define:
+
+- **Stable section identifiers.** Each adapter's contribution is wrapped in a fenced block delimited by HTML-comment markers carrying the adapter name and a schema version, e.g.:
+
+  ```markdown
+  <!-- haex:adapter=codex version=1 begin -->
+  …codex-owned prose…
+  <!-- haex:adapter=codex end -->
+  ```
+
+  The markers are compiler-managed; adapters must not emit their own variants.
+- **Per-adapter ownership.** Exactly one adapter owns each `haex:adapter=<name>` block. Recompile rewrites only the blocks whose owning adapter re-emitted content; other adapters' blocks are read and re-emitted byte-identical.
+- **Preservation of unknown / unowned sections.** Any text outside a `haex:adapter=*` block — operator prose, blocks owned by adapters not currently loaded, hand-authored preambles — is preserved verbatim across recompiles. The compiler treats those regions as source-owned.
+- **Drift scope narrows to owned blocks.** The drift check computes an integrity marker per owned block, not per file. A hand-edit inside a `haex:adapter=codex` block triggers the drift-on-recompile flow for the codex adapter only; edits outside any owned block are never drift.
+- **Deterministic block order** across recompiles: adapters emit their blocks in lexicographic order of `adapter=<name>`, appended after any preserved preamble. This keeps the file byte-stable when adapter set and content are unchanged.
+
+Whether the same sectioning contract also applies to same-file skill-directory or plugin-family adapters (when multiple adapters share a directory root) is deferred to Spec 010's plan phase.
 
 ## Schema extensions required in Spec 007's atom manifest
 
