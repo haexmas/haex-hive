@@ -13,8 +13,8 @@ That's what haex-hive is being built toward: **your development environment as a
 For a swarm like that to feel like one environment instead of five scattered ones, every device has to agree on **how it behaves**: the same conventions, the same skills, the same MCPs, the same permissions, the same constitutions. That agreement is what a "harness" is here. haex-hive lets you:
 
 - **Compose a harness out of atoms.** Skills, MCPs, constitutions, and other pieces, written by you or adopted from someone else. Each project's `.haex-hive.json` picks exactly the atoms that project needs; nothing else leaks in.
-- **Maintain it once, run it everywhere.** Update the harness in one place, every device that uses it picks up the change. The same harness works on Linux, macOS, and Windows, and drives whichever agent CLI you happen to have in front of you (Claude Code, Codex, Gemini, …).
-- **Delegate freely between your devices.** Every device is also a relay for the others: hand a GPU job to the machine with the GPU, talk to the local model that lives on your home box, watch a run from your phone while the laptop is closed.
+- **Maintain it once, run it everywhere (roadmap).** The planned workflow will let you update the harness in one place, then have each device adopt the new pinned revision and pick up the change. It is intended to work on Linux, macOS, and Windows, and drive whichever agent CLI you happen to have in front of you (Claude Code, Codex, Gemini, …).
+- **Delegate freely between your devices (roadmap).** The planned delegation layer will let every device act as a relay for the others: hand a GPU job to the machine with the GPU, talk to the local model that lives on your home box, and watch a run from your phone while the laptop is closed.
 
 **Today** you can declare a harness manifest and assemble its constitution part on any device. Cross-device sessions, mobile control, and the delegation layer are on the roadmap; the full plan lives in [docs/plans/2026-08-26-haex-hive-design.md](docs/plans/2026-08-26-haex-hive-design.md).
 
