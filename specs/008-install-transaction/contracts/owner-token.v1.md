@@ -39,21 +39,29 @@ Alongside this contract for completeness — the mutex file is a JSON object wit
   "owner_token": "31245:laptop-hex.local:1727612345678901234:8f3a2d1c9e7b4a5680c2e14f7d6b3a95",
   "acquired_at": "2026-08-31T14:20:11.000000Z",
   "heartbeat_at": "2026-08-31T14:20:16.000000Z",
+  "heartbeat_at_ns_wallclock": 1788186016000000000,
   "heartbeat_interval_ns": 5000000000,
   "ttl_ns": 60000000000,
   "safety_margin_ns": 5000000000
 }
 ```
 
-- `heartbeat_at` is atomically replaced and fsynced by the owner's background heartbeat thread every 5 seconds.
+- `heartbeat_at` and `heartbeat_at_ns_wallclock` are updated in place through the
+  already-locked file handle and fsynced by the owner's background heartbeat
+  thread every 5 seconds. The lock pathname and inode MUST remain stable while
+  the advisory lock is held; an implementation MUST NOT use `os.replace()` for
+  lease updates.
+- `heartbeat_at_ns_wallclock` is the result of `time.time_ns()` at the same
+  heartbeat and is the persisted, reboot-safe value used for expiry. The ISO
+  `heartbeat_at` string is a diagnostic mirror and is not parsed for reclaim.
 - `ttl_ns` is fixed at 60_000_000_000 (60 seconds) and `safety_margin_ns` at 5_000_000_000 (5 seconds) for MVP; a future revision MAY expose an override.
 - `acquired_at` never changes after acquisition — recovery uses it for the operator diagnostic only, not for TTL logic.
 
 ## Recovery timing rules
 
-- **Stale threshold**: recovery requires `now_utc - heartbeat_at > ttl_ns + safety_margin_ns` (65 seconds for the MVP).
+- **Stale threshold**: recovery requires `time.time_ns() - heartbeat_at_ns_wallclock > ttl_ns + safety_margin_ns` (65 seconds for the MVP). A persisted monotonic timestamp MUST NOT be used for this cross-reboot comparison.
 - **OS-lock fence**: recovery first obtains the same non-blocking exclusive OS lock. A process that is merely paused or slow still holds that lock and MUST NOT be reclaimed, even when its recorded heartbeat is old.
-- **Atomic revalidation**: after obtaining the lock, recovery reads the lease, checks the stale threshold, then re-reads it under the exclusive handle. The owner token and heartbeat MUST be byte-identical and still expired. Recovery then atomically replaces the record with its own token. A prior owner MUST check its token before every mutation and stop if it was fenced.
+- **Atomic revalidation**: after obtaining the lock, recovery reads the lease, checks the stale threshold, then re-reads it under the exclusive handle. The owner token and wall-clock heartbeat MUST be byte-identical and still expired. Recovery then rewrites the record in place with its own token. A prior owner MUST check its token before every mutation and stop if it was fenced.
 - **Clock semantics**: monotonic time is used to schedule the owner's 5-second heartbeat and populate `start_ns`; UTC timestamps are the cross-process expiry values. A backward wall-clock jump delays reclamation (safe); the 5-second safety margin absorbs the permitted clock skew. `mtime` is never used as an expiry signal.
 
 ## Emission

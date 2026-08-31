@@ -31,7 +31,7 @@
 
 ## Notes
 
-- FR-021 resolved: `install.mutex` and `install.journal` placed under `$HAEX_HIVE_STATE/locks/<repo-key>/`, where `<repo-key>` is a SHA-256 key of the canonical project identity. The full identity is stored separately; the in-repo `.haex-hive/` stays 100% committed content.
+- FR-021 resolved: `install.mutex` is placed under `$HAEX_HIVE_STATE/locks/<repo-key>/` and each checkout's `install.journal` under `checkouts/<checkout-key>/`, where `<repo-key>` is a SHA-256 key of the canonical project identity and `<checkout-key>` is a device-local hash of the resolved checkout path. The full identity is stored separately; the in-repo `.haex-hive/` stays 100% committed content.
 - FR-022 added: `$HAEX_HIVE_STATE` MUST NOT contain secret material — Principle I extends to the state root. Secrets live in the OS keychain; only keychain identity aliases may reside in the state root.
 - The specification is a deliberately technical transaction contract; its implementation constraints are recorded where they are required for atomicity, recovery, portability, or conformance.
 - Spec is ready for `/speckit-clarify` (optional, no markers remain) or `/speckit-plan`.

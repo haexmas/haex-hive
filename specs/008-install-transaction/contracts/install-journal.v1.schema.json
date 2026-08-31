@@ -53,7 +53,7 @@
     "tail_hash": {
       "type": "string",
       "pattern": "^sha256-[A-Za-z0-9_-]{43}$",
-      "description": "SHA-256 of `<line-json>\\n<prev-tail-hash>`. First entry uses empty string for prev-tail-hash."
+      "description": "SHA-256, emitted as sha256-<base64url-nopad>, over the UTF-8 bytes of canonical JSON for this entry with tail_hash excluded, followed by one LF byte and the previous tail hash as ASCII. Canonical JSON uses RFC 8785-compatible deterministic key ordering, no insignificant whitespace, and UTF-8; the first entry uses an empty previous-hash string, so its preimage ends with LF. The serialized JSONL line itself is terminated by a separate LF and never participates in the preimage."
     }
   }
 }

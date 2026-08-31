@@ -136,7 +136,11 @@ def is_journaled(repo_root: Path, state_root: Path | None = None) -> bool:
         # `constitution show` must still report a missing output for a folder
         # that has no identity yet; only legacy journal discovery is possible.
         return _journal_path(repo_root).exists()
-    return paths.journal.exists() or paths.legacy_journal.exists()
+    return (
+        paths.journal.exists()
+        or paths.legacy_shared_journal.exists()
+        or paths.legacy_journal.exists()
+    )
 
 
 def _read_journal(journal: Path) -> dict[str, Any]:
@@ -144,9 +148,16 @@ def _read_journal(journal: Path) -> dict[str, Any]:
         return cast(dict[str, Any], json.loads(fh.read().decode("utf-8")))
 
 
-def _write_journal(journal: Path, repo_root: Path, entries: list[_TargetEntry]) -> None:
+def _write_journal(
+    journal: Path,
+    repo_root: Path,
+    entries: list[_TargetEntry],
+    *,
+    repo_key: str | None = None,
+    checkout_key: str | None = None,
+) -> None:
     journal.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
+    payload: dict[str, Any] = {
         "targets": [
             {
                 "logical": e.logical,
@@ -162,6 +173,9 @@ def _write_journal(journal: Path, repo_root: Path, entries: list[_TargetEntry]) 
             for e in entries
         ]
     }
+    if repo_key is not None and checkout_key is not None:
+        payload["repo_key"] = repo_key
+        payload["checkout_key"] = checkout_key
     fd, tmp_path = tempfile.mkstemp(
         prefix=JOURNAL_NAME + ".",
         suffix=".tmp",
@@ -182,65 +196,80 @@ def recover_if_journaled(repo_root: Path, state_root: Path | None = None) -> boo
     Returns True if recovery ran, False if no journal was present.
     """
     if state_root is None:
-        journal = _journal_path(repo_root)
+        paths = None
+        journals = [_journal_path(repo_root)]
     else:
         paths = transaction_paths(repo_root, state_root)
-        journal = paths.journal if paths.journal.exists() else paths.legacy_journal
-    if not journal.exists():
+        journals = [paths.journal, paths.legacy_shared_journal, paths.legacy_journal]
+    journals = [journal for journal in journals if journal.exists()]
+    if not journals:
         return False
-    payload = _read_journal(journal)
-    raw_entries = payload.get("targets")
-    if not isinstance(raw_entries, list):
-        raise ValueError("transaction journal targets must be a list")
-
     hive_dir = (repo_root / HAEX_HIVE_DIR).resolve()
     fixed_targets = {
         "constitution": hive_dir / CONSTITUTION_NAME,
         "install_lock": hive_dir / INSTALL_LOCK_NAME,
     }
-    validated_entries: list[tuple[Path, str, Path | None, Path]] = []
-    seen_logical: set[str] = set()
-    for entry in raw_entries:
-        if not isinstance(entry, dict):
-            raise ValueError("transaction journal target entry must be an object")
-        logical = entry.get("logical")
-        if logical not in fixed_targets or logical in seen_logical:
-            raise ValueError("transaction journal contains an invalid logical target")
-        seen_logical.add(logical)
+    recovered = False
+    for journal in journals:
+        payload = _read_journal(journal)
+        if paths is not None and journal == paths.journal:
+            if payload.get("repo_key") != paths.repo_key:
+                raise ValueError("transaction journal repository key does not match checkout")
+            if payload.get("checkout_key") != paths.checkout_key:
+                raise ValueError("transaction journal checkout key does not match checkout")
+        elif paths is not None and journal == paths.legacy_shared_journal:
+            if payload.get("repo_key") not in {None, paths.repo_key}:
+                raise ValueError("legacy transaction journal repository key does not match")
 
-        target = _validate_journal_path(repo_root, entry.get("target"), hive_dir)
-        if target != fixed_targets[logical]:
-            raise ValueError("transaction journal target does not match its logical target")
-        staged = _validate_journal_path(repo_root, entry.get("staged"), hive_dir)
-        raw_backup = entry.get("backup")
-        backup = (
-            _validate_journal_path(repo_root, raw_backup, hive_dir)
-            if raw_backup is not None
-            else None
-        )
-        prior = entry.get("prior_state")
-        if prior not in {"existed", "absent"}:
-            raise ValueError("transaction journal contains an invalid prior state")
-        if prior == "existed" and backup is None:
-            raise ValueError("existing transaction target is missing its backup")
-        validated_entries.append((target, prior, backup, staged))
+        raw_entries = payload.get("targets")
+        if not isinstance(raw_entries, list):
+            raise ValueError("transaction journal targets must be a list")
 
-    if seen_logical != set(fixed_targets):
-        raise ValueError("transaction journal must contain both logical targets")
+        validated_entries: list[tuple[Path, str, Path | None, Path]] = []
+        seen_logical: set[str] = set()
+        for entry in raw_entries:
+            if not isinstance(entry, dict):
+                raise ValueError("transaction journal target entry must be an object")
+            logical = entry.get("logical")
+            if logical not in fixed_targets or logical in seen_logical:
+                raise ValueError("transaction journal contains an invalid logical target")
+            seen_logical.add(logical)
 
-    for target, prior, backup, staged in validated_entries:
-        if prior == "existed" and backup:
-            if backup.exists():
-                os.replace(str(backup), str(target))
-            _fsync_dir(target.parent)
-        elif prior == "absent":
-            _remove_if_exists(target)
-        _remove_if_exists(staged)
-        if backup:
-            _remove_if_exists(backup)
-    _remove_if_exists(journal)
-    _fsync_dir(journal.parent)
-    return True
+            target = _validate_journal_path(repo_root, entry.get("target"), hive_dir)
+            if target != fixed_targets[logical]:
+                raise ValueError("transaction journal target does not match its logical target")
+            staged = _validate_journal_path(repo_root, entry.get("staged"), hive_dir)
+            raw_backup = entry.get("backup")
+            backup = (
+                _validate_journal_path(repo_root, raw_backup, hive_dir)
+                if raw_backup is not None
+                else None
+            )
+            prior = entry.get("prior_state")
+            if prior not in {"existed", "absent"}:
+                raise ValueError("transaction journal contains an invalid prior state")
+            if prior == "existed" and backup is None:
+                raise ValueError("existing transaction target is missing its backup")
+            validated_entries.append((target, prior, backup, staged))
+
+        if seen_logical != set(fixed_targets):
+            raise ValueError("transaction journal must contain both logical targets")
+
+        for target, prior, backup, staged in validated_entries:
+            if prior == "existed" and backup:
+                if backup.exists():
+                    os.replace(str(backup), str(target))
+                _fsync_dir(target.parent)
+            elif prior == "absent":
+                _remove_if_exists(target)
+                _fsync_dir(target.parent)
+            _remove_if_exists(staged)
+            if backup:
+                _remove_if_exists(backup)
+        _remove_if_exists(journal)
+        _fsync_dir(journal.parent)
+        recovered = True
+    return recovered
 
 
 def _validate_journal_path(repo_root: Path, raw_path: object, hive_dir: Path) -> Path:
@@ -302,13 +331,23 @@ def publish_pair(
         _fsync_dir(hive_dir)
 
         journal = _journal_path(repo_root)
+        journal_repo_key: str | None = None
+        journal_checkout_key: str | None = None
         if state_root is None:
             journal = _journal_path(repo_root)
         else:
             paths = transaction_paths(repo_root, state_root)
             write_identity_record(paths)
             journal = paths.journal
-        _write_journal(journal, repo_root, entries)
+            journal_repo_key = paths.repo_key
+            journal_checkout_key = paths.checkout_key
+        _write_journal(
+            journal,
+            repo_root,
+            entries,
+            repo_key=journal_repo_key,
+            checkout_key=journal_checkout_key,
+        )
         _crash_after("journal")
 
         for entry in entries:
