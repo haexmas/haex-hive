@@ -71,7 +71,7 @@ This feature does not fit the generic src/tests application template — its pri
 ├── hooks/
 │   ├── post-commit                          # thin entrypoint; shebang resolved by install.py
 │   ├── post-checkout                        # thin entrypoint; shebang resolved by install.py
-│   ├── _refresh.py                          # invokes graphify --update; graphify writes the freshness marker
+│   ├── _refresh.py                          # invokes graphify update; graphify writes the freshness marker
 │   └── _snapshot.py                         # copies graphify-out/ from the parent worktree
 ├── install.py                               # dependency check, hook install, .gitignore entry
 └── README.md                                # operator adoption docs

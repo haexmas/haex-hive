@@ -98,9 +98,9 @@ is discarded with the branch — `graphify-out/` is git-ignored everywhere.
 
 **Bootstrap when absent or incomplete, refresh when stale.** If
 `graphify-out/` or its required `graph.json` is missing, the agent MUST run
-`graphify <path>` to index the repo before authoring. If the freshness marker is
+`graphify update <path>` to index the repo before authoring. If the freshness marker is
 missing/invalid or HEAD has advanced past the graph's recorded revision on a
-tracked branch, the agent MUST run `graphify <path> --update` before authoring.
+tracked branch, the agent MUST run `graphify update <path>` before authoring.
 On a feature branch/worktree, a complete snapshot is used as-is and is never
 refreshed against feature `HEAD`; an incomplete snapshot is warned about and
 handled as a failed consultation. To consult the graph, the agent runs `graphify query "<question>"`, `graphify path A B`, or

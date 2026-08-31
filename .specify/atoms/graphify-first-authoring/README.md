@@ -12,7 +12,7 @@ Nothing here is part of haex-hive's core constitution. Adopt it explicitly in yo
 
 Before authoring **any new named function, class, component, store, module, or CLI command**, an agent bound by the assembled constitution:
 
-1. On tracked branches, ensures a usable `graphify-out/graph.json` is present and fresh — bootstrapping (`graphify <repo-root>`) if the directory or graph file is absent, refreshing (`graphify <repo-root> --update`) if the marker is missing/invalid or stale. Feature-branch/worktree snapshots stay frozen at their fork point and are not refreshed against feature `HEAD`; an incomplete snapshot is reported and handled as a failed consultation.
+1. On tracked branches, ensures a usable `graphify-out/graph.json` is present and fresh — bootstrapping or refreshing (`graphify update <repo-root>`) if the directory or graph file is absent, or the marker is missing/invalid or stale. Feature-branch/worktree snapshots stay frozen at their fork point and are not refreshed against feature `HEAD`; an incomplete snapshot is reported and handled as a failed consultation.
 2. Queries the graph for candidates via plain `graphify` CLI (`graphify query "..."`, `graphify path`, `graphify explain`), evaluating unexported/incomplete artifacts too.
 3. When a candidate matches: names the candidate location, proposes extending it, cites lines saved, rewrites **one** call-site as proof of concept — and waits for operator approval before touching anything else.
 4. When similarity is borderline or scope-creep risk exists: **asks the operator** rather than deciding autonomously.
@@ -39,7 +39,7 @@ For a repo that already runs haex-hive Spec 007 manifest v2 (`.haex-hive.json`, 
 | `constitution.md` | The contributed principle text |
 | `hooks/post-commit` | Refresh entrypoint (shebang set at install time) |
 | `hooks/post-checkout` | Snapshot entrypoint (shebang set at install time) |
-| `hooks/_refresh.py` | Refresh helper — `graphify <root> --update`, warn-on-failure |
+| `hooks/_refresh.py` | Refresh helper — `graphify update <root>`, warn-on-failure |
 | `hooks/_snapshot.py` | Snapshot helper — copy parent's `graphify-out/` into new worktree |
 | `hooks/_tracked_branches.py` | Tracked-branch set: detected default + `.haex-hive.json`'s `tracked_branches[]` |
 | `install.py` | Installer — precondition-checked, refuses cleanly on any failure |

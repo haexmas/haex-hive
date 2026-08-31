@@ -4,7 +4,7 @@
       "tool": "haex",
       "version": "2.0.0"
     },
-    "content_integrity": "sha256-iP/+Gvs+BCd4uTLRQ+cZoSgQv0vkMaG8M6dY3eH5+Uw=",
+    "content_integrity": "sha256-DAuMjkIj23D/UoSugDdh+MNiDZ1UUA14faQ3Zj5+F4E=",
     "sources": [
       {
         "id": "com.github.haexmas.haex-hive.constitution",

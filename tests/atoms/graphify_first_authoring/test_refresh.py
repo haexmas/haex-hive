@@ -43,7 +43,7 @@ def test_successful_refresh_returns_true(
     resolved = _refresh.shutil.which("graphify")
     assert resolved is not None
     fp.register(
-        [resolved, str(tmp_path), "--update"],
+        [resolved, "update", str(tmp_path)],
         returncode=0,
         stdout="ok\n",
         callback=lambda _process: (
@@ -70,7 +70,7 @@ def test_nonzero_exit_warns_and_returns_false(
     resolved = _refresh.shutil.which("graphify")
     assert resolved is not None
     fp.register(
-        [resolved, str(tmp_path), "--update"],
+        [resolved, "update", str(tmp_path)],
         returncode=2,
         stderr="graphify: corrupt graph\n",
     )
@@ -100,7 +100,7 @@ def test_timeout_warns_and_returns_false(
     resolved = _refresh.shutil.which("graphify")
     assert resolved is not None
     fp.register(
-        [resolved, str(tmp_path), "--update"],
+        [resolved, "update", str(tmp_path)],
         callback=_raise_timeout,
     )
     assert _refresh.refresh(tmp_path) is False
@@ -122,7 +122,7 @@ def test_refresh_never_raises(
     resolved = _refresh.shutil.which("graphify")
     assert resolved is not None
     fp.register(
-        [resolved, str(tmp_path), "--update"],
+        [resolved, "update", str(tmp_path)],
         returncode=99,
         stderr="boom",
     )
