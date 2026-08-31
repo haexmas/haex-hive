@@ -9,18 +9,29 @@ $ pip install graphifyy
 $ graphify --help
 ```
 
-If this is already installed, skip to step 2.
+If this is already installed, skip to step 2. Otherwise, the installer in the
+next step offers this package installation with a default-Yes prompt. Declining
+the prompt leaves the repository unchanged and prints the manual follow-up.
 
 ## 2. Run the installer
 
 From the repo root, on a tracked branch (the default branch, or one declared in `tracked_branches[]`):
 
 ```console
+# Linux / WSL2
+$ python3 .specify/atoms/graphify-first-authoring/install.py
+
+# macOS (use python if that is the command provided by your installation)
+$ python3 .specify/atoms/graphify-first-authoring/install.py
+
+# Windows
 $ python .specify/atoms/graphify-first-authoring/install.py
 graphify-first-authoring needs graphify registered for your agent harness. Run `graphify install` now? [Y/n]
 ```
 
-Accept the default (or answer `n` and run `graphify install` yourself later). On success:
+When `graphify-out/` is absent, accept the default (or answer `n` and run
+`graphify install` yourself later). If `graphify-out/` already exists, this
+registration prompt is skipped. On success:
 
 - `.git/hooks/post-commit` and `.git/hooks/post-checkout` are installed.
 - `.gitignore` gains a `graphify-out/` line, if not already present.
@@ -51,7 +62,11 @@ If this is the only constitution-contributing atom, the result is a byte-for-byt
 $ haex constitution show
 ```
 
-The printed "Assembled from" preface should now name both source atoms. From this point, any agent bound by this constitution consults `graphify-out/` before authoring new named code.
+The printed "Assembled from" preface should name the adopted constitution
+source(s): one source when this atom is the only constitution-contributing
+atom, or both source atoms in haex-hive's self-adoption case. From this point,
+any agent bound by this constitution consults `graphify-out/` before authoring
+new named code.
 
 ## 6. Confirm the hooks are live
 

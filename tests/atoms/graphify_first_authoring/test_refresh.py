@@ -23,9 +23,13 @@ def graphify_on_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    stub = bin_dir / "graphify"
-    stub.write_text("#!/bin/sh\nexit 0\n")
-    stub.chmod(0o755)
+    if os.name == "nt":
+        stub = bin_dir / "graphify.cmd"
+        stub.write_text("@echo off\r\nexit /b 0\r\n")
+    else:
+        stub = bin_dir / "graphify"
+        stub.write_text("#!/bin/sh\nexit 0\n")
+        stub.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     return stub
 
@@ -36,12 +40,23 @@ def test_successful_refresh_returns_true(
     capsys: pytest.CaptureFixture[str],
     graphify_on_path: Path,
 ) -> None:
+    resolved = _refresh.shutil.which("graphify")
+    assert resolved is not None
     fp.register(
-        [str(graphify_on_path), str(tmp_path), "--update"],
+        [resolved, str(tmp_path), "--update"],
         returncode=0,
         stdout="ok\n",
+        callback=lambda _process: (
+            (tmp_path / "graphify-out").mkdir(),
+            (tmp_path / "graphify-out" / ".meta.json").write_text(
+                '{"indexed_at_sha": "test-head"}\n'
+            ),
+        ),
     )
     assert _refresh.refresh(tmp_path) is True
+    assert (tmp_path / "graphify-out" / ".meta.json").read_text() == (
+        '{"indexed_at_sha": "test-head"}\n'
+    )
     captured = capsys.readouterr()
     assert captured.err == ""
 
@@ -52,8 +67,10 @@ def test_nonzero_exit_warns_and_returns_false(
     capsys: pytest.CaptureFixture[str],
     graphify_on_path: Path,
 ) -> None:
+    resolved = _refresh.shutil.which("graphify")
+    assert resolved is not None
     fp.register(
-        [str(graphify_on_path), str(tmp_path), "--update"],
+        [resolved, str(tmp_path), "--update"],
         returncode=2,
         stderr="graphify: corrupt graph\n",
     )
@@ -80,8 +97,10 @@ def test_timeout_warns_and_returns_false(
     capsys: pytest.CaptureFixture[str],
     graphify_on_path: Path,
 ) -> None:
+    resolved = _refresh.shutil.which("graphify")
+    assert resolved is not None
     fp.register(
-        [str(graphify_on_path), str(tmp_path), "--update"],
+        [resolved, str(tmp_path), "--update"],
         callback=_raise_timeout,
     )
     assert _refresh.refresh(tmp_path) is False
@@ -100,8 +119,10 @@ def test_refresh_never_raises(
     fp,
     graphify_on_path: Path,
 ) -> None:
+    resolved = _refresh.shutil.which("graphify")
+    assert resolved is not None
     fp.register(
-        [str(graphify_on_path), str(tmp_path), "--update"],
+        [resolved, str(tmp_path), "--update"],
         returncode=99,
         stderr="boom",
     )

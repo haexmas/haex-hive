@@ -110,7 +110,7 @@ def test_hook_exits_zero_when_snapshot_would_fail(
 
     # Invoke the hook directly with git's post-checkout argv: prev, new, flag=1.
     proc = subprocess.run(
-        [str(hook), "0" * 40, "1" * 40, "1"],
+        [sys.executable, str(hook), "0" * 40, "1" * 40, "1"],
         capture_output=True,
         text=True,
         cwd=str(child),

@@ -12,7 +12,7 @@ Nothing here is part of haex-hive's core constitution. Adopt it explicitly in yo
 
 Before authoring **any new named function, class, component, store, module, or CLI command**, an agent bound by the assembled constitution:
 
-1. Ensures `graphify-out/` is present and fresh — bootstrapping (`graphify <repo-root>`) if absent, refreshing (`graphify <repo-root> --update`) if stale.
+1. On tracked branches, ensures `graphify-out/` is present and fresh — bootstrapping (`graphify <repo-root>`) if absent, refreshing (`graphify <repo-root> --update`) if stale. Feature-branch/worktree snapshots stay frozen at their fork point and are not refreshed against feature `HEAD`.
 2. Queries the graph for candidates via plain `graphify` CLI (`graphify query "..."`, `graphify path`, `graphify explain`), evaluating unexported/incomplete artifacts too.
 3. When a candidate matches: names the candidate location, proposes extending it, cites lines saved, rewrites **one** call-site as proof of concept — and waits for operator approval before touching anything else.
 4. When similarity is borderline or scope-creep risk exists: **asks the operator** rather than deciding autonomously.
@@ -24,8 +24,8 @@ Full text lives in [`constitution.md`](constitution.md).
 
 For a repo that already runs haex-hive Spec 007 manifest v2 (`.haex-hive.json`, `haex constitution assemble`), see the [quickstart](../../../specs/atoms/graphify-first-authoring/quickstart.md) — the six steps are:
 
-1. `pip install graphifyy` (or accept the installer's default-Y prompt)
-2. `python .specify/atoms/graphify-first-authoring/install.py`
+1. `pip install graphifyy` (or accept the installer's default-Y prompt when the CLI is absent)
+2. Run the installer with the Python command available on your platform: `python3` on Linux/WSL2, or `python3`/`python` on macOS and `python` on Windows.
 3. Add an `atoms[]` entry pinned to a full SHA of this repo
 4. `haex constitution assemble`
 5. `haex constitution show` — verifies both source atoms are named in the preface
@@ -48,7 +48,8 @@ For a repo that already runs haex-hive Spec 007 manifest v2 (`.haex-hive.json`, 
 
 - It does **not** rewrite existing duplicates already committed to the codebase (scope is new authoring).
 - It does **not** replace human review — borderline calls escalate to the operator.
-- It does **not** silently install anything into your Python environment (the installer prompts before `pip install graphifyy` and before `graphify install`).
+- It does **not** silently install anything into your Python environment (the installer prompts before `pip install graphifyy`). It also prompts before `graphify install` when `graphify-out/` is absent, and skips that registration step when the directory already exists.
+- If graph bootstrap or refresh fails, the agent warns and continues; the failed refresh is flagged for a later manual check.
 - It does **not** cause git operations to fail — both hooks always exit 0 regardless of whether their work succeeded.
 
 ## Suspending for one session

@@ -63,21 +63,40 @@ def _install_hook(repo: Path, interpreter: str) -> None:
 
 
 def _make_graphify_stub(bin_dir: Path, meta_target_repo: Path) -> Path:
-    """Install a shell stub that writes ``graphify-out/.meta.json`` on --update."""
+    """Install a cross-platform graphify stub that writes the freshness marker."""
     bin_dir.mkdir(parents=True, exist_ok=True)
-    stub = bin_dir / "graphify"
-    stub.write_text(
-        "#!/bin/sh\n"
-        "set -e\n"
-        "if [ \"$2\" = \"--update\" ]; then\n"
-        "  target_repo=\"$1\"\n"
-        "  meta_dir=\"$target_repo/graphify-out\"\n"
-        "  mkdir -p \"$meta_dir\"\n"
-        "  sha=$(git -C \"$target_repo\" rev-parse HEAD)\n"
-        "  printf '{\"indexed_at_sha\": \"%s\"}\\n' \"$sha\" > \"$meta_dir/.meta.json\"\n"
-        "fi\n"
+    implementation = bin_dir / "graphify_stub.py"
+    implementation.write_text(
+        "import json\n"
+        "import subprocess\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        "\n"
+        "if len(sys.argv) > 2 and sys.argv[2] == '--update':\n"
+        "    target_repo = Path(sys.argv[1])\n"
+        "    meta_dir = target_repo / 'graphify-out'\n"
+        "    meta_dir.mkdir(parents=True, exist_ok=True)\n"
+        "    sha = subprocess.check_output(\n"
+        "        ['git', '-C', str(target_repo), 'rev-parse', 'HEAD'],\n"
+        "        text=True,\n"
+        "    ).strip()\n"
+        "    (meta_dir / '.meta.json').write_text(\n"
+        "        json.dumps({'indexed_at_sha': sha}) + '\\n'\n"
+        "    )\n"
     )
-    stub.chmod(0o755)
+    if os.name == "nt":
+        stub = bin_dir / "graphify.cmd"
+        stub.write_text(
+            "@echo off\r\n"
+            f'"{sys.executable}" "%~dp0graphify_stub.py" %*\r\n'
+        )
+    else:
+        stub = bin_dir / "graphify"
+        stub.write_text(
+            "#!/bin/sh\n"
+            f'exec "{sys.executable}" "$(dirname "$0")/graphify_stub.py" "$@"\n'
+        )
+        stub.chmod(0o755)
     return stub
 
 

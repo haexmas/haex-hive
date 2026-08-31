@@ -16,7 +16,7 @@ Conforms to Spec 007's existing `atom-manifest.v2.schema.json` — no schema cha
 
 Free-form markdown, merged by `haex constitution assemble` into an adopting repo's `.haex-hive/constitution.md` (straight-copy if this is the only constitution-contributing atom adopted, LLM-merged alongside others otherwise — both paths already exist per Spec 007 US2/US3).
 
-**Fields** (as prose sections, not structured data): the principle statement (FR-002/FR-003), the tracked-branch/snapshot lifecycle description, the bootstrap/refresh/warn-and-continue failure semantics (FR-004, FR-006, FR-010), the refuse-then-propose behavior (FR-004), the escape hatch (FR-005).
+**Fields** (as prose sections, not structured data): the principle statement (FR-002/FR-003), the tracked-branch/snapshot lifecycle description, the bootstrap/refresh failure contract (warn and continue, including when either operation fails) (FR-004, FR-006, FR-010), the refuse-then-propose behavior (FR-004), the escape hatch (FR-005).
 
 **Lifecycle**: authored once, versioned; consumed transitively via the adopting repo's own `.haex-hive/constitution.md` — never read directly by an agent.
 
@@ -41,13 +41,14 @@ Not owned by this atom — it is `graphify`'s own artifact directory. This atom 
 
 ## FreshnessMarker (graphify-out/.meta.json)
 
-Written by `graphify` at index/refresh time (small addition needed there, or a thin wrapper — noted as an open item in the design doc).
+Written by `graphify` itself at index/refresh time. The atom does not synthesize
+or rewrite this marker; `_refresh.py` only invokes the graphify process.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `indexed_at_sha` | string (git SHA) | The commit the graph currently reflects. |
 
-**Lifecycle**: compared against current `HEAD` on a tracked branch to decide bootstrap (absent) vs. refresh (behind) vs. proceed (current). Not meaningful on a feature-branch snapshot — the snapshot is intentionally frozen at the fork point, never compared against the feature branch's own advancing HEAD (see spec.md Edge Cases).
+**Lifecycle**: on a tracked branch, compared against current `HEAD` to decide bootstrap (absent) vs. refresh (behind) vs. proceed (current). On a feature-branch snapshot, it is intentionally frozen at the fork point and never compared against the feature branch's own advancing `HEAD` or refreshed. If bootstrap or refresh fails, the agent warns, continues, and flags the incomplete refresh for a later manual check.
 
 ## InstallerState (ephemeral — install.py's own run-time checks, not persisted)
 
@@ -56,7 +57,7 @@ Written by `graphify` at index/refresh time (small addition needed there, or a t
 | `graphify` on PATH | If absent, prompt to install via `pip install graphifyy` (default Y); on decline, refuse with instructions, no other changes (FR-011) |
 | Current branch is tracked | Refuse, name current branch + expected tracked branch(es) (FR-013) |
 | Target hook path already occupied | Refuse, instruct manual integration, no overwrite (FR-014) |
-| `graphify-out/` directory present in repo | If absent, run `graphify install` (idempotent, one-time per adoption); if present, skip (FR-012) |
+| `graphify-out/` directory present in repo | If absent, prompt before running `graphify install` (default Y); on decline, continue with manual follow-up instructions; if present, skip (FR-012) |
 
 **Lifecycle**: none — these are one-shot checks performed each time `install.py` runs; nothing here is written to disk as state.
 

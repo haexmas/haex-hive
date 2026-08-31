@@ -24,6 +24,9 @@ def refresh(repo_root: Path) -> bool:
     always coincides with a stderr warning; a ``True`` return leaves stderr
     untouched. Never raises.
     """
+    # Keep the exact platform-resolved executable (for example graphify.EXE on
+    # Windows) so subprocess receives the same command that PATH resolution
+    # selected.
     binary = shutil.which("graphify")
     if binary is None:
         print(
