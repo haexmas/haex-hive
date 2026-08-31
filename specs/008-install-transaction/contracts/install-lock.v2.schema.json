@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haexmas/haex-hive/schemas/install-lock.v2.schema.json",
+  "title": "haex-hive Install Lockfile v2 (Spec 008 extension)",
+  "description": "Extension of Spec 007's install-lock.v2 schema. Backward-compatible: adds `atoms[]`, `participating_roots`, and `visibility_marker` fields. Pre-Spec-008 records without these fields remain valid; the first Spec-008-vintage install after upgrade re-writes the lock with the new shape.",
+  "type": "object",
+  "required": ["haex_hive_version", "generated_by"],
+  "properties": {
+    "haex_hive_version": { "const": "2" },
+    "generated_by": {
+      "type": "string",
+      "pattern": "^haex [0-9]+\\.[0-9]+\\.[0-9]+.*$",
+      "description": "e.g. 'haex 2.1.0'."
+    },
+    "constitution": {
+      "$ref": "#/$defs/constitutionBlock",
+      "description": "Existing Spec 007 shape; unchanged. Present when the install includes at least one atom contributing a constitution."
+    },
+    "atoms": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/atomInstallRecord" },
+      "description": "New in Spec 008. One entry per adopted atom whose sealed contribution is recorded in this install."
+    },
+    "participating_roots": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/rootRecord" },
+      "description": "New in Spec 008. MUST match visibility.json.participating_roots byte-identically at seal time."
+    },
+    "visibility_marker": {
+      "$ref": "#/$defs/visibilityMarkerRef",
+      "description": "New in Spec 008. Cross-reference to the .haex-hive/visibility.json marker this lock corresponds to."
+    }
+  },
+  "$defs": {
+    "sriDigest": {
+      "type": "string",
+      "pattern": "^sha256-[A-Za-z0-9_-]{43}$",
+      "description": "SRI-style SHA-256 digest, base64url-nopad."
+    },
+    "constitutionBlock": {
+      "type": "object",
+      "required": ["sources", "assembled_by", "content_integrity"],
+      "properties": {
+        "sources": { "type": "array" },
+        "assembled_by": { "type": "object" },
+        "content_integrity": { "$ref": "#/$defs/sriDigest" }
+      }
+    },
+    "atomInstallRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source", "revision", "content_integrity", "contributed_paths"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$",
+          "description": "Reverse-DNS atom-id per Spec 007."
+        },
+        "source": {
+          "type": "string",
+          "format": "uri",
+          "description": "Publisher repo URL."
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "Full 40-char SHA per Principle IV."
+        },
+        "content_integrity": { "$ref": "#/$defs/sriDigest" },
+        "contributed_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^\\.[A-Za-z0-9._-]+/[^\\u0000-\\u001F\\u007F]+$"
+          },
+          "description": "Repo-relative POSIX paths this atom contributed under participating roots."
+        }
+      }
+    },
+    "rootRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "content_integrity"],
+      "properties": {
+        "root": {
+          "type": "string",
+          "pattern": "^\\.[A-Za-z0-9._-]+/$"
+        },
+        "content_integrity": { "$ref": "#/$defs/sriDigest" },
+        "overlay_paths": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^\\.[A-Za-z0-9._-]+/[^\\u0000-\\u001F\\u007F]+$"
+              }
+            },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "visibilityMarkerRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generation_id", "content_integrity"],
+      "properties": {
+        "generation_id": {
+          "type": "string",
+          "pattern": "^g_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{4}$"
+        },
+        "content_integrity": { "$ref": "#/$defs/sriDigest" }
+      }
+    }
+  }
+}
