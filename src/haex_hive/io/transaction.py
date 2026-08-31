@@ -1,12 +1,12 @@
 """Durable-journal pair publication for the constitution + install-lock (FR-035).
 
 New CLI calls place the journal under the shared device-local transaction state
-root. Recovery also discovers the legacy `.haex-hive` journal, restores each
-target from its recorded backup (or removes the target if its prior state was
-`absent`), then removes the journal. `publish_pair` writes both targets
-atomically, invokes an optional `post_write_verify` callback while the journal
-is still on disk, and only removes the journal after that callback returns
-cleanly.
+root. The normal recovery path handles only that checkout-scoped journal.
+Legacy `.haex-hive` journal recovery remains available to the explicit
+compatibility helper for older callers, but is not part of the Spec 008 CLI
+path. `publish_pair` writes both targets atomically, invokes an optional
+`post_write_verify` callback while the journal is still on disk, and only
+removes the journal after that callback returns cleanly.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import Any, cast
 
-from haex_hive.io.state import transaction_paths, write_identity_record
+from haex_hive.io.state import TransactionPaths, transaction_paths, write_identity_record
 
 _IS_WINDOWS = sys.platform == "win32"
 
@@ -128,7 +128,7 @@ def _journal_path(repo_root: Path, state_root: Path | None = None) -> Path:
 
 
 def is_journaled(repo_root: Path, state_root: Path | None = None) -> bool:
-    """Return whether new or legacy transaction state needs recovery."""
+    """Return whether transaction state should block read-only inspection."""
     if state_root is None:
         return _journal_path(repo_root).exists()
     try:
@@ -192,7 +192,10 @@ def _write_journal(
 
 
 def recover_if_journaled(repo_root: Path, state_root: Path | None = None) -> bool:
-    """Restore both targets from their recorded backup state, then remove the journal.
+    """Compatibility recovery for new and legacy journal locations.
+
+    The Spec 008 CLI uses :func:`recover_checkout_journaled` instead, so
+    legacy files are never recovered implicitly by a CLI command.
 
     Returns True if recovery ran, False if no journal was present.
     """
@@ -202,6 +205,27 @@ def recover_if_journaled(repo_root: Path, state_root: Path | None = None) -> boo
     else:
         paths = transaction_paths(repo_root, state_root)
         journals = [paths.journal, paths.legacy_shared_journal, paths.legacy_journal]
+    return _recover_journals(repo_root, paths, journals)
+
+
+def recover_checkout_journaled(repo_root: Path, state_root: Path | None = None) -> bool:
+    """Recover only the new checkout-scoped transaction journal.
+
+    Legacy journals are intentionally left untouched. Operators must remove
+    those stale files and rerun assembly under the Spec 008 hard cutover.
+
+    Returns True if recovery ran, False if no checkout journal was present.
+    """
+    paths = transaction_paths(repo_root, state_root)
+    return _recover_journals(repo_root, paths, [paths.journal])
+
+
+def _recover_journals(
+    repo_root: Path,
+    paths: TransactionPaths | None,
+    journals: list[Path],
+) -> bool:
+    """Recover the supplied journal paths after validating all entries."""
     journals = [journal for journal in journals if journal.exists()]
     if not journals:
         return False

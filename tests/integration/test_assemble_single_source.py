@@ -52,7 +52,22 @@ def test_successful_straight_copy(single_source_constitution_fixture: dict) -> N
     assert marker_data["install_lock_content_integrity"].startswith("sha256-")
     assert marker_data["participating_roots"][0]["root"] == ".haex-hive/"
     assert lock_data["visibility_marker"]["generation_id"] == marker_data["generation_id"]
-    assert (consumer / ".haex-hive" / "constitution-transaction.lock").exists()
+    assert not (consumer / ".haex-hive" / "constitution-transaction.lock").exists()
+
+
+def test_legacy_journal_is_left_for_operator_cleanup(
+    single_source_constitution_fixture: dict,
+) -> None:
+    consumer = single_source_constitution_fixture["consumer"]
+    state_root = single_source_constitution_fixture["state_root"]
+    legacy_journal = consumer / ".haex-hive" / "constitution-transaction.json"
+    legacy_journal.parent.mkdir(parents=True)
+    legacy_journal.write_text("stale legacy journal")
+
+    proc = _run_haex(consumer, state_root=state_root)
+
+    assert proc.returncode == 0, proc.stderr
+    assert legacy_journal.read_text() == "stale legacy journal"
 
 
 def test_determinism_across_two_runs(single_source_constitution_fixture: dict) -> None:
