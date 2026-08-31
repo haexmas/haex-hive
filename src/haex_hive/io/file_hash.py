@@ -7,7 +7,7 @@ Serialization framing for the one-file constitution.md tree:
     + str(len(path_bytes)).encode("ascii") + b"\\0" + path_bytes
     + str(len(body)).encode("ascii") + b"\\0" + body + b"\\0"
 
-The digest returned is `sha256-<standard-base64>` (RFC 4648, padded).
+The digest returned is `sha256-<base64url-nopad>` (RFC 4648 §5, unpadded).
 """
 
 from __future__ import annotations
@@ -35,4 +35,4 @@ def _serialize(path_bytes: bytes, body: bytes) -> bytes:
 def d15_one_file_tree_digest(body: bytes) -> str:
     tree_bytes = _serialize(_CONSTITUTION_PATH, body)
     digest = hashlib.sha256(tree_bytes).digest()
-    return "sha256-" + base64.b64encode(digest).decode("ascii")
+    return "sha256-" + base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")

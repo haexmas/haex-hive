@@ -38,7 +38,7 @@ def test_publish_rejects_mismatched_published_lock(
         hive_dir.mkdir()
         (hive_dir / transaction.CONSTITUTION_NAME).write_bytes(constitution_body)
         lock_data = json.loads(install_lock_bytes)
-        lock_data["constitution"]["content_integrity"] = "sha256-" + "A" * 43 + "="
+        lock_data["constitution"]["content_integrity"] = "sha256-" + "A" * 43
         (hive_dir / transaction.INSTALL_LOCK_NAME).write_text(json.dumps(lock_data))
         assert callable(post_write_verify)
         post_write_verify()

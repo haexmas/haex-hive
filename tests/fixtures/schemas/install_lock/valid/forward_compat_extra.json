@@ -2,6 +2,13 @@
   "haex_hive_version": "2",
   "generated_by": "haex 2.0.0",
   "atoms": [
-    { "id": "com.github.future.spec.atom", "unknown_future_field": true }
+    {
+      "id": "com.github.future.spec.atom",
+      "source": "https://github.com/example/publisher",
+      "revision": "0000000000000000000000000000000000000000",
+      "content_integrity": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "contributed_paths": [".haex-hive/atoms/com.github.future.spec.atom/manifest.json"],
+      "unknown_future_field": true
+    }
   ]
 }

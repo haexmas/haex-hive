@@ -36,8 +36,11 @@ INCOMPLETE_TRANSACTION = 7
 # 8 — Principle VIII concealment-instruction refuse.
 CONSTITUTION_CONCEALMENT = 8
 
-# 9 — another `haex constitution assemble` owns the writer lock.
+# 9 — another `haex constitution assemble` (writer lock) or `haex install`
+# (install lock) owns the exclusive lock. Both surfaces share the code so
+# callers do not have to disambiguate; the diagnostic distinguishes them.
 WRITER_BUSY = 9
+INSTALL_LOCK_BUSY = WRITER_BUSY
 
 # 10 — plaintext secret detected in a source, candidate, pending payload,
 # or lock payload.
