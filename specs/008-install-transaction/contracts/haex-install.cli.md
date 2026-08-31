@@ -78,6 +78,6 @@ The Spec 008 landing includes a reference reader-guide in [quickstart.md](../qui
 - **Publisher-hook invocations** (Spec 009 territory) — will surface as a new `entry_type` in the journal and matching CLI diagnostic; no change to this contract.
 - **Adapter-emitted outputs** (Spec 010 territory) — will surface as additional participating roots and per-atom `contributed_paths`; the CLI schema of THIS spec already accommodates them without change.
 
-## Backward compatibility
+## Existing subcommands unchanged
 
-The current `haex constitution assemble` and `haex constitution show` commands continue to work unchanged as narrow-scope shortcuts. Internally they invoke the install-transaction machinery scoped to constitution steps only.
+Spec 008 leaves `haex constitution assemble` and `haex constitution show` in place as narrow-scope shortcuts. Internally they invoke the install-transaction machinery scoped to constitution steps only. This is a scope statement, not a compatibility promise — under the project's pre-user policy, keeping them is a design choice we can revisit any time.
