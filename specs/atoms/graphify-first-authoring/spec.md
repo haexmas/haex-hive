@@ -31,7 +31,7 @@ An operator working in a haex-hive-managed repo wants agents to stop rebuilding 
 1. **Given** an adopting repo has assembled a constitution containing this atom's contributed text, **When** an agent is asked to author a new named function/class/component/store/module, **Then** the agent consults the graph before writing any code.
 2. **Given** the graph contains an existing artifact that is identical, near-identical, or an incomplete version of what is being requested, **When** the agent finds it, **Then** it names the candidate (file + symbol), states the delta between what exists and what is needed, and proposes extending it instead of authoring a duplicate.
 3. **Given** the operator has explicitly instructed "skip graphify check" for the current session, **When** the agent authors new code in that same session, **Then** it does not perform the graph consultation, and the suspension does not carry over to the next session.
-4. **Given** `graphify-out/` does not yet exist in the repo, **When** an agent is about to author new named code, **Then** it runs `graphify update <path>` to build the graph before proceeding, rather than skipping the check.
+4. **Given** `graphify-out/` does not yet exist in the repo on a tracked branch, **When** an agent is about to author new named code, **Then** it runs `graphify update <path>` to build the graph before proceeding, rather than skipping the check. On a feature branch with an incomplete snapshot, it warns and applies failed-consultation handling instead of rebuilding against feature `HEAD`.
 
 ---
 
