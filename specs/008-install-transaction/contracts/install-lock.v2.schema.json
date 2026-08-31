@@ -53,7 +53,6 @@
     },
     "atomInstallRecord": {
       "type": "object",
-      "additionalProperties": false,
       "required": ["id", "source", "revision", "content_integrity", "contributed_paths"],
       "properties": {
         "id": {
@@ -76,7 +75,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^\\.[A-Za-z0-9._-]+/[^\\u0000-\\u001F\\u007F]+$"
+            "pattern": "^(?!.*(?:^|/)\\.\\.?/)(?!.*\\\\)\\.[A-Za-z0-9._-]+/[^\\u0000-\\u001F\\u007F\\\\]+$"
           },
           "description": "Repo-relative POSIX paths this atom contributed under participating roots."
         }
@@ -89,7 +88,7 @@
       "properties": {
         "root": {
           "type": "string",
-          "pattern": "^\\.[A-Za-z0-9._-]+/$"
+          "pattern": "^(?!\\.\\.?/$)\\.[A-Za-z0-9._-]+/$"
         },
         "content_integrity": { "$ref": "#/$defs/sriDigest" },
         "overlay_paths": {
@@ -98,7 +97,7 @@
               "type": "array",
               "items": {
                 "type": "string",
-                "pattern": "^\\.[A-Za-z0-9._-]+/[^\\u0000-\\u001F\\u007F]+$"
+                "pattern": "^(?!.*(?:^|/)\\.\\.?/)(?!.*\\\\)\\.[A-Za-z0-9._-]+/[^\\u0000-\\u001F\\u007F\\\\]+$"
               }
             },
             { "type": "null" }
@@ -138,7 +137,7 @@
       "properties": {
         "path": {
           "type": "string",
-          "pattern": "^\\.[A-Za-z0-9._-]+/[^\\u0000-\\u001F\\u007F]+$",
+          "pattern": "^(?!.*(?:^|/)\\.\\.?/)(?!.*\\\\)\\.[A-Za-z0-9._-]+/[^\\u0000-\\u001F\\u007F\\\\]+$",
           "description": "Root-relative POSIX path owned by this generation."
         },
         "owner": {

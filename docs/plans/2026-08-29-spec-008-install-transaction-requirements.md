@@ -43,7 +43,8 @@ interruption and are non-negotiable for the Spec 008 landing:
   staging root next to the target (same filesystem), fsynced, and prepared as
   complete logical output-root views for `.haex-hive/`, `.claude/`, and
   `.codex/`. `.haex-hive/` is haex-owned and may use a platform primitive that
-  atomically exchanges populated, same-filesystem directories. `.claude/` and
+  atomically replaces each staged file on the same filesystem under the
+  durable journal. `.claude/` and
   `.codex/` are mixed-ownership roots and MUST NEVER be exchanged or renamed as
   directories. Their adapter-owned leaves are instead stored under a versioned
   generation directory and published through a stable per-adapter overlay and
@@ -57,9 +58,9 @@ interruption and are non-negotiable for the Spec 008 landing:
   sealed, the transaction writes and fsyncs the final staged `install.lock`,
   computes the participating-root digests over those final staged bytes, and
   writes the staged `.haex-hive/visibility.json` marker last. The marker
-  contains a deterministic generation ID and the digest of every participating
-  output root; the `.haex-hive/` digest includes `install.lock` and excludes
-  only the marker itself to avoid self-reference. Readers MUST NOT treat
+  contains a unique, time-based generation ID and the digest of every participating
+  output root; the `.haex-hive/` digest excludes both `install.lock` and the
+  marker to avoid recursive lock/marker integrity references. Readers MUST NOT treat
   individual root exchanges or pointer replacements as publication. The
   `.haex-hive/` exchange or pointer replacement containing that final marker is
   the final publication step and publishes the generation. Journaled cleanup
@@ -128,16 +129,22 @@ Spec 008's conformance suite MUST cover:
 
 The resolved placement is the device-local state root:
 `$HAEX_HIVE_STATE/locks/<repo-key>/`, alongside the content store, keeping
-`.haex-hive/` fully committed content. `<repo-key>` is the lowercase
-hexadecimal SHA-256 of the canonical Spec-007 repo identity. The full identity
-is stored separately in `repo-identity.v1.json` for diagnostics and collision
-detection; it is never used verbatim as a path segment.
+`.haex-hive/` fully committed content. The repository mutex lives directly
+under that directory; each checkout's journal lives under
+`checkouts/<checkout-key>/install.journal`. `<repo-key>` is the lowercase
+hexadecimal SHA-256 of the canonical Spec-007 repo identity and
+`<checkout-key>` is a device-local hash of the resolved checkout path. The full
+identity is stored separately in `repo-identity.v1.json` for diagnostics and
+collision detection; neither key contains the identity or a path verbatim.
 
 The fenced-lease contract is fixed: owner token
 `<pid>:<hostname>:<start_ns>:<uuid4_hex>`, 5-second heartbeat, 60-second TTL,
-5-second safety margin, UTC expiry values, the same non-blocking exclusive OS
-lock for recovery, unchanged-token revalidation, and atomic fencing before
-replay. Existing `.haex-hive/constitution-transaction.lock` and
+5-second safety margin, reboot-safe `heartbeat_at_ns_wallclock` expiry values,
+the same non-blocking exclusive OS lock for recovery, unchanged-token
+revalidation, and in-place fencing before replay. Existing
+`.haex-hive/constitution-transaction.lock` and
 `.haex-hive/constitution-transaction.json` files are legacy inputs only; the
-first new shared-lock operation recovers a valid legacy journal and creates no
-new legacy artifact.
+first new shared-lock operation recovers a valid legacy journal before planning.
+During migration it MAY create the legacy lock transiently to coordinate with
+an older writer, but MUST remove that compatibility lock before releasing the
+new shared lock if it did not already exist. No new journal is written there.

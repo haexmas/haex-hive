@@ -64,15 +64,21 @@ def run_assemble(args: argparse.Namespace) -> int:
     """
     repo_root = Path(args.repo_root).resolve()
     state_root = _state_root()
-    paths = transaction_paths(repo_root, state_root)
 
     try:
+        paths = transaction_paths(repo_root, state_root)
+        legacy_lock_was_present = paths.legacy_mutex.exists()
         with ExitStack() as stack:
+            # Acquire the legacy lock first so old Spec-007 writers and new
+            # shared-state writers cannot publish concurrently during migration.
+            # A newly-created compatibility file is removed after the operation.
+            stack.enter_context(ConstitutionWriterLock(paths.legacy_mutex))
+            if not legacy_lock_was_present:
+                # Register cleanup only after acquiring the compatibility lock;
+                # a contending legacy writer must never have its lock pathname
+                # unlinked from our exception cleanup.
+                stack.callback(paths.legacy_mutex.unlink, missing_ok=True)
             stack.enter_context(ConstitutionWriterLock(paths.mutex))
-            # Keep old Spec-007 writers from racing while their legacy lock file
-            # still exists. New runs never create this compatibility lock.
-            if paths.legacy_mutex.exists():
-                stack.enter_context(ConstitutionWriterLock(paths.legacy_mutex))
             transaction.recover_if_journaled(repo_root, state_root=state_root)
 
             manifest = _load_consumer_manifest(repo_root)

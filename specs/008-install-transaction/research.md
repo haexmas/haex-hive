@@ -8,7 +8,7 @@
 
 ## R1. Atomic per-file publication primitive across OSes
 
-**Decision**: Use `os.replace(src, dst)` for every publication step. Sequence per-file replacements via the durable journal (see R7). The visibility marker publication is one final `os.replace()` call and is the sole publication event (FR-004).
+**Decision**: Use `os.replace(src, dst)` for every file publication step. Sequence per-file replacements via the durable journal (see R7). The visibility marker publication is one final `os.replace()` call and is the sole publication event (FR-004). No directory-exchange primitive is part of this contract.
 
 **Rationale**:
 - Linux/macOS: `os.replace()` calls `rename(2)` — atomic when `src` and `dst` are on the same filesystem, replacing the target if present.
@@ -27,7 +27,7 @@
 
 ## R2. Same-filesystem staging layout
 
-**Decision**: Stage all pre-publication bytes under a per-generation sibling directory of each participating output root, named `<root>.staging.<gen>/`. Example: `.haex-hive.staging.g_20260831T142011Z_a4c2/`. `<gen>` is the deterministic generation identifier from R8.
+**Decision**: Stage all pre-publication bytes under a per-generation sibling directory of each participating output root, named `<root>.staging.<gen>/`. Example: `.haex-hive.staging.g_20260831T142011Z_a4c2/`. `<gen>` is the time-based, collision-checked generation identifier from R8.
 
 **Rationale**:
 - Guarantees `os.replace(staged_file, canonical_file)` stays on the same filesystem — a rename that crosses filesystems degrades to copy+unlink and loses atomicity.
@@ -68,9 +68,13 @@
 
 **Decision**:
 - **Owner-token format**: `<pid>:<hostname>:<start_ns>:<uuid4-hex>` — exactly four colon-separated fields, all ASCII-safe, total length ≤ 128 bytes. Example: `31245:laptop-hex.local:1727612345678901234:8f3a2d1c9e7b4a5680c2e14f7d6b3a95`.
-- **Heartbeat cadence**: 5 seconds. The lock owner runs a background thread that atomically replaces and fsyncs the `heartbeat_at` field of `install.mutex` every 5 seconds.
-- **Lease TTL**: 60 seconds (12× heartbeat), plus a 5-second safety margin. Recovery requires `now_utc - heartbeat_at > 65 seconds` before reclaiming.
-- **Revalidation ordering** (recovery): (1) acquire the same non-blocking exclusive OS lock; (2) read and parse the lease; (3) if the OS lock is held by another process, wait or exit with owner-detail diagnostic regardless of heartbeat age; (4) require the UTC heartbeat to be past TTL plus the safety margin; (5) re-read the lease under the exclusive handle and require the owner token and heartbeat to be unchanged and still stale; (6) atomically overwrite with the recovering process's own owner token; (7) proceed with recovery. Every owner revalidates its token before each mutation, so a resumed fenced process stops.
+- **Heartbeat cadence**: 5 seconds. The lock owner runs a background thread that updates `heartbeat_at` and reboot-safe `heartbeat_at_ns_wallclock=time.time_ns()` in place through the already-locked file handle, then fsyncs it every 5 seconds. The pathname and inode remain stable.
+- **Lease TTL**: 60 seconds (12× heartbeat), plus a 5-second safety margin. The
+  persisted `heartbeat_at_ns_wallclock=time.time_ns()` is compared with the
+  recovering process's `time.time_ns()`; recovery requires an age greater than
+  65 seconds before reclaiming. Persisted monotonic values are not used across
+  reboots.
+- **Revalidation ordering** (recovery): (1) acquire the same non-blocking exclusive OS lock; (2) read and parse the lease; (3) if the OS lock is held by another process, wait or exit with owner-detail diagnostic regardless of heartbeat age; (4) require `time.time_ns() - heartbeat_at_ns_wallclock` to exceed TTL plus the safety margin; (5) re-read the lease under the exclusive handle and require the owner token and wall-clock heartbeat to be unchanged and still stale; (6) rewrite the lease in place through the locked handle with the recovering process's own owner token; (7) proceed with recovery. Every owner revalidates its token before each mutation, so a resumed fenced process stops.
 
 **Rationale**:
 - **UUID4 for uniqueness** — pid+hostname+start_ns can theoretically collide (containers reusing pids, low-resolution clock); UUID4 makes collision astronomically unlikely.
@@ -94,14 +98,14 @@
 - **Algorithm**: SHA-256.
 - **Per-root normalisation**: enumerate the root's owned paths in POSIX-byte-sorted order (lexicographic on UTF-8-encoded bytes). For each path, compute `content_hash = SHA-256(bytes-of-file)`. Concatenate `<repo-relative-path>:<hex-content-hash>\n` for every path (LF terminator per line). The root's digest is `SHA-256(concatenation)`.
 - **Mixed-ownership root**: enumerate ONLY the overlay-owned paths recorded in `install.lock` (never sibling entries).
-- **`.haex-hive/` root**: enumerate every file under `.haex-hive/` EXCEPT `visibility.json` (self-reference). `install.lock` IS included in the digest.
+- **`.haex-hive/` root**: enumerate every file under `.haex-hive/` EXCEPT `visibility.json` and `install.lock`; excluding both avoids recursive lock/marker integrity references. The lock's marker reference uses a canonical marker projection without `install_lock_content_integrity` and `written_at`, so it remains computable.
 - **Emission format**: `sha256-<base64url-nopad(digest)>` — matches Spec 007's SRI-style `content_integrity` representation for consistency.
 
 **Rationale**:
 - **SHA-256** is Spec 007's existing choice; introducing a different algorithm would fragment the codebase's integrity vocabulary.
 - **Byte-sorted paths + LF-terminated lines** — deterministic; independent of iteration order returned by the OS's directory listing; independent of locale.
 - **Excluding `visibility.json` from `.haex-hive/`'s digest** — needed because `visibility.json` records that digest; including it would be self-referential.
-- **Including `install.lock` in the digest** — reqs doc requires this: "The `.haex-hive/` digest includes `install.lock` and excludes only the marker itself to avoid self-reference."
+- **Excluding `install.lock` from the digest** — the lock contains the participating-root digest and the marker contains the lock digest. Excluding the lock and marker breaks that cycle without weakening the digest of any other committed output.
 - **base64url-nopad** — URL-safe, no padding characters, compact — matches SRI convention.
 
 **Alternatives considered**:
@@ -135,7 +139,8 @@
 ## R7. Durable journal format and replay semantics
 
 **Decision**:
-- **Format**: one JSON object per line (JSONL), UTF-8, LF-terminated. Each entry has: `entry_id` (monotonically increasing integer), `step_type` (enum), `payload` (step-specific object), `tail_hash` (SHA-256 of `<line-content>\n<prev-tail-hash>`).
+- **Format**: one JSON object per line (JSONL), UTF-8, LF-terminated. Each entry has: `entry_id` (monotonically increasing integer), `entry_type` (enum), `payload` (step-specific object), `tail_hash` (SHA-256 over canonical UTF-8 entry JSON without `tail_hash`, one LF, and the previous tail hash as ASCII). The first previous hash is empty and the JSONL record's trailing LF is separate from the hash preimage.
+- **PlanStep-to-journal mapping**: `stage_file` → `stage_file`, `delete_orphan` → `delete_orphan`, `overlay_pointer` → `overlay_pointer_swapped`, `hook_invoke` → the bracketing pair `hook_step_started`/`hook_step_ended`, `seal_install_lock` → `install_lock_sealed`, and `publish_marker` → `commit_marker_published`. Every filesystem mutation has exactly one mutation entry written before it; lifecycle entries are not PlanSteps.
 - **Write discipline**: append the line, `fsync(fd)`, `fsync(parent_dir_fd)`, then execute the corresponding filesystem mutation. Each state transition writes its own journal entry BEFORE the mutation. This is the "write-ahead" invariant of FR-002.
 - **Replay on recovery**:
   1. Open the journal; verify `tail_hash` chain from the first entry; abort recovery on a broken chain (integrity violation).
@@ -144,7 +149,7 @@
   4. If the last entry is `commit_marker_published` but the marker file on disk is absent or mismatched, roll back to the previous generation's marker.
   5. If the last entry is `install_lock_sealed` but not `commit_marker_published`, complete the marker publication (idempotent — it's a single-file replace).
   6. If any earlier state, roll back: undo any per-file replaces recorded in the journal, restore prior-generation content from `<root>.rollback.<prev-gen>/` if present, `rmtree` staging.
-- **Step types**: `plan_snapshot_sealed`, `commit_snapshot_verified`, `stage_file`, `hook_step_started`, `hook_step_ended` (for Spec 009 extensibility), `overlay_pointer_swapped`, `install_lock_sealed`, `commit_marker_published`, `cleanup_started`, `cleanup_completed`, `install_aborted`.
+- **Entry types**: `plan_snapshot_sealed`, `commit_snapshot_verified`, `stage_file`, `delete_orphan`, `hook_step_started`, `hook_step_ended` (for Spec 009 extensibility), `overlay_pointer_swapped`, `install_lock_sealed`, `commit_marker_published`, `cleanup_started`, `cleanup_completed`, `install_aborted`.
 
 **Rationale**:
 - **JSONL** — line-append is atomic below PIPE_BUF (4096 bytes on Linux, 512 on some POSIX); journal entries are ≤512 bytes and thus atomic on append.
@@ -157,16 +162,16 @@
 - **Binary format**: more compact but less debuggable. Human-inspectable JSONL wins for a tool operators will occasionally inspect.
 - **Redo/undo log with separate files**: more complex, no benefit at this scale.
 
-**Residual risk**: journal grows unbounded if never cleaned. Mitigation: `cleanup_completed` truncates the journal to zero bytes at the end of every successful install. Recovery from a corrupt or truncated journal falls back to `install.lock` reconciliation (see R10 in future revision — not in Spec 008 scope).
+**Residual risk**: journal grows unbounded if never cleaned. Mitigation: `cleanup_completed` removes the checkout-scoped journal atomically at the end of every successful install. Recovery from a corrupt or truncated journal falls back to `install.lock` reconciliation (see R10 in future revision — not in Spec 008 scope).
 
 ---
 
-## R8. Deterministic generation ID
+## R8. Time-based generation ID
 
-**Decision**: `g_<UTC-ISO8601-basic-format>_<content-hash-prefix>` — e.g. `g_20260831T142011Z_a4c2` — where `<content-hash-prefix>` is the first 4 hex chars of `SHA-256(plan-snapshot-digest)`. Wall-clock is included for operator diagnostics; the content-hash prefix ensures two concurrent-but-different plans on the same second get different IDs.
+**Decision**: `g_<UTC-ISO8601-basic-format>_<content-hash-prefix>` — e.g. `g_20260831T142011Z_a4c2` — where `<content-hash-prefix>` is the first 4 hex chars of `SHA-256(plan-snapshot-digest)`. The timestamp is the UTC allocation time, not a deterministic input. The allocator advances the timestamp if the candidate equals an existing generation ID, making IDs unique and lexicographically time-ordered under the exclusive install lock.
 
 **Rationale**:
-- **Deterministic** — same plan-snapshot ⇒ same content-hash-prefix. Recovery can compute the expected generation ID from the journal's plan-snapshot entry and verify against the marker.
+- **Stable plan identity** — the hash suffix is derived from the sealed plan snapshot, while the timestamp identifies allocation order. Recovery uses the generation ID recorded in the journal rather than recomputing the full ID from inputs.
 - **Human-inspectable** — the timestamp lets the operator eyeball the install order in `.haex-hive/visibility.json.previous/` (if we ever add generation history — future revision).
 - **UTC ISO 8601 basic** — no locale-specific format issues, sortable as ASCII.
 
@@ -175,7 +180,7 @@
 - **Sequential integer**: needs a persisted counter, adds state.
 - **Full content-hash**: opaque to operators; the 4-char prefix + timestamp balance readability with disambiguation.
 
-**Residual risk**: 4-char prefix has 65,536 buckets — two different plans producing the same 4-char prefix at the same second is possible but requires simultaneous concurrent installs of different plans, which the lock already forbids. Acceptable.
+**Residual risk**: 4-char prefix has 65,536 buckets — different plans can share a suffix. The timestamp allocator's collision check prevents duplicate complete IDs; the suffix is an identifier hint, not a uniqueness boundary.
 
 ---
 
@@ -186,7 +191,7 @@
 - The existing `.haex-hive/install.lock` schema is EXTENDED (backward-compatible; see contracts) with `overlay_paths` per participating root, a `visibility_marker` block, and a `participating_roots` list. Existing single-source records stay valid.
 - `haex constitution assemble` (invoked directly) still works — it becomes a shortcut that runs the install transaction with a plan filtered to constitution-only steps. This preserves the current UX.
 - Multi-source LLM-merge (Spec 007's `--llm=file` two-phase flow) is preserved unchanged.
-- Shared path helpers derive `$HAEX_HIVE_STATE`, the canonical project identity, its SHA-256 `<repo-key>`, `install.mutex`, and `install.journal`. Both `constitution assemble` and `constitution show` use these helpers. The old `.haex-hive/constitution-transaction.lock` and `.haex-hive/constitution-transaction.json` are read only as migration inputs; a valid legacy journal is recovered under the new lock before any new plan is built, and new runs never create legacy artifacts.
+- Shared path helpers derive `$HAEX_HIVE_STATE`, the canonical project identity, its SHA-256 `<repo-key>`, the repository mutex, and a checkout-scoped journal under `checkouts/<checkout-key>/`. Both `constitution assemble` and `constitution show` use these helpers. The old `.haex-hive/constitution-transaction.lock` and `.haex-hive/constitution-transaction.json` are read only as migration inputs; a valid legacy journal is recovered under the new lock before any new plan is built, and a transient compatibility lock is removed when the new command created it.
 
 **Rationale**:
 - Duplicating the transaction machinery for install would be a source of drift. The extract-shared-implementation approach keeps one transaction, many participants.
@@ -248,7 +253,7 @@ for recovery.
 Recorded for the plan phase; each has a mitigation baked into R1–R6.
 
 - **`os.replace()` on Windows with a held reader handle** — see R1 residual risk (retry-backoff-then-refuse).
-- **Windows directory-junction creation** — requires no elevation, but the parent directory MUST NOT already contain a matching entry (the junction API refuses to overwrite). Mitigation: publication removes any prior overlay at the same path before creating the junction, recorded in the journal as `overlay_pointer_replaced`.
+- **Windows directory-junction creation** — `mklink /J` is a command-line fallback for directory targets; `CreateSymbolicLinkW(..., SYMBOLIC_LINK_FLAG_DIRECTORY)` is the native API path. Both refuse an existing matching entry. Before removal, publication moves the existing overlay to the transaction rollback tree and records the pre-image and pointer path in the journal. It then creates the new junction/symlink; on creation failure or crash before marker publication, recovery restores the saved overlay, and after marker publication cleanup removes the backup only after the new pointer verifies. The rollback path and generation are recorded in journal metadata and the ownership set.
 - **Windows without Developer Mode + file-scoped symlink** — refuse per R3.
 - **`fcntl.flock` unavailable on Windows** — use `msvcrt.locking` (R6).
 - **Path separators** — every path stored on disk is POSIX-normalised (`/`); Windows-side code converts at the OS boundary only.

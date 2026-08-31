@@ -43,7 +43,14 @@ def test_publish_with_state_root_uses_shared_paths(tmp_path: Path) -> None:
     transaction.publish_pair(tmp_path, b"body\n", b"{}\n", state_root=state_root)
 
     paths = transaction_paths(tmp_path, state_root)
-    assert paths.journal == state_root / "locks" / paths.repo_key / "install.journal"
+    assert paths.journal == (
+        state_root
+        / "locks"
+        / paths.repo_key
+        / "checkouts"
+        / paths.checkout_key
+        / "install.journal"
+    )
     assert "com.example.consumer" in paths.identity_record.read_text()
     assert paths.mutex.name == "install.mutex"
     assert not paths.legacy_journal.exists()
@@ -166,10 +173,19 @@ def test_recover_absent_prior_removes_targets(tmp_path: Path) -> None:
         )
     )
 
-    assert transaction.recover_if_journaled(tmp_path)
+    (tmp_path / ".haex-hive.json").write_text(
+        json.dumps({"identity": "com.example.consumer"})
+    )
+    state_root = tmp_path / "state"
+    state_paths = transaction_paths(tmp_path, state_root)
+    state_paths.legacy_shared_journal.parent.mkdir(parents=True)
+    state_paths.legacy_shared_journal.write_bytes(journal.read_bytes())
+
+    assert transaction.recover_if_journaled(tmp_path, state_root=state_root)
     assert not constitution.exists()
     assert not lock.exists()
     assert not journal.exists()
+    assert not state_paths.legacy_shared_journal.exists()
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="fcntl-based lock is POSIX-only")

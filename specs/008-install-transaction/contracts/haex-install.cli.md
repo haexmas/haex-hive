@@ -6,7 +6,7 @@
 ## Usage
 
 ```console
-$ haex install [--repo-root PATH] [--verify-only] [--recover]
+haex install [--repo-root PATH] [--verify-only] [--recover]
 ```
 
 ## Flags
@@ -32,15 +32,15 @@ Uses the canonical set defined in [src/haex_hive/util/exit_codes.py](../../../sr
 | Code | Trigger | Example diagnostic |
 |---|---|---|
 | 0 | Success | `installed generation g_20260831T142011Z_a4c2 (2 atoms, 12 files)` |
-| 2 | Input refuse | `.haex-hive.json not found` / `.haex-hive.json.atoms is empty (Principle V opt-in required)` |
-| 3 | I/O refuse | `publisher clone for <source> not found under $HAEX_HIVE_STATE/repos/` |
-| 4 | Validation refuse | `plan snapshot digest does not match commit snapshot; source mutated during install` |
-| 5 | System refuse | `platform does not support required overlay primitive for <path> (Windows requires Developer Mode for file-scoped symlinks)` |
-| 6 | Post-write validation | `sealed .haex-hive/constitution.md digest does not match install.lock` |
-| 7 | Incomplete transaction | `install.journal contains uncommitted entries; run with --recover` |
-| 8 | Constitution concealment | (from Spec 007's guard; unchanged) |
-| 9 | Writer busy | `lock held by <pid>@<hostname> since <acquired_at> (heartbeat <n>s ago, ttl <t>s)` |
-| 10 | Plaintext secret | (from Spec 007's guard; unchanged) |
+| 2 | Input refuse (FR-006 / Principle V) | `.haex-hive.json not found` / `.haex-hive.json.atoms is empty (Principle V opt-in required)` |
+| 3 | I/O refuse (FR-006) | `publisher clone for <source> not found under $HAEX_HIVE_STATE/repos/` |
+| 4 | Validation refuse (FR-006) | `plan snapshot digest does not match commit snapshot; source mutated during install` |
+| 5 | System refuse (FR-003) | `platform does not support required overlay primitive for <path> (Windows requires Developer Mode for file-scoped symlinks)` |
+| 6 | Post-write validation (FR-005 / FR-009) | `sealed .haex-hive/constitution.md digest does not match install.lock` |
+| 7 | Incomplete transaction (FR-002) | `install.journal contains uncommitted entries; run with --recover` |
+| 8 | Constitution concealment (Principle VIII) | (from Spec 007's guard; unchanged) |
+| 9 | Writer busy (FR-001 / FR-010) | `lock held by <pid>@<hostname> since <acquired_at> (heartbeat <n>s ago, ttl <t>s)` |
+| 10 | Plaintext secret (Principle I) | (from Spec 007's guard; unchanged) |
 
 ## Refusal semantics
 
@@ -49,14 +49,14 @@ Every refusal MUST cite the specific requirement (FR-###) or Principle it enforc
 Examples:
 
 ```text
-$ haex install
-error: exit=9 key=install-lock-busy
+haex install
+error: exit=9 key=install-lock-busy (FR-001 / FR-010)
   lock held by 31245@laptop-hex.local since 2026-08-31T14:20:11Z
   (heartbeat 3s ago, ttl 60s)
   hint: wait or investigate PID 31245; if the process is dead, run `haex install --recover`
 
-$ haex install
-error: exit=4 key=commit-snapshot-mismatch
+haex install
+error: exit=4 key=commit-snapshot-mismatch (FR-006)
   .haex-hive.json digest changed during install
   plan snapshot: sha256-QK+AUjCuNhHjAJap8cbgk6VkyZipJm3f1ZIH4oOqigg
   commit snapshot: sha256-abc123...

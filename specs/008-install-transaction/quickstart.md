@@ -14,7 +14,7 @@
 From the project checkout root:
 
 ```console
-$ haex install
+haex install
 installed generation g_20260831T142011Z_a4c2 (2 atoms, 12 files)
 ```
 
@@ -31,14 +31,16 @@ identity; the full identity is kept separately in `repo-identity.v1.json` and
 never appears in the directory name:
 
 - `install.mutex` (device-local, not shared across satellites) — was held during the install; heartbeat thread stops on exit.
-- `install.journal` — truncated to zero bytes after the successful cleanup step.
+- `checkouts/<checkout-key>/install.journal` — removed atomically after the
+  successful cleanup step; an existing journal always means recovery is
+  required (FR-002).
 
 ## 2. Idempotent re-install
 
 Running `haex install` again with no changes to `.haex-hive.json`:
 
 ```console
-$ haex install
+haex install
 no changes; generation g_20260831T142011Z_a4c2 is up to date
 ```
 
@@ -49,7 +51,7 @@ Zero files rewritten. Zero timestamps updated. This is the SC-003 idempotence gu
 For CI or a scripted check:
 
 ```console
-$ haex install --verify-only
+haex install --verify-only
 generation g_20260831T142011Z_a4c2 verified
 ```
 
@@ -60,7 +62,7 @@ Acquires the shared read lock only. Concurrent `haex install` (exclusive) blocks
 If a second `haex install` runs while the first is in flight:
 
 ```console
-$ haex install
+haex install
 error: exit=9 key=install-lock-busy
   lock held by 31245@laptop-hex.local since 2026-08-31T14:20:11Z
   (heartbeat 3s ago, ttl 60s)
@@ -74,8 +76,8 @@ Non-blocking by design (per FR-001) — the operator sees ownership detail immed
 If a previous `haex install` was killed (SIGKILL, power loss, host reboot), the next invocation detects it:
 
 ```console
-$ haex install
-error: exit=7 key=incomplete-transaction
+haex install
+error: exit=7 key=incomplete-transaction (FR-002)
   install.journal contains uncommitted entries from a prior invocation
   hint: run `haex install --recover` to complete or roll back
 ```
@@ -83,14 +85,14 @@ error: exit=7 key=incomplete-transaction
 Recover:
 
 ```console
-$ haex install --recover
+haex install --recover
 recovered generation g_20260831T142011Z_a4c2 (completed; 12 files sealed)
 ```
 
 Or if recovery determined the safe path was rollback:
 
 ```console
-$ haex install --recover
+haex install --recover
 recovered previous generation g_20260828T093345Z_7f21 (rolled back; 8 files restored)
 ```
 
@@ -124,16 +126,30 @@ def load_visibility_marker(repo_root: Path) -> dict:
         raise RuntimeError("no installation available")
     return json.loads(marker.read_bytes())
 
-def verify_root(repo_root: Path, root_record: dict) -> None:
+def verify_root(repo_root: Path, root_record: dict, managed_paths: set[str]) -> None:
     # Enumerate paths per FR-005: for haex-owned roots, all files under root
     # except visibility.json; for mixed-ownership roots, only overlay_paths.
     # See research §R5 for exact normalisation.
+    # For a mixed-ownership root, enumerate only managed_paths below root;
+    # never include unowned siblings. For .haex-hive/, enumerate every file
+    # except visibility.json and install.lock, per FR-005.
     # ...
     pass
 
+project_checkout = Path.cwd()
 marker = load_visibility_marker(project_checkout)
+install_lock_path = project_checkout / ".haex-hive" / "install.lock"
+install_lock_bytes = install_lock_path.read_bytes()
+expected_lock_digest = sri(hashlib.sha256(install_lock_bytes).digest())
+if marker["install_lock_content_integrity"] != expected_lock_digest:
+    raise RuntimeError("install.lock does not match visibility marker")
+install_lock = json.loads(install_lock_bytes)
+managed_paths = {
+    record["path"]
+    for record in install_lock.get("ownership", {}).get("paths", [])
+}
 for root_record in marker["participating_roots"]:
-    verify_root(project_checkout, root_record)
+    verify_root(project_checkout, root_record, managed_paths)
 # All roots match: safe to proceed.
 ```
 
@@ -148,7 +164,7 @@ for root_record in marker["participating_roots"]:
 - **Under `$HAEX_HIVE_STATE`** (device-local, NEVER shared across satellites, MUST NOT contain secrets per FR-022):
   - `~/.local/share/haex-hive/repos/<clone-hash>/` — publisher bare clones (Spec 007).
   - `$HAEX_HIVE_STATE/locks/<repo-key>/install.mutex` — install lock (new in Spec 008).
-  - `$HAEX_HIVE_STATE/locks/<repo-key>/install.journal` — durable journal (new in Spec 008).
+  - `$HAEX_HIVE_STATE/locks/<repo-key>/checkouts/<checkout-key>/install.journal` — checkout-scoped durable journal (new in Spec 008).
   - Override with `$HAEX_HIVE_STATE` env var.
 
 ## 9. Suspending automation for a session

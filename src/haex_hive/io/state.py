@@ -20,10 +20,12 @@ class TransactionPaths:
     state_root: Path
     identity: str
     repo_key: str
+    checkout_key: str
     lock_dir: Path
     mutex: Path
     journal: Path
     identity_record: Path
+    legacy_shared_journal: Path
     legacy_mutex: Path
     legacy_journal: Path
 
@@ -74,16 +76,21 @@ def transaction_paths(repo_root: Path, state_root: Path | None = None) -> Transa
     """
     identity = project_identity(repo_root)
     repo_key = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    checkout_key = hashlib.sha256(
+        str(repo_root.resolve()).encode("utf-8")
+    ).hexdigest()
     root = state_root if state_root is not None else default_state_root()
     lock_dir = root / "locks" / repo_key
     return TransactionPaths(
         state_root=root,
         identity=identity,
         repo_key=repo_key,
+        checkout_key=checkout_key,
         lock_dir=lock_dir,
         mutex=lock_dir / "install.mutex",
-        journal=lock_dir / "install.journal",
+        journal=lock_dir / "checkouts" / checkout_key / "install.journal",
         identity_record=lock_dir / "repo-identity.v1.json",
+        legacy_shared_journal=lock_dir / "install.journal",
         legacy_mutex=repo_root / ".haex-hive" / "constitution-transaction.lock",
         legacy_journal=repo_root / ".haex-hive" / "constitution-transaction.json",
     )

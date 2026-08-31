@@ -19,7 +19,7 @@
     "generation_id": {
       "type": "string",
       "pattern": "^g_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{4}$",
-      "description": "Deterministic per-plan generation identifier. See Spec 008 research §R8."
+      "description": "Time-based, collision-checked generation identifier with a sealed-plan hash suffix. See Spec 008 research §R8."
     },
     "install_lock_content_integrity": {
       "$ref": "#/$defs/sriDigest",
@@ -50,7 +50,7 @@
       "properties": {
         "root": {
           "type": "string",
-          "pattern": "^\\.[A-Za-z0-9._-]+/$",
+          "pattern": "^(?!\\.\\.?/$)\\.[A-Za-z0-9._-]+/$",
           "description": "Repo-relative directory path with trailing slash. Examples: '.haex-hive/', '.claude/', '.codex/'."
         },
         "content_integrity": {
@@ -63,7 +63,7 @@
               "type": "array",
               "items": {
                 "type": "string",
-                "pattern": "^\\.[A-Za-z0-9._-]+/[^\\u0000-\\u001F\\u007F]+$",
+                "pattern": "^(?!.*(?:^|/)\\.\\.?/)(?!.*\\\\)\\.[A-Za-z0-9._-]+/[^\\u0000-\\u001F\\u007F\\\\]+$",
                 "description": "Repo-relative POSIX path under the root."
               },
               "description": "Exhaustive overlay-owned-path allowlist for a mixed-ownership root."
