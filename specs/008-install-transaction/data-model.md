@@ -165,7 +165,7 @@ Sole publication event's on-disk representation: `.haex-hive/visibility.json`. S
 
 ### InstallLock
 
-Extended shape of `.haex-hive/install.lock`. See [contracts/install-lock.v2.schema.json](./contracts/install-lock.v2.schema.json). Backward-compatible extension of Spec 007's schema.
+Extended shape of `.haex-hive/install.lock`. See [contracts/install-lock.v2.schema.json](./contracts/install-lock.v2.schema.json). Adds `atoms`, `participating_roots`, `visibility_marker`, and `ownership` on top of Spec 007's constitution block. Not backward compatible with Spec 007-vintage `install.lock` bytes: SRI digests are base64url no-pad (Spec 007 used padded standard base64), and any Spec 007-vintage record fails schema validation. Under the project's pre-user policy this is the accepted cut; operator recovery is to remove `.haex-hive/install.lock` and re-run `haex constitution assemble`.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -294,4 +294,4 @@ At any state above ↓
 
 - **Publisher-hook payloads** (Spec 009 territory): `PlanStep.step_type = "hook_invoke"` reserves the slot; the payload shape is Spec 009's design decision. Spec 008 records the step type so recovery can identify hook-boundary journal entries but does not itself execute hooks.
 - **Adapter output payloads** (Spec 010 territory): the plan step's `payload` for adapter-emitted files is opaque to Spec 008; the pipeline stages, digests, and publishes them per the transaction contract without introspecting content.
-- **Cross-version migration** of `install.lock` and transaction state: Spec 007 records pass forward unchanged; Spec 008's extensions default to sensible values when reading a Spec-007-vintage lock (`participating_roots` synthesised from the constitution block; `visibility_marker` null → treated as a legacy install requiring re-install). The shared path helper discovers legacy `.haex-hive/constitution-transaction.lock` and `.haex-hive/constitution-transaction.json` artifacts under the new exclusive lock, validates and recovers a legacy journal before any new plan, and creates the stable legacy lock when needed to coordinate with old writers. It never writes a new journal there. The first Spec-008 install rewrites the lock in the new shape.
+- **Cross-version migration** of `install.lock` and transaction state: **out of scope for Spec 008 under the project's pre-user policy.** A Spec 007-vintage `install.lock` fails Spec 008 schema validation (padded base64 digests, missing atoms shape) and the transaction refuses with `InstallLockSchemaInvalidError`. Legacy `.haex-hive/constitution-transaction.lock`/`.json` artefacts on a satellite are not recovered by `haex install`; operator recovery is to remove the stale files and re-run `haex constitution assemble`. If a future adopter requires an in-place migration path, it lands under an explicit `haex migrate` verb per Principle VI v1.3.0, not as an implicit tool-side rewrite.

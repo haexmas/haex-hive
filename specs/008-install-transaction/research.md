@@ -188,20 +188,21 @@
 
 **Decision**: The existing `haex constitution assemble` transaction (Spec 007) becomes a single-participant special case of `haex install`'s transaction. Concretely:
 - `haex install` runs constitution assembly as one plan step among many when the plan's atoms include `contributes.constitution`.
-- The existing `.haex-hive/install.lock` schema is EXTENDED (backward-compatible; see contracts) with `overlay_paths` per participating root, a `visibility_marker` block, and a `participating_roots` list. Existing single-source records stay valid.
+- The existing `.haex-hive/install.lock` schema is EXTENDED with `atoms`, `overlay_paths` per participating root, a `visibility_marker` block, `participating_roots`, and a versioned `ownership` set. Digest fields move to base64url no-pad. **Under the project's pre-user policy** (no external adopters, breaking changes fine — see `haex_hive_pre_user.md` in agent memory), this is a hard cut: a Spec 007-vintage `install.lock` fails Spec 008 schema validation with `InstallLockSchemaInvalidError` and there is no in-tool migration. Operator recovery is to remove the stale file and re-run `haex constitution assemble`.
 - `haex constitution assemble` (invoked directly) still works — it becomes a shortcut that runs the install transaction with a plan filtered to constitution-only steps. This preserves the current UX.
 - Multi-source LLM-merge (Spec 007's `--llm=file` two-phase flow) is preserved unchanged.
-- Shared path helpers derive `$HAEX_HIVE_STATE`, the canonical project identity, its SHA-256 `<repo-key>`, the repository mutex, and a checkout-scoped journal under `checkouts/<checkout-key>/`. Both `constitution assemble` and `constitution show` use these helpers. The old `.haex-hive/constitution-transaction.lock` and `.haex-hive/constitution-transaction.json` are read only as migration inputs; a valid legacy journal is recovered under the new lock before any new plan is built. The legacy lock pathname is retained as a stable compatibility lock while old writers are supported, preventing an inode-replacement race; no new journal is written there.
+- Shared path helpers derive `$HAEX_HIVE_STATE`, the canonical project identity, its SHA-256 `<repo-key>`, the repository mutex, and a checkout-scoped journal under `checkouts/<checkout-key>/`. Both `constitution assemble` and `constitution show` use these helpers. Any legacy `.haex-hive/constitution-transaction.lock`/`.json` on a satellite is not recovered by the new transaction; operator recovery is to delete the legacy files and re-run.
 
 **Rationale**:
 - Duplicating the transaction machinery for install would be a source of drift. The extract-shared-implementation approach keeps one transaction, many participants.
-- The existing schema extension is backward-compatible if new fields default to sensible values (e.g. `overlay_paths: []`, `participating_roots: [".haex-hive/"]`, `visibility_marker: null` for pre-Spec-008 records).
+- The pre-user cut for the schema is cheaper than carrying a Spec 007-vintage compat shim: no external `install.lock` files exist in the wild, self-adoption regenerates its own lock on the next `haex constitution assemble`. Both PR #29 (SRI compat helper) and PR #30 (forward-compat tests) landed exactly this stance in code.
 
 **Alternatives considered**:
 - **Keep the two paths separate, migrate later**: rejected — drift risk in a load-bearing invariant is unacceptable.
 - **Deprecate `haex constitution assemble` in favour of `haex install --scope=constitution`**: too disruptive for an existing landed CLI. The UX shortcut stays.
+- **Preserve backward compatibility for `install.lock` (`sriDigest` accepts both alphabets; atoms fields optional)**: rejected under pre-user policy — cost of the shim exceeds its value while no external adopters exist. If a first adopter ever appears this decision is revisited via a spec amendment.
 
-**Residual risk**: schema extension must be validated on every existing `install.lock` produced by Spec 007 in the wild. Mitigation: schema tests use the actual Spec 007 fixtures as the backward-compat baseline. Legacy transaction journals use the Spec-007 pair format and are migrated before the Spec-008 JSONL journal is opened; malformed legacy records refuse without mutating outputs.
+**Residual risk**: an operator with an in-flight Spec 007-vintage `install.lock` on their dev machine gets a schema refusal on the next `haex install`. Recovery is one `rm` and `haex constitution assemble`. If the operator has a legacy `constitution-transaction.lock`/`.json` from a crashed Spec 007 assemble, those files are ignored by the new pipeline; the operator removes them before re-running. Both cases are documented in the `haex install` refusal diagnostic.
 
 ---
 
