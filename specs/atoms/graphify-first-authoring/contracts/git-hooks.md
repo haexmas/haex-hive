@@ -12,7 +12,7 @@ Both hooks are thin entrypoints installed by `install.py` (see [install.cli.md](
 
 **Behavior**:
 1. Determine the current branch. If it is not in the tracked-branch set (auto-detected default + `.haex-hive.json`'s `tracked_branches[]`), exit 0 immediately — no-op.
-2. Otherwise, invoke `graphify <repo-root> --update` to refresh `graphify-out/` incrementally.
+2. Otherwise, invoke `graphify update <repo-root>` to refresh `graphify-out/` incrementally.
 3. **On success**: exit 0. `graphify-out/.meta.json`'s `indexed_at_sha` now matches `HEAD`.
 4. **On failure** (graphify crashes, times out, corrupted graph): print a warning to stderr naming the failure. **Exit 0 regardless** — the commit that already happened MUST NOT be affected by this hook's outcome (FR-006, resolved in `/speckit.clarify`). The freshness marker is left stale; the agent-side backstop catches this on the next authoring attempt.
 

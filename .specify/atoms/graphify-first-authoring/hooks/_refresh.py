@@ -1,7 +1,7 @@
 """Incremental refresh of ``graphify-out/`` for the post-commit hook.
 
 Per contracts/git-hooks.md §post-commit and FR-006: run
-``graphify <repo-root> --update`` on the current working tree. On any failure
+``graphify update <repo-root>`` on the current working tree. On any failure
 (non-zero exit, missing binary, timeout), warn to stderr and return normally —
 **never** raise, so the calling hook can always exit 0 and the underlying
 ``git commit`` cannot be affected.
@@ -38,7 +38,7 @@ def refresh(repo_root: Path) -> bool:
 
     try:
         proc = subprocess.run(
-            [binary, str(repo_root), "--update"],
+            [binary, "update", str(repo_root)],
             capture_output=True,
             text=True,
             timeout=_TIMEOUT_SECONDS,
@@ -62,7 +62,7 @@ def refresh(repo_root: Path) -> bool:
     if proc.returncode != 0:
         stderr_tail = (proc.stderr or "").strip().splitlines()[-1:] or [""]
         print(
-            f"graphify-first-authoring post-commit: 'graphify --update' exited "
+            f"graphify-first-authoring post-commit: 'graphify update' exited "
             f"{proc.returncode} ({stderr_tail[0]}) — leaving graph stale",
             file=sys.stderr,
         )
