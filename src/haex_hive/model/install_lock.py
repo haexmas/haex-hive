@@ -65,8 +65,16 @@ class InstallLock:
                         )
             schema_validator.validate(data, "install-lock.v2.schema.json")
         except (UnicodeError, ValueError) as exc:
+            detail = (
+                f": {exc}"
+                if isinstance(exc, schema_validator.SchemaValidationError)
+                else ""
+            )
             raise InstallLockSchemaInvalidError(
-                message="install.lock is not valid against install-lock.v2.schema.json",
+                message=(
+                    "install.lock is not valid against install-lock.v2.schema.json"
+                    + detail
+                ),
                 context={"schema": "install-lock.v2.schema.json"},
             ) from exc
 

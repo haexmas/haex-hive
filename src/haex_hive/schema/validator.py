@@ -126,7 +126,7 @@ def _check_unique_keys(
             errors.append(
                 SchemaError(
                     field_path=f"{prefix}/{array_key}/{index}/{identity_key}",
-                    message=f"{identity_key} values must be unique",
+                    message=f"duplicate {identity_key} values are not allowed",
                 )
             )
         seen.add(identity)
