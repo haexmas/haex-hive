@@ -25,10 +25,16 @@ def _render_preface(lock: InstallLock) -> bytes:
     return f"# Assembled from\n{lines}\n---\n\n".encode()
 
 
-def show(repo_root: Path, *, no_preface: bool, out: BinaryIO | None = None) -> None:
-    if transaction.is_journaled(repo_root):
+def show(
+    repo_root: Path,
+    *,
+    no_preface: bool,
+    out: BinaryIO | None = None,
+    state_root: Path | None = None,
+) -> None:
+    if transaction.is_journaled(repo_root, state_root=state_root):
         raise IncompleteAssemblyTransactionError(
-            message=".haex-hive/constitution-transaction.json is present",
+            message="an install transaction journal is present",
         )
 
     hive_dir = repo_root / transaction.HAEX_HIVE_DIR

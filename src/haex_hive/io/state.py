@@ -10,6 +10,7 @@ from pathlib import Path
 
 from haex_hive.git.remote import origin_url
 from haex_hive.model.source_url import canonicalize
+from haex_hive.util.errors import MissingRemoteOriginError
 
 
 @dataclass(frozen=True)
@@ -47,11 +48,11 @@ def project_identity(repo_root: Path) -> str:
     """
     try:
         return canonicalize(origin_url(repo_root))
-    except Exception as exc:
+    except MissingRemoteOriginError as exc:
         harness_id = repo_root / ".harness-id"
         if harness_id.is_file():
             identity = harness_id.read_text(encoding="utf-8").strip()
-            if identity and "/" not in identity and "\\" not in identity:
+            if identity:
                 return identity
 
         manifest = repo_root / ".haex-hive.json"

@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from haex_hive.io import transaction, writer_lock
+from haex_hive.io.state import transaction_paths
 from haex_hive.util.errors import (
     ConstitutionWriterBusyError,
     PostWriteValidationError,
@@ -31,6 +32,21 @@ def test_publish_creates_targets_when_absent(tmp_path: Path) -> None:
     assert constitution.read_bytes() == b"body\n"
     assert lock.read_bytes() == b"{}\n"
     assert not journal.exists()
+
+
+def test_publish_with_state_root_uses_shared_paths(tmp_path: Path) -> None:
+    (tmp_path / ".haex-hive.json").write_text(
+        json.dumps({"identity": "com.example.consumer"})
+    )
+    state_root = tmp_path / "state"
+
+    transaction.publish_pair(tmp_path, b"body\n", b"{}\n", state_root=state_root)
+
+    paths = transaction_paths(tmp_path, state_root)
+    assert paths.journal == state_root / "locks" / paths.repo_key / "install.journal"
+    assert "com.example.consumer" in paths.identity_record.read_text()
+    assert paths.mutex.name == "install.mutex"
+    assert not paths.legacy_journal.exists()
 
 
 def test_publish_replaces_existing_and_removes_journal(tmp_path: Path) -> None:

@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from haex_hive.io.state import transaction_paths
+
 pytestmark = [
     pytest.mark.slow,
     pytest.mark.skipif(shutil.which("git") is None, reason="git binary required"),
@@ -64,7 +66,7 @@ def test_crash_at_boundary_converges_on_retry(
     crashed = _run(consumer, state_root, crash_after=crash_point)
     assert crashed.returncode != 0, "the child process must not exit cleanly when killed"
 
-    journal = consumer / ".haex-hive" / "constitution-transaction.json"
+    journal = transaction_paths(consumer, state_root).journal
     assert journal.exists(), f"journal must survive an abrupt crash at {crash_point!r}"
 
     recovered = _run(consumer, state_root)

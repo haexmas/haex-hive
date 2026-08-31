@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from haex_hive.io.state import transaction_paths
+
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git binary required")
 
 
@@ -155,7 +157,7 @@ def test_live_journal_refuses(single_source_constitution_fixture: dict) -> None:
     state_root = single_source_constitution_fixture["state_root"]
     _assemble(consumer, state_root)
 
-    (consumer / ".haex-hive" / "constitution-transaction.json").write_text("{}")
+    transaction_paths(consumer, state_root).journal.write_text("{}")
 
     proc = _show(consumer, state_root=state_root)
     assert proc.returncode == 7
