@@ -6,7 +6,7 @@
 ## Usage
 
 ```console
-haex install [--repo-root PATH] [--verify-only] [--recover]
+haex install [--repo-root PATH] [--verify-only]
 ```
 
 ## Flags
@@ -15,7 +15,7 @@ haex install [--repo-root PATH] [--verify-only] [--recover]
 |---|---|---|
 | `--repo-root PATH` | current working directory | Path to the project checkout. Inherited from the top-level `haex --repo-root` per Spec 007. |
 | `--verify-only` | off | Acquire the SHARED read lock, verify `install.lock` + `visibility.json` consistency, exit. Never mutates. Same shape as `haex verify` today. |
-| `--recover` | off | Acquire the EXCLUSIVE lock, replay or roll back an incomplete journal, exit. No new install is built. Same shape as `haex verify --recover` today. |
+Recovery is explicit through `haex verify --recover`, which acquires the EXCLUSIVE lock, replays or rolls back an incomplete journal, and builds no new install.
 
 ## Behaviour matrix
 
@@ -23,7 +23,7 @@ haex install [--repo-root PATH] [--verify-only] [--recover]
 |---|---|---|---|
 | `haex install` | Exclusive | Prints "installed generation `<gen>`", exit 0 | Prints refusal reason + exit code per matrix below |
 | `haex install --verify-only` | Shared | Prints "generation `<gen>` verified", exit 0 | Prints mismatch detail, exit per matrix |
-| `haex install --recover` | Exclusive | Prints "recovered generation `<gen>`" (either completed or rolled back), exit 0 | Prints diagnostic |
+| `haex verify --recover` | Exclusive | Prints "recovered generation `<gen>`" (either completed or rolled back), exit 0 | Prints diagnostic |
 
 ## Exit codes
 
@@ -53,7 +53,7 @@ haex install
 error: exit=9 key=install-lock-busy (FR-001 / FR-010)
   lock held by 31245@laptop-hex.local since 2026-08-31T14:20:11Z
   (heartbeat 3s ago, ttl 60s)
-  hint: wait or investigate PID 31245; if the process is dead, run `haex install --recover`
+  hint: wait or investigate PID 31245; if the process is dead, run `haex verify --recover`
 
 haex install
 error: exit=4 key=commit-snapshot-mismatch (FR-006)

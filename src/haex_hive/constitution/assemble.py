@@ -3,8 +3,13 @@ LLM-merge (US3)."""
 
 from __future__ import annotations
 
+import base64
+import datetime
+import hashlib
+import json
 import os
 import sys
+from collections.abc import Mapping
 from contextlib import suppress
 from pathlib import Path
 
@@ -25,7 +30,7 @@ from haex_hive.constitution.safety import (
     validate_no_concealment_instructions,
     validate_no_plaintext_secrets,
 )
-from haex_hive.io import transaction
+from haex_hive.io import json_deterministic, transaction
 from haex_hive.io.file_hash import d15_one_file_tree_digest
 from haex_hive.model.install_lock import (
     AssembledBy,
@@ -87,7 +92,44 @@ def _publish_constitution(
     content_integrity = d15_one_file_tree_digest(body)
 
     existing_lock = _read_existing_lock(repo_root)
-    unknown_top_level = existing_lock.unknown_top_level if existing_lock is not None else {}
+    unknown_top_level = (
+        dict(existing_lock.unknown_top_level) if existing_lock is not None else {}
+    )
+
+    root_preimage = (
+        b"constitution.md:"
+        + hashlib.sha256(body).hexdigest().encode("ascii")
+        + b"\n"
+    )
+    root_digest = "sha256-" + base64.urlsafe_b64encode(
+        hashlib.sha256(root_preimage).digest()
+    ).decode("ascii").rstrip("=")
+    existing_marker = unknown_top_level.get("visibility_marker")
+    if isinstance(existing_marker, Mapping) and isinstance(
+        existing_marker.get("generation_id"), str
+    ):
+        generation_id = existing_marker["generation_id"]
+    else:
+        timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
+            "%Y%m%dT%H%M%SZ"
+        )
+        suffix = hashlib.sha256(body).hexdigest()[:4]
+        generation_id = f"g_{timestamp}_{suffix}"
+    marker_identity = {
+        "haex_hive_version": "2",
+        "generation_id": generation_id,
+        "participating_roots": [
+            {"root": ".haex-hive/", "content_integrity": root_digest}
+        ],
+    }
+    marker_ref = {
+        "generation_id": generation_id,
+        "content_integrity": "sha256-"
+        + base64.urlsafe_b64encode(
+            hashlib.sha256(json_deterministic.dumps(marker_identity)).digest()
+        ).decode("ascii").rstrip("="),
+    }
+    unknown_top_level["visibility_marker"] = marker_ref
 
     lock = InstallLock(
         haex_hive_version="2",
@@ -100,6 +142,11 @@ def _publish_constitution(
         unknown_top_level=unknown_top_level,
     )
     lock_bytes = lock.to_json_bytes()
+    visibility_body = dict(marker_identity)
+    visibility_body["install_lock_content_integrity"] = "sha256-" + base64.urlsafe_b64encode(
+        hashlib.sha256(lock_bytes).digest()
+    ).decode("ascii").rstrip("=")
+    visibility_bytes = json_deterministic.dumps(visibility_body)
 
     def post_write_verify() -> None:
         """Verify the published constitution and install.lock agree on integrity.
@@ -120,6 +167,25 @@ def _publish_constitution(
             raise PostWriteValidationError(
                 message="on-disk constitution.md does not match recorded content_integrity",
             )
+        marker = json.loads(
+            (repo_root / transaction.HAEX_HIVE_DIR / transaction.VISIBILITY_NAME)
+            .read_bytes()
+        )
+        if (
+            marker.get("generation_id") != generation_id
+            or marker.get("participating_roots") != marker_identity["participating_roots"]
+            or marker.get("install_lock_content_integrity") != (
+                "sha256-"
+                + base64.urlsafe_b64encode(
+                    hashlib.sha256(lock_path.read_bytes()).digest()
+                )
+                .decode("ascii")
+                .rstrip("=")
+            )
+        ):
+            raise PostWriteValidationError(
+                message="visibility.json does not match the published install.lock",
+            )
 
     if state_root is None:
         transaction.publish_pair(
@@ -127,6 +193,7 @@ def _publish_constitution(
             body,
             lock_bytes,
             post_write_verify=post_write_verify,
+            visibility_body=visibility_bytes,
         )
     else:
         transaction.publish_pair(
@@ -135,6 +202,7 @@ def _publish_constitution(
             lock_bytes,
             post_write_verify=post_write_verify,
             state_root=state_root,
+            visibility_body=visibility_bytes,
         )
 
 

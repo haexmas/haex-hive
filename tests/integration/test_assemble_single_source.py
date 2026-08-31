@@ -35,6 +35,7 @@ def test_successful_straight_copy(single_source_constitution_fixture: dict) -> N
 
     constitution = consumer / ".haex-hive" / "constitution.md"
     lock = consumer / ".haex-hive" / "install.lock"
+    marker = consumer / ".haex-hive" / "visibility.json"
     assert constitution.read_bytes() == b"# Example Constitution\n\nBe kind.\n"
 
     lock_data = json.loads(lock.read_text())
@@ -47,6 +48,10 @@ def test_successful_straight_copy(single_source_constitution_fixture: dict) -> N
         }
     ]
     assert lock_data["constitution"]["content_integrity"].startswith("sha256-")
+    marker_data = json.loads(marker.read_text())
+    assert marker_data["install_lock_content_integrity"].startswith("sha256-")
+    assert marker_data["participating_roots"][0]["root"] == ".haex-hive/"
+    assert lock_data["visibility_marker"]["generation_id"] == marker_data["generation_id"]
     assert (consumer / ".haex-hive" / "constitution-transaction.lock").exists()
 
 
