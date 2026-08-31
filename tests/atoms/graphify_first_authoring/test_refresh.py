@@ -48,10 +48,15 @@ def test_successful_refresh_returns_true(
         stdout="ok\n",
         callback=lambda _process: (
             (tmp_path / "graphify-out").mkdir(),
-            (tmp_path / "graphify-out" / ".meta.json").write_text(
-                '{"indexed_at_sha": "test-head"}\n'
+            (tmp_path / "graphify-out" / "graph.json").write_text(
+                '{"nodes": [], "edges": []}\n'
             ),
         ),
+    )
+    fp.register(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        returncode=0,
+        stdout="test-head\n",
     )
     assert _refresh.refresh(tmp_path) is True
     assert (tmp_path / "graphify-out" / ".meta.json").read_text() == (
@@ -78,6 +83,21 @@ def test_nonzero_exit_warns_and_returns_false(
     captured = capsys.readouterr()
     assert "exited 2" in captured.err
     assert "leaving graph stale" in captured.err
+
+
+def test_success_without_graph_warns_and_returns_false(
+    tmp_path: Path,
+    fp,
+    capsys: pytest.CaptureFixture[str],
+    graphify_on_path: Path,
+) -> None:
+    resolved = _refresh.shutil.which("graphify")
+    assert resolved is not None
+    fp.register([resolved, "update", str(tmp_path)], returncode=0)
+
+    assert _refresh.refresh(tmp_path) is False
+    captured = capsys.readouterr()
+    assert "did not produce graphify-out/graph.json" in captured.err
 
 
 def test_missing_binary_warns_and_returns_false(

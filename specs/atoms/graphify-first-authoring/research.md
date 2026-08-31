@@ -20,7 +20,10 @@ No `[NEEDS CLARIFICATION]` markers remain in the Technical Context — the prece
 
 ## D3. Worktree/feature-branch graph handling: snapshot, not symlink
 
-**Decision**: `post-checkout` copies `graphify-out/` from the parent worktree into a newly created worktree.
+**Decision**: `post-checkout` copies `graphify-out/` from the explicitly
+selected parent worktree into a newly created worktree. The supported creation
+command passes that path through `GRAPHIFY_PARENT_WORKTREE`; Git does not expose
+the source worktree to the hook, so the hook must not infer it from list order.
 
 **Rationale**: A symlink was considered and rejected — not because of a genuine Windows blocker (symlinks work fine within this constitution's declared OS scope: Linux/macOS/WSL2), but because a snapshot is *semantically correct*: the feature branch is meant to see the pre-branch fork-point state, not a live view of the tracked branch's ongoing changes. A snapshot also degrades gracefully — it is simply discarded with the branch, no cleanup logic needed, and it works even if the constitution's OS scope is ever widened to native Windows without WSL.
 

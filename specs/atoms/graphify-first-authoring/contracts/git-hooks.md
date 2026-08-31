@@ -25,10 +25,11 @@ Both hooks are thin entrypoints installed by `install.py` (see [install.cli.md](
 **Behavior**:
 1. If the third argument is not `1`, exit 0 immediately — this hook only cares about branch/worktree checkouts.
 2. If a complete `graphify-out/` containing `graph.json` already exists in the current working directory, exit 0 immediately — never overwrite. An incomplete destination directory is treated as absent and may be replaced after a complete parent graph is found (FR-008 acceptance scenario 2).
-3. Otherwise, locate the parent worktree (the first entry of `git worktree list --porcelain`). If it has no complete `graphify-out/` with `graph.json` (fresh repo, failed/incomplete index), exit 0 — nothing to copy; the agent's own bootstrap-when-absent/incomplete behavior applies on first use (User Story 3, scenario 3).
-4. Otherwise, copy the parent's `graphify-out/` into the current working directory's `graphify-out/`, recursively, preserving the freshness marker as-is (it correctly reflects the fork-point commit, not the new branch's HEAD).
+3. Read `GRAPHIFY_PARENT_WORKTREE`, the explicit source-worktree path supplied by the supported creation command. If it is absent, not a registered worktree, or resolves to the current worktree, exit 0 — do not guess a parent; the agent's backstop handles the missing snapshot.
+4. If the selected parent has no complete `graphify-out/` with `graph.json` (fresh repo, failed/incomplete index), exit 0 — nothing to copy; the agent's failed-consultation handling applies on feature branches.
+5. Otherwise, copy the selected parent's `graphify-out/` into the current working directory's `graphify-out/`, recursively, preserving the freshness marker as-is (it reflects the fork-point commit).
 
-**On failure** (copy fails partway, e.g. disk full): print a warning to stderr; exit 0 regardless — a checkout MUST NOT fail because this hook could not copy a cache directory. A partially-copied or absent/incomplete `graphify-out/` is caught by the agent-side bootstrap-when-absent/incomplete behavior on first use.
+**On failure** (copy fails partway, e.g. disk full): print a warning to stderr; exit 0 regardless — a checkout MUST NOT fail because this hook could not copy a cache directory. A partially-copied or absent/incomplete `graphify-out/` is caught by the agent-side backstop on tracked branches; an incomplete feature snapshot is handled as a failed consultation without refresh.
 
 ## Shared failure principle
 

@@ -353,9 +353,10 @@ Rough guidance, not hard cutoffs — operator judgment overrides:
 
 FR-010 requires this rule's freshness guarantee to hold even when the `post-commit` and `post-checkout` hooks are not installed or have been bypassed:
 
-- **Absent or incomplete graph** (`graphify-out/` or `graphify-out/graph.json` missing) → bootstrap with `graphify update <repo-root>` before authoring.
-- **Stale or unmarked graph** (missing/invalid `indexed_at_sha`, or marker ≠ `HEAD` on a tracked branch) → refresh with `graphify update <repo-root>` before authoring.
-- **Fresh graph** or a **feature-branch snapshot** (intentionally frozen at fork point) → proceed to the consult step.
+- **On a tracked branch, absent or incomplete graph** (`graphify-out/` or `graphify-out/graph.json` missing) → bootstrap with `graphify update <repo-root>` before authoring.
+- **On a tracked branch, stale or unmarked graph** (missing/invalid `indexed_at_sha`, or marker ≠ `HEAD`) → refresh with `graphify update <repo-root>` before authoring.
+- **On a feature branch/worktree, incomplete snapshot** → warn and continue with failed-consultation handling; do not run graphify against feature `HEAD`.
+- **Fresh graph** or a **complete feature-branch snapshot** (intentionally frozen at fork point) → proceed to the consult step.
 
 ## Non-goals of this principle
 
