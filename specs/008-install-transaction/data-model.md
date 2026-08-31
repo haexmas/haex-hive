@@ -48,8 +48,9 @@ for each keyed input. Recorded verbatim; on any mismatch, install aborts.
 
 One participant in the transaction. The plan is a linear list of steps; each
 filesystem mutation corresponds to exactly one mutation journal entry during
-execution (the `hook_invoke` extension is represented by its prescribed
-start/end pair).
+execution. A `hook_invoke` step has one lifecycle pair around its work, and
+each filesystem output it produces is represented by its own `stage_file`
+mutation entry.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -92,7 +93,7 @@ corresponding mutation entry written before it is executed. Lifecycle entries
 | `stage_file` | `stage_file` | One entry per staged replacement. |
 | `delete_orphan` | `delete_orphan` | One entry per orphan deletion, including its pre-image. |
 | `overlay_pointer` | `overlay_pointer_swapped` | One entry per pointer replacement. |
-| `hook_invoke` | `hook_step_started` + `hook_step_ended` | The pair brackets one hook mutation; no additional mutation entry is permitted for the same hook. |
+| `hook_invoke` | `hook_step_started` + `hook_step_ended` | One lifecycle pair brackets the hook; each hook-produced filesystem output also has its own `stage_file` entry with a rollback pre-image. |
 | `seal_install_lock` | `install_lock_sealed` | One entry for sealing the lock. |
 | `publish_marker` | `commit_marker_published` | One entry for publishing the marker. |
 

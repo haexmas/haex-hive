@@ -140,16 +140,16 @@
 
 **Decision**:
 - **Format**: one JSON object per line (JSONL), UTF-8, LF-terminated. Each entry has: `entry_id` (monotonically increasing integer), `entry_type` (enum), `payload` (step-specific object), `tail_hash` (SHA-256 over canonical UTF-8 entry JSON without `tail_hash`, one LF, and the previous tail hash as ASCII). The first previous hash is empty and the JSONL record's trailing LF is separate from the hash preimage.
-- **PlanStep-to-journal mapping**: `stage_file` → `stage_file`, `delete_orphan` → `delete_orphan`, `overlay_pointer` → `overlay_pointer_swapped`, `hook_invoke` → the bracketing pair `hook_step_started`/`hook_step_ended`, `seal_install_lock` → `install_lock_sealed`, and `publish_marker` → `commit_marker_published`. Every filesystem mutation has exactly one mutation entry written before it; lifecycle entries are not PlanSteps.
+- **PlanStep-to-journal mapping**: `stage_file` → `stage_file`, `delete_orphan` → `delete_orphan`, `overlay_pointer` → `overlay_pointer_swapped`, `hook_invoke` → one lifecycle pair `hook_step_started`/`hook_step_ended` plus one `stage_file` entry for each hook-produced filesystem output, `seal_install_lock` → `install_lock_sealed`, and `publish_marker` → `commit_marker_published`. Every filesystem mutation has exactly one mutation entry written before it; lifecycle entries are not PlanSteps.
 - **Write discipline**: append the line, `fsync(fd)`, `fsync(parent_dir_fd)`, then execute the corresponding filesystem mutation. Each state transition writes its own journal entry BEFORE the mutation. This is the "write-ahead" invariant of FR-002.
 - **Replay on recovery**:
   1. Open the journal; verify `tail_hash` chain from the first entry; abort recovery on a broken chain (integrity violation).
   2. Walk entries in order; determine the last consistent state.
-  3. If the last entry is `commit_marker_published` and the marker file on disk matches, the install completed — proceed with cleanup (rmtree staging directories).
-  4. If the last entry is `commit_marker_published` but the marker file on disk is absent or mismatched, roll back to the previous generation's marker.
+  3. If the last publication entry is `commit_marker_published` and the marker file on disk matches, the install committed — treat any following `cleanup_started` or `cleanup_completed` entries as cleanup-only state and resume or finish cleanup without rolling back (rmtree staging directories).
+  4. If the last publication entry is `commit_marker_published` but the marker file on disk is absent or mismatched, roll back to the previous generation's marker, regardless of any following cleanup entries.
   5. If the last entry is `install_lock_sealed` but not `commit_marker_published`, complete the marker publication (idempotent — it's a single-file replace).
   6. If any earlier state, roll back: undo any per-file replaces recorded in the journal, restore prior-generation content from `<root>.rollback.<prev-gen>/` if present, `rmtree` staging.
-- **Entry types**: `plan_snapshot_sealed`, `commit_snapshot_verified`, `stage_file`, `delete_orphan`, `hook_step_started`, `hook_step_ended` (for Spec 009 extensibility), `overlay_pointer_swapped`, `install_lock_sealed`, `commit_marker_published`, `cleanup_started`, `cleanup_completed`, `install_aborted`.
+- **Entry types**: `plan_snapshot_sealed`, `commit_snapshot_verified`, `stage_file`, `delete_orphan`, `hook_step_started`, `hook_step_ended` (for Spec 009 extensibility), `overlay_pointer_swapped`, `install_lock_sealed`, `commit_marker_published`, `cleanup_started`, `cleanup_completed`, `install_aborted`. Recovery tests cover crashes after both cleanup entries and preserve a valid published marker.
 
 **Rationale**:
 - **JSONL** — line-append is atomic below PIPE_BUF (4096 bytes on Linux, 512 on some POSIX); journal entries are ≤512 bytes and thus atomic on append.

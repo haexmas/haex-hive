@@ -61,10 +61,10 @@ interruption and are non-negotiable for the Spec 008 landing:
   contains a unique, time-based generation ID and the digest of every participating
   output root; the `.haex-hive/` digest excludes both `install.lock` and the
   marker to avoid recursive lock/marker integrity references. Readers MUST NOT treat
-  individual root exchanges or pointer replacements as publication. The
-  `.haex-hive/` exchange or pointer replacement containing that final marker is
-  the final publication step and publishes the generation. Journaled cleanup
-  may follow but cannot change the marker or generation. Readers first load the
+  individual root replacements or adapter pointer replacements as publication.
+  The final atomic replacement of `.haex-hive/visibility.json` is the sole
+  publication event and publishes the generation. Journaled cleanup may follow
+  but cannot change the marker or generation. Readers first load the
   marker and then verify every root's generation and digest; a missing marker
   or mixed generation is an unavailable installation, never a partially valid
   one. Recovery tests MUST cover a crash after each root publication step and a
