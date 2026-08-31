@@ -1,21 +1,22 @@
 # haex-hive
 
-A CLI and specification set for building **portable, review-gated project harnesses** — the pinned constitutions, skills, and instruction atoms an AI agent must respect when working inside a repository.
+**Spec-kit-based harness management for distributed AI-assisted development.** One place to define the conventions your AI agents follow — constitutions, skills, MCPs, and other reusable *atoms* — and one CLI to compose them into any project on any device.
 
 > **Status:** `2.0.0.dev0` — the manifest v2 CLI surface (Spec 007) has landed. The install transaction (Spec 008) is in progress on `008-install-transaction`. Interfaces are not yet stable.
 
 ## Vision
 
-haex-hive is being built to solve one problem end-to-end: doing serious AI-assisted development across **multiple devices, multiple git accounts, and multiple agent CLIs** without giving up autonomy on any single satellite.
+You push a feature from your laptop and head out. On the train the CI turns red — you open your phone, tell the agent on your workstation at home to fix it, and it does. Later you're on the couch with a Chromebook and kick off a GPU-heavy job that actually runs on the box in your office. The local LLM you keep on that box? Reachable from any of your devices, wherever you are.
 
-The picture:
+That's what haex-hive is being built toward: **your development environment as a swarm of your own devices** — every one of them able to run AI agents, take over work from another, and stay in sync without giving up local autonomy.
 
-- **A hive of satellites.** Your laptop, your workstation, a remote VM — each one runs agent CLIs (Claude Code, Codex, Gemini, …) fully locally, including with local models. No central VM is a single point of failure; every satellite can complete real work offline.
-- **Layered harnesses instead of copy-pasted `CLAUDE.md`s.** A thin global layer that always applies, plus reusable groups (not necessarily tied to one git remote or account), plus per-project overrides. Defined once, pinned by commit SHA, consumed by any agent CLI that follows the harness contract.
-- **Multi-account by default.** Private and professional GitHub/GitLab identities live side by side; a project only inherits what its own `.haex-hive.json` explicitly opts into.
-- **Optional mobile visibility.** A future liveness plane (self-hosted Nostr relay) will let you see running sessions from your phone and hand new instructions to any satellite — but its unreachability never blocks local work. Git alone is enough for the code plane.
+For a swarm like that to feel like one environment instead of five scattered ones, every device has to agree on **how it behaves** — the same conventions, the same skills, the same MCPs, the same permissions, the same constitutions. That agreement is what a "harness" is here. haex-hive lets you:
 
-The full design lives in [docs/plans/2026-08-26-haex-hive-design.md](docs/plans/2026-08-26-haex-hive-design.md). What ships today is the config-plane foundation; the liveness plane, mobile client, and multi-CLI compiler are on the roadmap.
+- **Compose a harness out of atoms.** Skills, MCPs, constitutions, and other pieces — write your own or adopt someone else's. Each project's `.haex-hive.json` picks exactly the atoms that project needs; nothing else leaks in.
+- **Maintain it once, run it everywhere.** Update the harness in one place, every device that uses it picks up the change. The same harness works on Linux, macOS, and Windows, and drives whichever agent CLI you happen to have in front of you (Claude Code, Codex, Gemini, …).
+- **Delegate freely between your devices.** Every device is also a relay for the others — hand a GPU job to the machine with the GPU, talk to the local model that lives on your home box, watch a run from your phone while the laptop is closed.
+
+**Today** you can declare a harness manifest and assemble its constitution part on any device. Cross-device sessions, mobile control, and the delegation layer are on the roadmap; the full plan lives in [docs/plans/2026-08-26-haex-hive-design.md](docs/plans/2026-08-26-haex-hive-design.md).
 
 ## What you can do today
 
