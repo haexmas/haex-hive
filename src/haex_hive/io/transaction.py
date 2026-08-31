@@ -32,6 +32,7 @@ INSTALL_LOCK_NAME = "install.lock"
 WRITER_LOCK_NAME = "constitution-transaction.lock"  # legacy Spec-007 name
 INSTALL_JOURNAL_NAME = "install.journal"
 INSTALL_MUTEX_NAME = "install.mutex"
+VISIBILITY_NAME = "visibility.json"
 HAEX_HIVE_DIR = ".haex-hive"
 
 
@@ -208,7 +209,9 @@ def recover_if_journaled(repo_root: Path, state_root: Path | None = None) -> boo
     fixed_targets = {
         "constitution": hive_dir / CONSTITUTION_NAME,
         "install_lock": hive_dir / INSTALL_LOCK_NAME,
+        "visibility": hive_dir / VISIBILITY_NAME,
     }
+    required_logicals = {"constitution", "install_lock"}
     recovered = False
     for journal in journals:
         payload = _read_journal(journal)
@@ -256,7 +259,7 @@ def recover_if_journaled(repo_root: Path, state_root: Path | None = None) -> boo
                 raise ValueError("existing transaction target is missing its backup")
             validated_entries.append((target, prior, backup, staged))
 
-        if seen_logical != set(fixed_targets):
+        if not required_logicals.issubset(seen_logical):
             raise ValueError("transaction journal must contain both logical targets")
 
         for target, prior, backup, staged in validated_entries:
@@ -300,6 +303,7 @@ def publish_pair(
     *,
     post_write_verify: Callable[[], None] | None = None,
     state_root: Path | None = None,
+    visibility_body: bytes | None = None,
 ) -> None:
     """Atomically publish both targets under the durable journal protocol.
 
@@ -328,6 +332,20 @@ def publish_pair(
                 _TargetEntry(
                     logical=logical,
                     target=target,
+                    staged=staged,
+                    prior_state="existed" if existed else "absent",
+                    backup=backup,
+                )
+            )
+        if visibility_body is not None:
+            visibility_target = hive_dir / VISIBILITY_NAME
+            existed = visibility_target.exists()
+            backup = _backup_existing("visibility", visibility_target) if existed else None
+            staged = _stage_file("visibility", hive_dir, visibility_body)
+            entries.append(
+                _TargetEntry(
+                    logical="visibility",
+                    target=visibility_target,
                     staged=staged,
                     prior_state="existed" if existed else "absent",
                     backup=backup,

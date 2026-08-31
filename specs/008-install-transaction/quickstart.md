@@ -66,7 +66,7 @@ haex install
 error: exit=9 key=install-lock-busy
   lock held by 31245@laptop-hex.local since 2026-08-31T14:20:11Z
   (heartbeat 3s ago, ttl 60s)
-  hint: wait or investigate PID 31245; if the process is dead, run `haex install --recover`
+  hint: wait or investigate PID 31245; if the process is dead, run `haex verify --recover`
 ```
 
 Non-blocking by design (per FR-001) — the operator sees ownership detail immediately.
@@ -79,20 +79,20 @@ If a previous `haex install` was killed (SIGKILL, power loss, host reboot), the 
 haex install
 error: exit=7 key=incomplete-transaction (FR-002)
   install.journal contains uncommitted entries from a prior invocation
-  hint: run `haex install --recover` to complete or roll back
+  hint: run `haex verify --recover` to complete or roll back
 ```
 
 Recover:
 
 ```console
-haex install --recover
+haex verify --recover
 recovered generation g_20260831T142011Z_a4c2 (completed; 12 files sealed)
 ```
 
 Or if recovery determined the safe path was rollback:
 
 ```console
-haex install --recover
+haex verify --recover
 recovered previous generation g_20260828T093345Z_7f21 (rolled back; 8 files restored)
 ```
 

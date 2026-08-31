@@ -119,11 +119,11 @@
 
 ## R6. Lock primitive selection
 
-**Decision**: POSIX exclusive advisory lock via `fcntl.flock(fd, LOCK_EX | LOCK_NB)`. Windows exclusive advisory lock via `msvcrt.locking(fd, LK_NBLCK, 1)` on the first byte of the mutex file. Both are non-blocking; a conflict returns `EWOULDBLOCK` / `EAGAIN` (POSIX) or `Permission denied` (Windows), at which point the install reads the owner-token payload from the mutex file for the diagnostic.
+**Decision**: POSIX advisory locks use `fcntl.flock(fd, LOCK_EX | LOCK_NB)` for writers and `LOCK_SH | LOCK_NB` for readers. Windows uses the native `LockFileEx` API through `ctypes`: writers pass `LOCKFILE_EXCLUSIVE_LOCK`, while readers omit that flag and therefore acquire a shared lock. Both are non-blocking; a conflict returns `EWOULDBLOCK` / `EAGAIN` (POSIX) or a sharing-violation error (Windows), at which point the install reads the owner-token payload from the mutex file for the diagnostic.
 
 **Rationale**:
 - `fcntl.flock` — POSIX-standard, released automatically on process death (belt-and-braces alongside fenced lease).
-- `msvcrt.locking` — Windows equivalent; also released on process death.
+- `LockFileEx` — the Windows primitive supports both shared readers and exclusive writers, and is released on process death.
 - **Advisory, not mandatory** — cooperating processes respect it; unrelated processes ignore it. Matches the "cooperating haex tooling only" trust model. The fenced-lease (R4) covers the case where a cooperating process is alive-but-hung.
 - **Non-blocking** — the install fails fast with owner detail rather than silently waiting; the operator can decide whether to wait or investigate.
 
@@ -255,7 +255,7 @@ Recorded for the plan phase; each has a mitigation baked into R1–R6.
 - **`os.replace()` on Windows with a held reader handle** — see R1 residual risk (retry-backoff-then-refuse).
 - **Windows directory-junction creation** — `mklink /J` is a command-line fallback for directory targets; `CreateSymbolicLinkW(..., SYMBOLIC_LINK_FLAG_DIRECTORY)` is the native API path. Both refuse an existing matching entry. Before removal, publication moves the existing overlay to the transaction rollback tree and records the pre-image and pointer path in the journal. It then creates the new junction/symlink; on creation failure or crash before marker publication, recovery restores the saved overlay, and after marker publication cleanup removes the backup only after the new pointer verifies. The rollback path and generation are recorded in journal metadata and the ownership set.
 - **Windows without Developer Mode + file-scoped symlink** — refuse per R3.
-- **`fcntl.flock` unavailable on Windows** — use `msvcrt.locking` (R6).
+- **`fcntl.flock` unavailable on Windows** — use `LockFileEx` through `ctypes` (R6); the lock module's Windows tests cover two concurrent readers and a writer excluded until both readers release.
 - **Path separators** — every path stored on disk is POSIX-normalised (`/`); Windows-side code converts at the OS boundary only.
 - **Case-sensitivity** — NTFS is case-insensitive by default; the digest scheme (R5) uses the path exactly as recorded in `install.lock`, so a `Foo.md` vs `foo.md` mismatch is treated as a validation error at input time, not as two distinct files.
 
