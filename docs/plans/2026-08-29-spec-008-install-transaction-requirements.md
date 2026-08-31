@@ -108,8 +108,8 @@ interruption and are non-negotiable for the Spec 008 landing:
   `generated_content_integrity`, every `atoms[].content_integrity`, and the
   versioned per-path `ownership.paths` set
   over the final sealed bytes actually swapped into place. Its own fsync
-  precedes construction of `visibility.json`; the staged `.haex-hive/` view
-  swap containing both files is the final publication step; journaled cleanup
+  precedes construction of `visibility.json`; the final atomic replacement of
+  `.haex-hive/visibility.json` is the sole publication step; journaled cleanup
   may follow without changing the marker or generation. Any output that could
   still mutate (native-tool outputs when they return — see Spec 007's Non-Goals
   clarifier) is sealed before `install.lock` is computed.
@@ -145,6 +145,7 @@ revalidation, and in-place fencing before replay. Existing
 `.haex-hive/constitution-transaction.lock` and
 `.haex-hive/constitution-transaction.json` files are legacy inputs only; the
 first new shared-lock operation recovers a valid legacy journal before planning.
-During migration it MAY create the legacy lock transiently to coordinate with
-an older writer, but MUST remove that compatibility lock before releasing the
-new shared lock if it did not already exist. No new journal is written there.
+During migration it MAY create the legacy lock to coordinate with an older
+writer. Once created, the compatibility lock pathname MUST remain stable while
+legacy writers are supported; it is inert when unused. No new journal is
+written there.

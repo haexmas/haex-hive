@@ -126,7 +126,7 @@ artifacts, and are removed by journaled cleanup after publication.
 
 **Goal**: A crash at any journal state either completes the interrupted install to a valid new generation or rolls back to the previous marker-consistent generation. Unowned files under `.claude/`/`.codex/` survive recovery byte-identically.
 
-**Independent Test**: Per [spec.md §US3 Independent Test](./spec.md) — scripted-kill at each of the four journal states in FR-014; after each, run `haex install --recover` and assert one of the two allowed outcomes.
+**Independent Test**: Per [spec.md §US3 Independent Test](./spec.md) — scripted-kill at each of the six journal states in FR-014 (after lock, staging, `install.lock`, marker, `cleanup_started`, and `cleanup_completed`); after each, run `haex install --recover` and assert one of the two allowed outcomes, preserving a verified published generation for the two post-marker cleanup states.
 
 ### Tests for User Story 3
 
