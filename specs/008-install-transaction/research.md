@@ -68,23 +68,23 @@
 
 **Decision**:
 - **Owner-token format**: `<pid>:<hostname>:<start_ns>:<uuid4-hex>` — exactly four colon-separated fields, all ASCII-safe, total length ≤ 128 bytes. Example: `31245:laptop-hex.local:1727612345678901234:8f3a2d1c9e7b4a5680c2e14f7d6b3a95`.
-- **Heartbeat cadence**: 5 seconds. The lock owner runs a background thread that rewrites the `heartbeat_at_ns` field of `install.mutex` every 5 seconds.
-- **Lease TTL**: 60 seconds (12× heartbeat). Recovery treats `now_ns - heartbeat_at_ns > TTL` as "abandoned".
-- **Revalidation ordering** (recovery): (1) open `install.mutex` for shared read; (2) parse owner token + heartbeat_at_ns; (3) if not stale, wait or exit with owner-detail diagnostic; (4) if stale, re-open for exclusive-write; (5) re-parse owner token — MUST equal what was read in step 2, MUST still be stale; (6) atomically overwrite with the recovering process's own owner token; (7) proceed with recovery.
+- **Heartbeat cadence**: 5 seconds. The lock owner runs a background thread that atomically replaces and fsyncs the `heartbeat_at` field of `install.mutex` every 5 seconds.
+- **Lease TTL**: 60 seconds (12× heartbeat), plus a 5-second safety margin. Recovery requires `now_utc - heartbeat_at > 65 seconds` before reclaiming.
+- **Revalidation ordering** (recovery): (1) acquire the same non-blocking exclusive OS lock; (2) read and parse the lease; (3) if the OS lock is held by another process, wait or exit with owner-detail diagnostic regardless of heartbeat age; (4) require the UTC heartbeat to be past TTL plus the safety margin; (5) re-read the lease under the exclusive handle and require the owner token and heartbeat to be unchanged and still stale; (6) atomically overwrite with the recovering process's own owner token; (7) proceed with recovery. Every owner revalidates its token before each mutation, so a resumed fenced process stops.
 
 **Rationale**:
 - **UUID4 for uniqueness** — pid+hostname+start_ns can theoretically collide (containers reusing pids, low-resolution clock); UUID4 makes collision astronomically unlikely.
 - **5s heartbeat** — short enough that a paused-then-resumed process refreshes before TTL expires under normal circumstances; long enough that the background thread does not measurably contend with the main install work.
 - **60s TTL** — twelve heartbeat intervals absorbs common transient stalls (GC pauses, VM freezes under load, IO stalls). Longer TTLs delay recovery from genuinely dead installs; shorter risks false-positive reclaim.
-- **Revalidation-before-reclaim** — the "read stale, exclusive-re-read stale-and-unchanged, then reclaim" ordering prevents a race where a paused owner resumes mid-recovery: if it manages to refresh between our reads, step 5 sees a new heartbeat and we back off.
+- **OS lock plus revalidation-before-reclaim** — a paused owner still holds the OS lock and therefore cannot be reclaimed. If the owner died and released it, the "read stale, exclusive-re-read stale-and-unchanged, then reclaim" ordering prevents a replacement race; if a heartbeat changes between reads, step 5 backs off.
 - **`mtime` explicitly rejected** as sole signal — reqs doc says so and it is well-known unsound (a `touch` from an unrelated process can spoof it).
 
 **Alternatives considered**:
 - **etcd/consul-style monotonic fencing token issued by a central authority**: not applicable, no central authority.
-- **File-lock with `fcntl.flock` alone, no fenced lease**: `flock` releases automatically on process death, but a hung process (SIGSTOP, kernel wait) holds the lock indefinitely; the fenced-lease is what breaks that deadlock.
+- **File-lock with `fcntl.flock` alone, no fenced lease**: `flock` releases automatically on process death, but it provides no owner metadata or recovery fencing. The lease record supplies diagnostics and prevents a replacement process from acting on a stale read.
 - **Shorter TTL (e.g. 10s)**: rejected — false-positive reclaim risk on a heavily-loaded satellite is too high for a state-mutating operation.
 
-**Residual risk**: A satellite whose clock jumps backward under NTP adjustment could produce a false-positive stale reading. Mitigation: use `time.monotonic_ns()` for `heartbeat_at_ns` (unaffected by wall-clock jumps); persist and compare monotonic timestamps in-process; recovery from a different process compares wall-clock timestamps and MUST tolerate ±5s skew (add safety margin: effective TTL = 60s + 5s clock-skew allowance).
+**Residual risk**: A satellite whose wall clock jumps backward delays reclamation, which is safe; a forward jump is bounded by requiring the OS lock to be available and revalidating the unchanged lease. Monotonic time schedules heartbeats and supplies the diagnostic `start_ns`; UTC timestamps are persisted for cross-process expiry with a 5-second safety margin.
 
 ---
 
@@ -186,6 +186,7 @@
 - The existing `.haex-hive/install.lock` schema is EXTENDED (backward-compatible; see contracts) with `overlay_paths` per participating root, a `visibility_marker` block, and a `participating_roots` list. Existing single-source records stay valid.
 - `haex constitution assemble` (invoked directly) still works — it becomes a shortcut that runs the install transaction with a plan filtered to constitution-only steps. This preserves the current UX.
 - Multi-source LLM-merge (Spec 007's `--llm=file` two-phase flow) is preserved unchanged.
+- Shared path helpers derive `$HAEX_HIVE_STATE`, the canonical project identity, its SHA-256 `<repo-key>`, `install.mutex`, and `install.journal`. Both `constitution assemble` and `constitution show` use these helpers. The old `.haex-hive/constitution-transaction.lock` and `.haex-hive/constitution-transaction.json` are read only as migration inputs; a valid legacy journal is recovered under the new lock before any new plan is built, and new runs never create legacy artifacts.
 
 **Rationale**:
 - Duplicating the transaction machinery for install would be a source of drift. The extract-shared-implementation approach keeps one transaction, many participants.
@@ -195,7 +196,7 @@
 - **Keep the two paths separate, migrate later**: rejected — drift risk in a load-bearing invariant is unacceptable.
 - **Deprecate `haex constitution assemble` in favour of `haex install --scope=constitution`**: too disruptive for an existing landed CLI. The UX shortcut stays.
 
-**Residual risk**: schema extension must be validated on every existing `install.lock` produced by Spec 007 in the wild. Mitigation: schema tests use the actual Spec 007 fixtures as the backward-compat baseline.
+**Residual risk**: schema extension must be validated on every existing `install.lock` produced by Spec 007 in the wild. Mitigation: schema tests use the actual Spec 007 fixtures as the backward-compat baseline. Legacy transaction journals use the Spec-007 pair format and are migrated before the Spec-008 JSONL journal is opened; malformed legacy records refuse without mutating outputs.
 
 ---
 
@@ -216,6 +217,29 @@
 - Both together lets the plan validate the static claims and record the dynamic ones under the same enforcement.
 
 **Residual risk**: An adapter that dynamically registers a path outside a mixed-ownership root (e.g. a path in `.git/hooks/` claimed by graphify-first-authoring) is out of scope for the overlay mechanism — those go through the hook boundary (Spec 009) instead. The install pipeline validates that dynamic registrations are within a declared participating output root; violations refuse.
+
+---
+
+## R10a. Persisted per-path ownership and rollback pre-images
+
+**Decision**: Extend `install.lock` with `ownership: {"version": 1, "paths": [...]}`.
+Each `paths[]` record contains the root-relative POSIX path, an owner resource
+(`atom`, `adapter`, or `hook`), the current generation ID and file digest, and a
+`previous` record containing the prior generation ID, whether the path existed,
+and its prior digest (or `null`). The array is unique and bytewise sorted.
+
+The previous and current ownership sets are the only inputs to orphan planning.
+For every write or delete, the journal records the pre-image existence, digest,
+and a transaction-relative rollback reference before the mutation. The rollback
+reference is never an absolute path and is not persisted in the committed lock;
+it points to the same-filesystem rollback tree while the journal is live. This
+allows rollback to restore deleted bytes while ensuring an unowned sibling in a
+mixed-ownership root is never inferred or touched.
+
+**Rationale**: Aggregate root digests prove what a generation contains but cannot
+answer who owns a path or whether a deletion is safe. A versioned ownership set
+provides that planning boundary while journal pre-images provide the bytes needed
+for recovery.
 
 ---
 

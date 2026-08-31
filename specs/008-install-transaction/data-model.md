@@ -28,9 +28,17 @@ Sealed capture of every input the transaction depends on. Immutable after seal.
 
 ### CommitSnapshot
 
-Fresh re-read of the same inputs immediately before publication. Compared with `PlanSnapshot` to detect mid-install source mutation (FR-006).
+Fresh re-read of the same inputs while the exclusive install lock is held. It is
+compared with `PlanSnapshot` before the final preparation phase to detect
+mid-install source mutation (FR-006). After a successful comparison, the exact
+bytes are copied into a transaction-owned, read-only input snapshot. Resolution
+and hydration consume that snapshot only; live inputs are never re-read before
+the first root swap. Supported haex writers use the same exclusive lock, so the
+snapshot remains fenced through publication.
 
-Same shape as `PlanSnapshot` fields `haex_hive_json_digest`, `publisher_manifest_digests`, `atom_manifest_digests`. Recorded verbatim; on any mismatch, install aborts.
+Same shape as `PlanSnapshot` fields `haex_hive_json_digest`,
+`publisher_manifest_digests`, `atom_manifest_digests`, plus the captured bytes
+for each keyed input. Recorded verbatim; on any mismatch, install aborts.
 
 ### PlanStep
 
@@ -76,18 +84,28 @@ Runtime representation of the fenced-lease owner token (see R4).
 
 ### InstallMutexFile
 
-Layout of `install.mutex` (device-local, under `$HAEX_HIVE_STATE/locks/<repo-identity>/`).
+Layout of `install.mutex` (device-local, under `$HAEX_HIVE_STATE/locks/<repo-key>/`).
 
 ```json
 {
-  "owner_token": "<pid>:<hostname>:<start_ns>:<uuid4>",
-  "acquired_at_ns": 1727612345678901234,
-  "heartbeat_at_ns": 1727612345678901234,
-  "ttl_ns": 60000000000
+  "owner_token": "<pid>:<hostname>:<start_ns>:<uuid4_hex>",
+  "acquired_at": "2026-08-31T14:20:11.000000Z",
+  "heartbeat_at": "2026-08-31T14:20:16.000000Z",
+  "heartbeat_interval_ns": 5000000000,
+  "ttl_ns": 60000000000,
+  "safety_margin_ns": 5000000000
 }
 ```
 
-Rewritten by the owner's heartbeat thread every 5 seconds; `heartbeat_at_ns` updates, other fields stay stable through the lease lifetime.
+The owner atomically replaces and fsyncs the record every 5 seconds. The UTC
+timestamps are used for cross-process expiry; monotonic time is used only to
+schedule the heartbeat and to form the diagnostic `start_ns` token field.
+
+Recovery first obtains the same non-blocking exclusive OS lock. It then requires
+the lease to be older than `ttl_ns + safety_margin_ns`, re-reads the record
+under that lock, and requires the token and heartbeat to be unchanged and still
+expired before replacing it with a new owner token. A resumed process whose
+token was fenced MUST stop before its next mutation.
 
 ### VisibilityMarker
 
@@ -121,6 +139,32 @@ Extended shape of `.haex-hive/install.lock`. See [contracts/install-lock.v2.sche
 | `atoms` | `list[AtomInstallRecord]` | New in Spec 008; per-atom install detail. |
 | `participating_roots` | `list[RootRecord]` | New in Spec 008; matches `VisibilityMarker.participating_roots` byte-identically at seal time. |
 | `visibility_marker` | `VisibilityMarkerRef` | New; `{ "generation_id": "...", "content_integrity": "sha256-..." }`. |
+| `ownership` | `OwnershipSet` | New; versioned per-path ownership records used for orphan planning and rollback. |
+
+### OwnershipSet
+
+The authoritative set of generated paths for one installed generation. The set
+contains only paths the transaction owns; in particular, it never contains
+unowned siblings in a mixed-ownership root.
+
+| Field | Type | Notes |
+|---|---|---|
+| `version` | `Literal[1]` | Version of the per-path record format. |
+| `paths` | `list[PathOwnershipRecord]` | Unique root-relative POSIX paths, sorted bytewise. |
+
+### PathOwnershipRecord
+
+| Field | Type | Notes |
+|---|---|---|
+| `path` | `str` | Root-relative POSIX path, including the participating root. |
+| `owner` | `OwnerResource` | Atom, adapter, or hook that owns the path. |
+| `generation_id` | `str` | Generation that sealed the current bytes. |
+| `content_integrity` | `str` | Digest of the current sealed bytes. |
+| `previous` | `PreviousPathState \| null` | Prior generation, existence, and digest; actual rollback bytes are retained by the journal pre-image record. |
+
+The plan computes orphan deletion from the previous lock's `ownership.paths`
+set. A delete step carries the removed record and its pre-image in the journal;
+an unowned path is never inferred by enumerating a mixed-ownership root.
 
 ### AtomInstallRecord
 
@@ -153,13 +197,19 @@ START
 [build_plan_snapshot]
   │
   ▼
+[commit_snapshot_verify]  ──── mismatch → [abort + rollback]
+  │
+  ▼
+[seal_commit_inputs]
+  │
+  ▼
+[resolve_and_hydrate_from_commit_snapshot]
+  │
+  ▼
 [stage_all_outputs]  (per-step journal entry BEFORE each replace)
   │
   ▼
 [invoke_hooks]  (Spec 009 extension point; MAY be no-op in Spec 008)
-  │
-  ▼
-[commit_snapshot_verify]  ──── mismatch → [abort + rollback]
   │
   ▼
 [seal_install_lock]
@@ -180,7 +230,7 @@ At any state above ↓
   ▼
 [replay_journal]  → determine last consistent state
   │
-  ├── after publish_visibility_marker + marker present → cleanup only
+  ├── after publish_visibility_marker + marker present → retain generation, cleanup only
   ├── after seal_install_lock but no marker → publish marker (idempotent)
   └── earlier → roll back per-file replaces, restore prior gen, cleanup
 ```
@@ -188,7 +238,7 @@ At any state above ↓
 **Invariants at every transition**:
 - The exclusive lock is held from `[acquire_lock]` through `[cleanup_staging]`.
 - Every filesystem mutation is preceded by its journal entry, fsynced.
-- The visibility marker is written LAST; no other write publishes the new generation.
+- The visibility marker is the last publication step and the only publication event; journaled cleanup may follow but cannot change the published generation.
 
 ---
 
@@ -200,6 +250,7 @@ At any state above ↓
 - Many `JournalEntry`s ⇌ zero-or-one `PlanStep` (lifecycle entries carry no step reference).
 - One successful install ⇌ one `VisibilityMarker` ⇌ one `InstallLock` (their digests cross-reference).
 - One `InstallLock` ⇌ many `AtomInstallRecord`s ⇌ many `RootRecord`s.
+- One `InstallLock` ⇌ one `OwnershipSet` ⇌ many `PathOwnershipRecord`s.
 
 ---
 
@@ -207,4 +258,4 @@ At any state above ↓
 
 - **Publisher-hook payloads** (Spec 009 territory): `PlanStep.step_type = "hook_invoke"` reserves the slot; the payload shape is Spec 009's design decision. Spec 008 records the step type so recovery can identify hook-boundary journal entries but does not itself execute hooks.
 - **Adapter output payloads** (Spec 010 territory): the plan step's `payload` for adapter-emitted files is opaque to Spec 008; the pipeline stages, digests, and publishes them per the transaction contract without introspecting content.
-- **Cross-version migration** of `install.lock`: Spec 007 records passing forward unchanged; Spec 008's extensions default to sensible values when reading a Spec-007-vintage lock (`participating_roots` synthesised from the constitution block; `visibility_marker` null → treated as a legacy install requiring re-install). A dedicated migration is out of scope; the first Spec-008 install after upgrade rewrites the lock in the new shape.
+- **Cross-version migration** of `install.lock` and transaction state: Spec 007 records pass forward unchanged; Spec 008's extensions default to sensible values when reading a Spec-007-vintage lock (`participating_roots` synthesised from the constitution block; `visibility_marker` null → treated as a legacy install requiring re-install). The shared path helper discovers legacy `.haex-hive/constitution-transaction.lock` and `.haex-hive/constitution-transaction.json` artifacts under the new exclusive lock, validates and recovers a legacy journal before any new plan, and never creates new legacy artifacts. The first Spec-008 install rewrites the lock in the new shape.

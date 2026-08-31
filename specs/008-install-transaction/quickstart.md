@@ -25,7 +25,10 @@ On success, the following files exist:
 - `.haex-hive/visibility.json` — the publication marker.
 - Additional per-adapter outputs under `.claude/`, `.codex/`, etc. as Spec 010 adapters land.
 
-`$HAEX_HIVE_STATE/locks/<repo-identity>/` on the same satellite now contains:
+`$HAEX_HIVE_STATE/locks/<repo-key>/` on the same satellite now contains. The
+`repo-key` is the lowercase hexadecimal SHA-256 of the canonical project
+identity; the full identity is kept separately in `repo-identity.v1.json` and
+never appears in the directory name:
 
 - `install.mutex` (device-local, not shared across satellites) — was held during the install; heartbeat thread stops on exit.
 - `install.journal` — truncated to zero bytes after the successful cleanup step.
@@ -39,7 +42,7 @@ $ haex install
 no changes; generation g_20260831T142011Z_a4c2 is up to date
 ```
 
-Zero files rewritten. Zero timestamps updated. This is the FR-010 idempotence guarantee.
+Zero files rewritten. Zero timestamps updated. This is the SC-003 idempotence guarantee.
 
 ## 3. Verify without installing
 
@@ -91,7 +94,7 @@ $ haex install --recover
 recovered previous generation g_20260828T093345Z_7f21 (rolled back; 8 files restored)
 ```
 
-Either outcome is a valid FR-011 result: complete-new OR rollback-to-previous. Never a mixed state.
+Either outcome is a valid FR-011 result: complete-new OR rollback-to-previous. Never a mixed state. If the marker was already published when the crash occurred, recovery keeps that verified generation and performs cleanup only.
 
 ## 6. Removing an atom
 
@@ -144,8 +147,8 @@ for root_record in marker["participating_roots"]:
   - `.claude/`, `.codex/`, other adapter roots — mixed-ownership; only overlay-owned paths are managed by `haex install`.
 - **Under `$HAEX_HIVE_STATE`** (device-local, NEVER shared across satellites, MUST NOT contain secrets per FR-022):
   - `~/.local/share/haex-hive/repos/<clone-hash>/` — publisher bare clones (Spec 007).
-  - `~/.local/share/haex-hive/locks/<repo-identity>/install.mutex` — install lock (new in Spec 008).
-  - `~/.local/share/haex-hive/locks/<repo-identity>/install.journal` — durable journal (new in Spec 008).
+  - `$HAEX_HIVE_STATE/locks/<repo-key>/install.mutex` — install lock (new in Spec 008).
+  - `$HAEX_HIVE_STATE/locks/<repo-key>/install.journal` — durable journal (new in Spec 008).
   - Override with `$HAEX_HIVE_STATE` env var.
 
 ## 9. Suspending automation for a session
