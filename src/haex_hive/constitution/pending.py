@@ -59,7 +59,7 @@ def derive_pending_id(entries: list[tuple[str, str, str, bytes]]) -> str:
         buf += _length_prefixed(source.encode("utf-8"))
         buf += _length_prefixed(body)
     digest = hashlib.sha256(bytes(buf)).digest()
-    return "sha256-" + base64.b64encode(digest).decode("ascii")
+    return "sha256-" + base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
 def serialize_pending(

@@ -32,12 +32,13 @@ def test_unknown_atoms_field_survives_assemble(single_source_constitution_fixtur
 
     hive_dir = consumer / ".haex-hive"
     hive_dir.mkdir()
+    marker_payload = {"id": "com.github.future.spec.atom", "revision": "0" * 40}
     (hive_dir / "install.lock").write_text(
         json.dumps(
             {
                 "haex_hive_version": "2",
                 "generated_by": "haex 0.0.0",
-                "atoms": [{"id": "com.github.future.spec.atom", "revision": "0" * 40}],
+                "unknown_future_top_level_field": marker_payload,
             }
         )
     )
@@ -46,7 +47,7 @@ def test_unknown_atoms_field_survives_assemble(single_source_constitution_fixtur
     assert proc.returncode == 0, proc.stderr
 
     lock_data = json.loads((hive_dir / "install.lock").read_text())
-    assert lock_data["atoms"] == [{"id": "com.github.future.spec.atom", "revision": "0" * 40}]
+    assert lock_data["unknown_future_top_level_field"] == marker_payload
     expected_atom_id = single_source_constitution_fixture["atom_id"]
     assert lock_data["constitution"]["sources"][0]["id"] == expected_atom_id
     assert lock_data["generated_by"].startswith("haex ")

@@ -19,7 +19,7 @@ def _reference(body: bytes) -> str:
         + body
         + b"\x00"
     )
-    return "sha256-" + base64.b64encode(hashlib.sha256(tree).digest()).decode("ascii")
+    return "sha256-" + base64.urlsafe_b64encode(hashlib.sha256(tree).digest()).rstrip(b"=").decode("ascii")
 
 
 def test_empty_body_matches_reference() -> None:

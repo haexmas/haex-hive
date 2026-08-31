@@ -15,7 +15,7 @@ _BASE = {
     "constitution": {
         "sources": [],
         "assembled_by": {"tool": "haex", "version": "2.0.0"},
-        "content_integrity": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "content_integrity": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     },
 }
 
@@ -49,10 +49,13 @@ def test_forward_compat_preserves_unknown_fields() -> None:
         {
             "haex_hive_version": "2",
             "generated_by": "haex 2.0.0",
-            "atoms": [{"id": "com.future.spec.atom", "future_field": True}],
+            "unknown_future_top_level_field": {"id": "com.future.spec.atom", "future_field": True},
         }
     ).encode("utf-8")
     lock = InstallLock.from_json(raw)
-    assert lock.unknown_top_level["atoms"][0]["id"] == "com.future.spec.atom"
+    assert (
+        lock.unknown_top_level["unknown_future_top_level_field"]["id"]
+        == "com.future.spec.atom"
+    )
     reserialized = lock.to_json_bytes()
     assert b"future_field" in reserialized
