@@ -40,3 +40,9 @@
   ([docs/plans/2026-08-31-graphify-first-authoring-design.md](../../../../docs/plans/2026-08-31-graphify-first-authoring-design.md))
   rather than via [NEEDS CLARIFICATION] markers, since the preceding
   brainstorm session already closed every open fork.
+- `/speckit.clarify` (2026-08-31) surfaced two real gaps the brainstorm and
+  design doc had not covered: tool-failure semantics for the `post-commit`
+  hook (FR-006) and for the agent's own graph consultation (FR-004). Both
+  resolved to warn-and-continue/warn-and-proceed, recorded under
+  `## Clarifications` in spec.md and folded into FR-004, FR-006, Edge Cases,
+  and SC-004.
