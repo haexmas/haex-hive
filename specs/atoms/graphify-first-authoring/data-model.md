@@ -33,11 +33,11 @@ Not a single file — computed from two sources at check time:
 
 ## GraphifyOutDirectory (graphify-out/)
 
-Not owned by this atom — it is `graphify`'s own artifact directory. This atom only reads its presence/freshness and copies it wholesale (never inspects its internal structure).
+Not owned by this atom — it is `graphify`'s own artifact directory. This atom checks only for the required `graph.json` and freshness marker, and copies a complete directory wholesale.
 
 **Lifecycle**:
-- **Tracked branch**: authoritative; refreshed incrementally by `post-commit` after every commit (FR-006), or by the agent-side backstop if the hook is absent/failed/bypassed (FR-010).
-- **Feature branch/worktree**: a discarded fork-point snapshot, copied in once by `post-checkout` (FR-008), never refreshed again during the branch's life; removed when the worktree/branch is deleted. Never committed (FR-009).
+- **Tracked branch**: authoritative only when `graphify-out/graph.json` exists; refreshed incrementally by `post-commit` after every commit (FR-006), or bootstrapped/refreshed by the agent-side backstop if the hook is absent/failed/bypassed (FR-010).
+- **Feature branch/worktree**: a complete, discarded fork-point snapshot, copied in once by `post-checkout` (FR-008), never refreshed again during the branch's life; an incomplete source is not copied. Removed when the worktree/branch is deleted. Never committed (FR-009).
 
 ## FreshnessMarker (graphify-out/.meta.json)
 
@@ -48,7 +48,7 @@ or rewrite this marker; `_refresh.py` only invokes the graphify process.
 |---|---|---|
 | `indexed_at_sha` | string (git SHA) | The commit the graph currently reflects. |
 
-**Lifecycle**: on a tracked branch, compared against current `HEAD` to decide bootstrap (absent) vs. refresh (behind) vs. proceed (current). On a feature-branch snapshot, it is intentionally frozen at the fork point and never compared against the feature branch's own advancing `HEAD` or refreshed. If bootstrap or refresh fails, the agent warns, continues, and flags the incomplete refresh for a later manual check.
+**Lifecycle**: on a tracked branch, missing `graph.json` triggers bootstrap; a missing/invalid marker or marker differing from current `HEAD` triggers refresh; otherwise the graph is current. On a feature-branch snapshot, it is intentionally frozen at the fork point and never compared against the feature branch's own advancing `HEAD` or refreshed. If bootstrap or refresh fails, the agent warns, continues, and flags the incomplete refresh for a later manual check.
 
 ## InstallerState (ephemeral — install.py's own run-time checks, not persisted)
 

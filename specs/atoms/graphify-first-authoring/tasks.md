@@ -84,7 +84,7 @@ Per plan.md's Structure Decision — not the generic `src/`/`tests/` application
 
 **Independent Test**: On a repo with an existing tracked-branch graph, create a new worktree off it. Verify the new worktree's `graphify-out/` is populated immediately, matching the parent's graph.
 
-- [X] T013 [P] [US3] Implement snapshot logic in `.specify/atoms/graphify-first-authoring/hooks/_snapshot.py`: locate the parent worktree via `git worktree list --porcelain`, copy `graphify-out/` recursively if absent locally and present in the parent, no-op if either condition fails (contracts/git-hooks.md, FR-008)
+- [X] T013 [P] [US3] Implement snapshot logic in `.specify/atoms/graphify-first-authoring/hooks/_snapshot.py`: locate the parent worktree via `git worktree list --porcelain`, copy a complete parent `graphify-out/` containing `graph.json` recursively if no complete graph exists locally, replace an incomplete destination directory, and no-op for an absent/incomplete parent graph or complete destination (contracts/git-hooks.md, FR-008)
 - [X] T014 [US3] Implement the `post-checkout` hook entrypoint in `.specify/atoms/graphify-first-authoring/hooks/post-checkout`: check the third argument is `1` (branch checkout), call `_snapshot.py`, always exit 0 regardless of outcome (depends on T013)
 - [X] T015 [P] [US3] Unit tests for snapshot logic in `tests/atoms/graphify_first_authoring/test_snapshot.py`: copies when absent locally, no-op when already present, no-op when parent has none (depends on T013)
 - [X] T016 [US3] Integration test in `tests/atoms/graphify_first_authoring/test_post_checkout_hook.py`: real `git worktree add` from a repo with an existing `graphify-out/` produces a populated copy in the new worktree (depends on T014)

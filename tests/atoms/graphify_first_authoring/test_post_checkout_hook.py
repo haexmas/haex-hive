@@ -39,6 +39,7 @@ def _init_parent(root: Path) -> Path:
     (graph / ".meta.json").write_text(
         json.dumps({"indexed_at_sha": _git(root, "rev-parse", "HEAD")})
     )
+    (graph / "graph.json").write_text('{"nodes": [], "edges": []}\n')
     (graph / "nodes.jsonl").write_text('{"id": "n1"}\n')
     return root
 
