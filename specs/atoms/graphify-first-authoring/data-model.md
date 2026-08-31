@@ -54,10 +54,10 @@ or rewrite this marker; `_refresh.py` only invokes the graphify process.
 
 | Check | Outcome on failure |
 |---|---|
-| `graphify` on PATH | If absent, prompt to install via `pip install graphifyy` (default Y); on decline, refuse with instructions, no other changes (FR-011) |
+| `graphify` on PATH | If absent, prompt to install via `sys.executable -m pip install graphifyy` (default Y); on decline, refuse with instructions, no other changes (FR-011) |
 | Current branch is tracked | Refuse, name current branch + expected tracked branch(es) (FR-013) |
 | Target hook path already occupied | Refuse, instruct manual integration, no overwrite (FR-014) |
-| `graphify-out/` directory present in repo | If absent, prompt before running `graphify install` (default Y); on decline, continue with manual follow-up instructions; if present, skip (FR-012) |
+| Local registration marker | If `graphify-first-authoring.registration=installed` is absent from local git config, prompt before running `graphify install` (default Y); on success, write the marker; on decline, continue with manual follow-up instructions. `graphify-out/` presence is not a registration signal (FR-012) |
 
 **Lifecycle**: none — these are one-shot checks performed each time `install.py` runs; nothing here is written to disk as state.
 

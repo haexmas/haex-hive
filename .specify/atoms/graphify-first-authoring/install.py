@@ -8,8 +8,8 @@ Refuses cleanly (no partial changes) if any precondition fails. On success:
 - copies the sibling helper modules into ``.git/hooks/`` so the entrypoints'
   imports resolve regardless of where the atom lives on disk;
 - appends ``graphify-out/`` to ``.gitignore`` if not already present;
-- prompts before running ``graphify install`` (only when no ``graphify-out/``
-  exists yet, per FR-012).
+- prompts before running ``graphify install`` when the local registration marker
+  is absent, and records successful registration in local git config.
 """
 
 from __future__ import annotations
@@ -30,6 +30,8 @@ import _tracked_branches  # noqa: E402
 _HOOK_NAMES = ("post-commit", "post-checkout")
 _HELPER_MODULES = ("_tracked_branches.py", "_refresh.py", "_snapshot.py")
 _GITIGNORE_LINE = "graphify-out/"
+_REGISTRATION_CONFIG_KEY = "graphify-first-authoring.registration"
+_REGISTRATION_CONFIG_VALUE = "installed"
 
 
 class InstallError(Exception):
@@ -156,17 +158,39 @@ def _ensure_gitignore_line(repo_root: Path) -> None:
 
 
 def _maybe_run_graphify_install(repo_root: Path) -> None:
-    """FR-012: run ``graphify install`` only if this repo has no ``graphify-out/``.
+    """FR-012: run ``graphify install`` when local registration is unmarked.
 
-    ``graphify install`` registers graphify with the operator's agent harness —
-    a one-time per-repo action. If ``graphify-out/`` already exists, graphify
-    has already been used here and registration was either done manually or by
-    a prior adoption; skip.
+    ``graphify install`` registers graphify with the operator's agent harness.
+    A successful run records an explicit, unversioned marker in this clone's
+    local git config. The graph cache itself is not a registration signal:
+    bootstrap, refresh, and worktree snapshots can all create it independently.
     """
-    if (repo_root / "graphify-out").exists():
+    try:
+        registration = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo_root),
+                "config",
+                "--local",
+                "--get",
+                _REGISTRATION_CONFIG_KEY,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        registration = None
+
+    if (
+        registration is not None
+        and registration.returncode == 0
+        and registration.stdout.strip() == _REGISTRATION_CONFIG_VALUE
+    ):
         print(
-            "graphify-out/ already present — skipping 'graphify install' "
-            "(harness registration is assumed to be in place)."
+            "graphify harness registration marker is present — skipping "
+            "'graphify install'."
         )
         return
     proceed = _prompt(
@@ -187,6 +211,29 @@ def _maybe_run_graphify_install(repo_root: Path) -> None:
         print(
             f"Warning: 'graphify install' did not complete cleanly ({exc}). "
             "Re-run it manually if your harness is not registered.",
+            file=sys.stderr,
+        )
+        return
+
+    try:
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo_root),
+                "config",
+                "--local",
+                _REGISTRATION_CONFIG_KEY,
+                _REGISTRATION_CONFIG_VALUE,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (subprocess.CalledProcessError, OSError) as exc:
+        print(
+            f"Warning: could not record the graphify registration marker ({exc}). "
+            "The installer will ask again on the next run.",
             file=sys.stderr,
         )
 

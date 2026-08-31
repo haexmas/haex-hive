@@ -161,7 +161,7 @@ def test_gitignore_line_not_duplicated(
     assert lines.count("graphify-out/") == 1
 
 
-def test_graphify_install_prompted_only_when_graphify_out_absent(
+def test_graphify_install_requires_registration_marker(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -190,9 +190,50 @@ def test_graphify_install_prompted_only_when_graphify_out_absent(
     monkeypatch.setattr(installer.subprocess, "run", fake_run)
 
     assert installer.install() == 0
-    assert not any(
+    assert called["prompt"], "unmarked registration must prompt even with a graph cache"
+    assert any(
         cmd == ["graphify", "install"] for cmd in ran
-    ), "graphify install must be skipped when graphify-out/ already exists"
+    ), "unmarked registration must run after accepting the prompt"
+
+
+def test_graphify_install_skipped_when_registration_marker_exists(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _make_tracked_repo(tmp_path)
+    (repo / "graphify-out").mkdir()
+    (repo / "graphify-out" / ".meta.json").write_text("{}")
+    _git(
+        repo,
+        "config",
+        "--local",
+        installer._REGISTRATION_CONFIG_KEY,
+        installer._REGISTRATION_CONFIG_VALUE,
+    )
+
+    bin_dir = tmp_path / "bin"
+    _put_graphify_stub(bin_dir)
+    _prepend_path(monkeypatch, bin_dir)
+    monkeypatch.chdir(repo)
+
+    called: dict[str, list] = {"prompt": []}
+    monkeypatch.setattr(
+        installer,
+        "_prompt",
+        lambda q, *_a, **_k: called["prompt"].append(q) or True,
+    )
+    ran: list[list[str]] = []
+    original_run = subprocess.run
+
+    def fake_run(cmd, *args, **kwargs):
+        ran.append(list(cmd) if isinstance(cmd, list) else [cmd])
+        return original_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+
+    assert installer.install() == 0
+    assert called["prompt"] == []
+    assert not any(cmd == ["graphify", "install"] for cmd in ran)
 
 
 def test_prompt_gates_graphify_install_subprocess(

@@ -29,9 +29,11 @@ $ python .specify/atoms/graphify-first-authoring/install.py
 graphify-first-authoring needs graphify registered for your agent harness. Run `graphify install` now? [Y/n]
 ```
 
-When `graphify-out/` is absent, accept the default (or answer `n` and run
-`graphify install` yourself later). If `graphify-out/` already exists, this
-registration prompt is skipped. On success:
+When the local registration marker is absent, accept the default (or answer
+`n` and run `graphify install` yourself later). A successful registration is
+recorded as `graphify-first-authoring.registration=installed` in local git
+config. The presence of `graphify-out/` does not suppress the prompt because
+the directory may have been created by bootstrap, refresh, or a snapshot. On success:
 
 - `.git/hooks/post-commit` and `.git/hooks/post-checkout` are installed.
 - `.gitignore` gains a `graphify-out/` line, if not already present.
