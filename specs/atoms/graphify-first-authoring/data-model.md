@@ -53,10 +53,10 @@ Written by `graphify` at index/refresh time (small addition needed there, or a t
 
 | Check | Outcome on failure |
 |---|---|
-| `graphify` on PATH | Refuse, print `pip install graphifyy` instructions, no other changes (FR-011) |
+| `graphify` on PATH | If absent, prompt to install via `pip install graphifyy` (default Y); on decline, refuse with instructions, no other changes (FR-011) |
 | Current branch is tracked | Refuse, name current branch + expected tracked branch(es) (FR-013) |
 | Target hook path already occupied | Refuse, instruct manual integration, no overwrite (FR-014) |
-| `graphify` registered with current harness | Ask for confirmation before running `graphify install` (FR-012) |
+| `graphify-out/` directory present in repo | If absent, run `graphify install` (idempotent, one-time per adoption); if present, skip (FR-012) |
 
 **Lifecycle**: none — these are one-shot checks performed each time `install.py` runs; nothing here is written to disk as state.
 

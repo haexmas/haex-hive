@@ -1,0 +1,32 @@
+"""post-checkout hook entrypoint (shebang written by install.py at install time).
+
+Per contracts/git-hooks.md §post-checkout:
+1. no-op unless the third argument is ``1`` (branch checkout, not file checkout);
+2. call ``_snapshot.snapshot()`` on the current working directory;
+3. **always exit 0**, regardless of whether the copy succeeded — the checkout
+   has already happened and this hook must never affect its outcome.
+
+Git invokes this hook with ``<prev-head-sha> <new-head-sha> <branch-checkout-flag>``.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
+import _snapshot  # noqa: E402
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) < 4 or argv[3] != "1":
+        return 0
+    _snapshot.snapshot(Path.cwd())
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

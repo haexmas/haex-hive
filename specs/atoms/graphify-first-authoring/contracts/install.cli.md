@@ -19,18 +19,12 @@ Installs this atom's git hooks (`post-commit`, `post-checkout`) into the current
 ## Preconditions (checked in this order)
 
 1. **Current branch is tracked.** The repo's auto-detected default branch, or one named in `.haex-hive.json`'s `tracked_branches[]`. Otherwise: refuse, name the current branch and the expected tracked branch(es) (FR-013).
-2. **`graphify` CLI is on PATH.** Otherwise: refuse with `pip install graphifyy` instructions; make no other changes (FR-011).
+2. **`graphify` CLI is on PATH.** Otherwise: prompt `graphify CLI not found. Install now via 'pip install graphifyy'? [Y/n]`. Default `Y` runs `pip install graphifyy` and re-checks PATH; on `n` or if the pip install fails, refuse with actionable instructions, make no other changes (FR-011).
 3. **Neither target hook path is already occupied** by a hook from another tool. Otherwise: refuse, instruct the operator to integrate manually; do not overwrite (FR-014).
 
 ## Interactive step
 
-If all preconditions pass, and `graphify` does not yet appear registered for the operator's current agent harness, prompt:
-
-```
-graphify-first-authoring needs graphify registered for your agent harness. Run `graphify install` now? [Y/n]
-```
-
-Default (bare Enter, or `y`/`Y`) runs `graphify install`. Any other input skips it — the operator is told to run it manually before relying on this atom's rule.
+If all preconditions pass, the installer inspects the working tree for a `graphify-out/` directory. If absent, it runs `graphify install` unconditionally as a one-time harness registration step (idempotent; safe to re-run even if already registered) and prints `Running graphify install (idempotent)…`. If a `graphify-out/` directory already exists, `graphify install` is skipped — the operator has already used graphify in this repo, so registration was either done manually or via a prior adoption (FR-012).
 
 ## Outputs
 
@@ -39,6 +33,6 @@ Default (bare Enter, or `y`/`Y`) runs `graphify install`. Any other input skips 
 
 ## Non-goals (v0.1)
 
-- No `--yes`/`--force` flag to skip the interactive confirmation or overwrite an existing hook — both would undercut the deliberate safety boundaries in FR-012/FR-014.
+- No `--force` flag to overwrite an existing hook — that would undercut FR-014's collision-refusal safety boundary. (FR-011's pip-install prompt and FR-012's `graphify install` heuristic-based dispatch replace the earlier v0 confirmation prompts; no flag is needed to bypass them.)
 - No `--platform` passthrough to `graphify install` — the operator can run `graphify install --platform P` manually if graphify's own auto-detection picks the wrong harness.
 - No uninstall counterpart in this atom — removing the hooks is a manual `rm .git/hooks/post-commit .git/hooks/post-checkout`; `graphify uninstall` handles graphify's own side independently.
