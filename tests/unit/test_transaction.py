@@ -210,13 +210,39 @@ def test_recover_absent_prior_removes_targets(tmp_path: Path) -> None:
     state_root = tmp_path / "state"
     state_paths = transaction_paths(tmp_path, state_root)
     state_paths.legacy_shared_journal.parent.mkdir(parents=True)
-    state_paths.legacy_shared_journal.write_bytes(journal.read_bytes())
+    shared_payload = json.loads(journal.read_text())
+    shared_payload["repo_key"] = state_paths.repo_key
+    shared_payload["checkout_key"] = state_paths.checkout_key
+    state_paths.legacy_shared_journal.write_text(json.dumps(shared_payload))
 
     assert transaction.recover_if_journaled(tmp_path, state_root=state_root)
     assert not constitution.exists()
     assert not lock.exists()
     assert not journal.exists()
     assert not state_paths.legacy_shared_journal.exists()
+
+
+def test_recover_rejects_legacy_shared_journal_for_another_checkout(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".haex-hive.json").write_text(
+        json.dumps({"identity": "com.example.consumer"})
+    )
+    state_root = tmp_path / "state"
+    paths = transaction_paths(tmp_path, state_root)
+    paths.legacy_shared_journal.parent.mkdir(parents=True)
+    paths.legacy_shared_journal.write_text(
+        json.dumps(
+            {
+                "repo_key": paths.repo_key,
+                "checkout_key": "another-checkout",
+                "targets": [],
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="checkout key"):
+        transaction.recover_if_journaled(tmp_path, state_root=state_root)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="fcntl-based lock is POSIX-only")

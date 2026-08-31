@@ -220,6 +220,10 @@ def recover_if_journaled(repo_root: Path, state_root: Path | None = None) -> boo
         elif paths is not None and journal == paths.legacy_shared_journal:
             if payload.get("repo_key") not in {None, paths.repo_key}:
                 raise ValueError("legacy transaction journal repository key does not match")
+            if payload.get("checkout_key") != paths.checkout_key:
+                raise ValueError(
+                    "legacy transaction journal checkout key is missing or does not match"
+                )
 
         raw_entries = payload.get("targets")
         if not isinstance(raw_entries, list):
