@@ -222,23 +222,37 @@ if shutil.which("graphify") is None:
         )
     subprocess.run([sys.executable, "-m", "pip", "install", "graphifyy"], check=True)
 
-if not Path("graphify-out").exists():
+registration = subprocess.run(
+    ["git", "-C", str(repo_root), "config", "--local", "--get",
+     "graphify-first-authoring.registration"],
+    capture_output=True, text=True, check=False,
+)
+if registration.returncode != 0 or registration.stdout.strip() != "installed":
     answer = input(
         "graphify-first-authoring needs graphify registered for your agent "
         "harness. Run `graphify install` now? [Y/n] "
     )
     if answer.strip().lower() != "n":
         subprocess.run(["graphify", "install"], check=True)
+        subprocess.run(
+            ["git", "-C", str(repo_root), "config", "--local",
+             "graphify-first-authoring.registration", "installed"],
+            check=True,
+        )
     else:
         print("Skipped 'graphify install'; run it manually when ready.")
-# If graphify-out/ already exists, skip registration and continue.
+# A graphify-out/ directory alone does not prove harness registration.
 ```
 
 Two deliberate boundaries: `install.py` never silently `pip install`s
 graphify itself (that mutates the operator's Python environment — venvs,
 pins — without asking), but it does offer to run `graphify install` when the
 CLI is already present, since that's graphify's own designed, reversible
-(`graphify uninstall` exists), idempotent entrypoint.
+(`graphify uninstall` exists), idempotent entrypoint. After a successful run,
+the installer records `graphify-first-authoring.registration=installed` in the
+clone's unversioned local git config. The marker, rather than
+`graphify-out/`, is the registration state; graph bootstrap, refresh, and
+worktree snapshots can create the cache independently.
 
 This gap — no formal dependency declaration between atoms, or from an atom to
 an external tool — is named here the same way Spec 007's design doc already

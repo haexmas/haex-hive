@@ -48,7 +48,7 @@ For a repo that already runs haex-hive Spec 007 manifest v2 (`.haex-hive.json`, 
 
 - It does **not** rewrite existing duplicates already committed to the codebase (scope is new authoring).
 - It does **not** replace human review — borderline calls escalate to the operator.
-- It does **not** silently install anything into your Python environment (the installer prompts before `pip install graphifyy`). It also prompts before `graphify install` when `graphify-out/` is absent, and skips that registration step when the directory already exists.
+- It does **not** silently install anything into your Python environment (the installer prompts before `sys.executable -m pip install graphifyy`). It also prompts before `graphify install` when the local registration marker is absent, records successful registration in local git config, and skips that step only when the marker is present. `graphify-out/` presence alone is not a registration signal.
 - If graph bootstrap or refresh fails, the agent warns and continues; the failed refresh is flagged for a later manual check.
 - It does **not** cause git operations to fail — both hooks always exit 0 regardless of whether their work succeeded.
 
