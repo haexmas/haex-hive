@@ -45,9 +45,13 @@ def _entry(entry_type: str, **overrides: object) -> dict:
     if entry_type in {"stage_file", "delete_orphan"}:
         base["payload"] = {
             "path": ".haex-hive/constitution.md",
-            "prior_existed": False,
-            "prior_digest": None,
-            "pre_image": "rollback/constitution.md",
+            "existed": False,
+            "content_integrity": None,
+            "pre_image": None,
+        }
+    if entry_type in {"cleanup_started", "cleanup_completed"}:
+        base["payload"] = {
+            "paths": [{"kind": "staging", "path": "staging/constitution"}]
         }
     base.update(overrides)
     return base
@@ -118,10 +122,31 @@ def test_mutation_entry_requires_payload(entry_type: str) -> None:
         validate(entry, SCHEMA_NAME)
 
 
-@pytest.mark.parametrize("field", ["path", "prior_existed", "prior_digest", "pre_image"])
+@pytest.mark.parametrize("field", ["path", "existed", "content_integrity", "pre_image"])
 def test_mutation_payload_requires_recovery_field(field: str) -> None:
     """Require each field needed to restore a mutation pre-image."""
     entry = _entry("stage_file")
     del entry["payload"][field]
+    with pytest.raises(SchemaValidationError):
+        validate(entry, SCHEMA_NAME)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("path", ".haex-hive/."),
+        ("path", ".haex-hive/.."),
+        ("pre_image", "."),
+        ("pre_image", ".."),
+    ],
+)
+def test_mutation_payload_rejects_terminal_dot_segments(field: str, value: str) -> None:
+    """Reject dot and dot-dot terminal path segments in recovery metadata."""
+    entry = _entry("stage_file")
+    payload = entry["payload"]
+    payload["existed"] = True
+    payload["content_integrity"] = _ZERO_TAIL
+    payload["pre_image"] = "rollback/constitution.md"
+    payload[field] = value
     with pytest.raises(SchemaValidationError):
         validate(entry, SCHEMA_NAME)
