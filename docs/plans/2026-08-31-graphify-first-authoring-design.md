@@ -107,8 +107,10 @@ tied to any one agent harness.
 **Refuse-then-propose.** When the graph reveals an existing candidate that
 would need extension rather than duplication, the agent MUST (a) name the
 candidate (file + symbol), (b) state the delta between what exists and what
-is needed, and (c) propose the extension. Silently authoring a parallel
-implementation is not permitted.
+is needed, and (c) propose the extension. If the match is borderline or the
+extension could cause scope creep, the agent MUST stop and ask the operator
+before deciding. Silently authoring a parallel implementation is not
+permitted.
 
 **Escape hatch.** The operator MAY suspend this principle for a single
 session with an explicit "skip graphify check" instruction. The suspension
@@ -143,10 +145,16 @@ read correctly regardless of which harness executes it.
 - **Merging a feature branch back into a tracked branch** needs no special
   graph-merge logic — the merge commit lands *on* the tracked branch and
   fires the same `post-commit` hook as any other commit.
-- **Freshness marker**: `graphify-out/.meta.json` records `indexed_at_sha`.
-  The agent compares this to current HEAD to decide bootstrap vs. refresh vs.
-  proceed. (Small addition needed in graphify itself, or a thin wrapper, to
-  write this file at index time.)
+- **Freshness marker**: `graphify` itself owns
+  `graphify-out/.meta.json` and writes `indexed_at_sha` whenever it indexes or
+  incrementally refreshes the graph. The agent compares this to current HEAD
+  on tracked branches to decide bootstrap vs. refresh vs. proceed. Feature
+  branch/worktree snapshots are frozen at their fork point and are not
+  freshness-compared or refreshed against feature `HEAD`.
+- **Bootstrap/refresh failure**: if either operation errors or times out, the
+  agent warns, continues with graph consultation and authoring, and flags the
+  incomplete refresh for a later manual check. The failure does not block
+  authoring.
 
 ## Hooks: native, Python, cross-platform
 
@@ -204,18 +212,26 @@ Rather than growing the schema for one atom's need, this is solved ad-hoc in
 
 ```python
 if shutil.which("graphify") is None:
-    raise SystemExit(
-        "graphify-first-authoring requires the `graphify` CLI.\n"
-        "Install it first: pip install graphifyy\n"
-        "Then re-run this installer."
+    answer = input(
+        "graphify CLI not found. Install now via 'pip install graphifyy'? [Y/n] "
     )
+    if answer.strip().lower() == "n":
+        raise SystemExit(
+            "graphify CLI is required — install it with 'pip install graphifyy' "
+            "and re-run this installer."
+        )
+    subprocess.run([sys.executable, "-m", "pip", "install", "graphifyy"], check=True)
 
-answer = input(
-    "graphify-first-authoring needs graphify registered for your agent "
-    "harness. Run `graphify install` now? [Y/n] "
-)
-if answer.lower() != "n":
-    subprocess.run(["graphify", "install"], check=True)
+if not Path("graphify-out").exists():
+    answer = input(
+        "graphify-first-authoring needs graphify registered for your agent "
+        "harness. Run `graphify install` now? [Y/n] "
+    )
+    if answer.strip().lower() != "n":
+        subprocess.run(["graphify", "install"], check=True)
+    else:
+        print("Skipped 'graphify install'; run it manually when ready.")
+# If graphify-out/ already exists, skip registration and continue.
 ```
 
 Two deliberate boundaries: `install.py` never silently `pip install`s
@@ -248,7 +264,14 @@ Spec 010 territory.)
 
 Manual, no new CLI surface:
 
-```
+```console
+# Linux / WSL2
+python3 .specify/atoms/graphify-first-authoring/install.py
+
+# macOS (use python if that is the command provided by your installation)
+python3 .specify/atoms/graphify-first-authoring/install.py
+
+# Windows
 python .specify/atoms/graphify-first-authoring/install.py
 ```
 
@@ -269,9 +292,9 @@ design.
   a future spec.
 - Hook-collision policy beyond "refuse and instruct" — revisit if it becomes
   a real friction point.
-- `graphify-out/.meta.json` freshness marker — needs a small addition to
-  graphify itself (or a thin wrapper) to write `indexed_at_sha` at index
-  time.
+- `graphify-out/.meta.json` freshness marker — `graphify` owns the marker and
+  must write `indexed_at_sha` at index and incremental-refresh time. T009
+  invokes that real refresh path; the atom does not synthesize the marker.
 - `haex blueprint install <atom-id>` or equivalent CLI surface for
   cross-repo hydration — deferred to Spec 010, same as the base constitution
   atom's own cross-repo consumption story.

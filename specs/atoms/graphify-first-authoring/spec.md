@@ -78,11 +78,12 @@ An operator adopting this atom should not have to separately discover and instal
 
 **Acceptance Scenarios**:
 
-1. **Given** the `graphify` CLI is not present on PATH, **When** the operator runs the installer, **Then** it refuses with instructions to install it first, and makes no other changes.
-2. **Given** the `graphify` CLI is present but not yet registered with the operator's agent harness, **When** the operator runs the installer, **Then** it asks for confirmation before running `graphify install` on their behalf.
+1. **Given** the `graphify` CLI is not present on PATH, **When** the operator runs the installer, **Then** it prompts with a default-Yes offer to install `graphifyy`; if the operator declines or that installation fails, it refuses with actionable manual-install instructions and makes no other changes.
+2. **Given** the `graphify` CLI is present but not yet registered with the operator's agent harness and `graphify-out/` is absent, **When** the operator runs the installer, **Then** it asks for confirmation before running `graphify install` on their behalf; declining prints manual follow-up instructions without failing the installation.
 3. **Given** a git hook already exists at the target hook path from another tool, **When** the operator runs the installer, **Then** it refuses to overwrite it and instructs the operator to integrate manually.
 4. **Given** the operator runs the installer while checked out on a branch that is neither the detected default branch nor a declared tracked branch, **When** installation is attempted, **Then** it refuses, naming the current branch and the expected tracked branch(es).
 5. **Given** installation succeeds, **When** the operator inspects the repo afterward, **Then** `graphify-out/` is listed in `.gitignore` and was not present before installation ran.
+6. **Given** `graphify-out/` already exists, **When** the operator runs the installer, **Then** it skips `graphify install` and continues without prompting for that registration step.
 
 ### Edge Cases
 

@@ -75,9 +75,8 @@ def test_successful_install_writes_hooks_and_gitignore(
         assert target.exists(), name
         assert os.access(target, os.X_OK), f"{name} must be executable"
         first_line = target.read_text().splitlines()[0]
-        assert first_line.startswith("#!") and (
-            first_line.endswith("python3") or first_line.endswith("python")
-        ), first_line
+        assert first_line.startswith("#!"), first_line
+        assert Path(first_line[2:]).stem.lower() in {"python", "python3"}, first_line
     for helper in ("_tracked_branches.py", "_refresh.py", "_snapshot.py"):
         assert (hooks_dir / helper).is_file()
 

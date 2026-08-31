@@ -19,10 +19,12 @@ It does **not** fire for renames, in-place edits, trivial inline expressions, or
 
 ## What to do (the loop)
 
-1. **Bootstrap or refresh first** (independent of any git hook running):
-   - If `graphify-out/` is **absent**, run `graphify <repo-root>` to build the graph before continuing.
-   - If `graphify-out/.meta.json`'s `indexed_at_sha` does **not** match current `HEAD`, run `graphify <repo-root> --update` to refresh incrementally.
-   - This holds even when the git hooks are not installed or were bypassed (e.g. `git commit --no-verify`).
+1. **Bootstrap or refresh first on tracked branches** (independent of any git hook running):
+   - On a tracked branch, if `graphify-out/` is **absent**, run `graphify <repo-root>` to build the graph before continuing.
+   - On a tracked branch, if `graphify-out/.meta.json`'s `indexed_at_sha` does **not** match current `HEAD`, run `graphify <repo-root> --update` to refresh incrementally.
+   - On a feature branch or worktree, use the fork-point snapshot as-is. Do not compare its marker with the feature branch's advancing `HEAD`, and do not refresh it.
+   - If bootstrap or refresh fails, warn, continue with the consultation/authoring flow, and flag the incomplete refresh for a later manual check. The failure MUST NOT block authoring.
+   - These tracked-branch checks hold even when the git hooks are not installed or were bypassed (e.g. `git commit --no-verify`).
 2. **Query the graph** for candidates using plain `graphify` CLI invocations — `graphify query "<intent>"`, `graphify path <from> <to>`, `graphify explain <symbol>`. Do **not** substitute any single harness's slash-command syntax; the rule reads correctly regardless of which harness loads it.
 3. **Evaluate every candidate** the graph returns, including artifacts that are **unexported**, **incomplete**, or **not currently reachable from public surfaces** — they still count. A candidate you cannot import from outside the module is still a candidate to extend, not a reason to duplicate.
 4. **Decide, transparently**:
