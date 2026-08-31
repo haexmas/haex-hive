@@ -1,0 +1,1 @@
+"""Install-specific `HaexError` subclasses."""
