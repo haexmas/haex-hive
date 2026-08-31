@@ -42,6 +42,7 @@ The `haex compile` (or equivalent) machinery that turns a project's adopted atom
 - Each consuming project's `.haex-hive.json` adopts the personal harness molecule at a pinned SHA — one entry, one pin at the top of the resolution tree.
 - Adding a new atom to the personal harness → bump the harness's version → bump the `revision`-pin in each consumer project. Consistency across N projects is the operator's discipline (or a batch tool later), not a registry service.
 - Multiple personal harnesses are fine — `my-python-harness`, `my-work-harness`, etc. — each project picks one (or more).
+- When a project adopts multiple personal-harness roots, the compiler canonicalizes each root's `(source, revision, atomId)` triple and processes roots in ascending bytewise UTF-8 order of that tuple (source, then revision, then atom ID), independent of their declaration order. Exact duplicate triples are traversed once; the `includes[]` entries within each root retain declaration order for the depth-first walk.
 - **Publishers remain passive**: secana-specs (or any external publisher) publishes atoms; it does not know or declare who adopts them. The connection is made in the operator's personal harness repo.
 
 ### Transitive resolution requires per-atom immutable references
@@ -70,6 +71,13 @@ Resolution walks each `includes[]` entry using its own declared `(source, revisi
 - **Compile emits hook artifacts; it never executes them.** Execution of any hook — before, during, or after compile — is exclusively the responsibility of `haex hook run` per Spec 009. Compile's contract on hooks is strictly filesystem: write the payloads, do not invoke them.
 - Nothing outside those five classes is written. In particular: no touching of project source, no `.git/` writes, no user-shell config.
 - Idempotent: unchanged inputs → zero writes across every class above. A repeated compile on unchanged state must be a no-op.
+
+### Retired compiler-owned outputs
+
+- The compiler extends `install.lock` with an ownership inventory: every compiler-owned artifact records its output path, owning atom or adapter, and content hash; every managed shared-prose block records its file path, stable block identifier, owning adapter, and block hash.
+- Each compile compares that previous inventory with the newly planned inventory. Artifacts and managed blocks present only in the previous inventory are retired outputs, including outputs of removed atoms and adapters and blocks belonging to adapters no longer loaded.
+- Retired outputs are staged for deletion in the same Spec 008 staging-root + journal transaction as new outputs. A file or block is deleted only when its current bytes match the recorded compiler hash; a drifted retired output follows the drift-on-recompile interaction below and is never silently deleted. Rollback restores staged deletions with the other transaction outputs.
+- Paths and blocks never recorded as compiler-owned are never candidates for deletion. In particular, unknown or operator-owned `AGENTS.md` content remains untouched.
 
 ### Prose delivery: import syntax preferred, byte-copy fallback
 
@@ -146,10 +154,10 @@ File-level drift detection cannot distinguish one adapter's content from another
   ```
 
   The markers are compiler-managed; adapters must not emit their own variants.
-- **Per-adapter ownership.** Exactly one adapter owns each `haex:adapter=<name>` block. Recompile rewrites only the blocks whose owning adapter re-emitted content; other adapters' blocks are read and re-emitted byte-identical.
-- **Preservation of unknown / unowned sections.** Any text outside a `haex:adapter=*` block — operator prose, blocks owned by adapters not currently loaded, hand-authored preambles — is preserved verbatim across recompiles. The compiler treats those regions as source-owned.
+- **Per-adapter ownership.** Exactly one adapter owns each `haex:adapter=<name>` block. Recompile rewrites only blocks owned by a loaded adapter; blocks for other currently loaded adapters are carried byte-identical. A block previously recorded as compiler-owned whose adapter is no longer loaded is a retired output and follows the deletion rules above.
+- **Preservation of unknown / unowned sections.** Any text outside a `haex:adapter=*` block — operator prose, hand-authored preambles, and `haex:adapter=*` blocks not recorded in the previous lock — is preserved verbatim across recompiles. These regions are source-owned and are never candidates for deletion.
 - **Drift scope narrows to owned blocks.** The drift check computes an integrity marker per owned block, not per file. A hand-edit inside a `haex:adapter=codex` block triggers the drift-on-recompile flow for the codex adapter only; edits outside any owned block are never drift.
-- **Deterministic block order** across recompiles: adapters emit their blocks in lexicographic order of `adapter=<name>`, appended after any preserved preamble. This keeps the file byte-stable when adapter set and content are unchanged.
+- **Deterministic block order and placement** across recompiles: compiler-owned blocks are ordered lexicographically by `adapter=<name>` within the managed block sequence. The file is treated as preserved spans plus owned block slots: preserved spans retain their original sequence positions and exact bytes, and only owned slots are rewritten. Newly introduced managed blocks are inserted at their lexicographic position in that sequence (or after the final preserved span when no owned slot exists). This keeps unknown content from moving while keeping unchanged managed inputs byte-stable.
 
 Whether the same sectioning contract also applies to same-file skill-directory or plugin-family adapters (when multiple adapters share a directory root) is deferred to Spec 010's plan phase.
 
