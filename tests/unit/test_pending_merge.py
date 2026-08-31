@@ -157,21 +157,6 @@ def test_verify_pending_matches_current_accepts_identical_state(tmp_path: Path) 
     verify_pending_matches_current(pending, contributions)  # no raise
 
 
-def test_verify_pending_matches_current_accepts_legacy_padded_id(
-    tmp_path: Path,
-) -> None:
-    """Accept a pending ID persisted in the legacy padded encoding."""
-    contributions = [_contribution("com.a.a", "0" * 40, "https://github.com/a/a", b"body")]
-    data = json.loads(serialize_pending(contributions, "merge prompt").decode("utf-8"))
-    digest = base64.urlsafe_b64decode(data["pending_id"].removeprefix("sha256-") + "===")
-    data["pending_id"] = "sha256-" + base64.b64encode(digest).decode("ascii")
-    path = pending_path(tmp_path)
-    path.parent.mkdir(parents=True)
-    path.write_text(json.dumps(data))
-
-    verify_pending_matches_current(load_pending(tmp_path), contributions)
-
-
 def test_verify_pending_matches_current_rejects_drift(tmp_path: Path) -> None:
     """Reject pending state after contribution content drifts."""
     contributions = [_contribution("com.a.a", "0" * 40, "https://github.com/a/a", b"body")]

@@ -18,7 +18,6 @@ from pathlib import Path
 
 from haex_hive.constitution.resolve import ResolvedConstitutionContribution
 from haex_hive.io import json_deterministic, transaction
-from haex_hive.io.file_hash import canonicalize_digest_identifier
 from haex_hive.util.errors import PendingMergeInputsMismatchError
 
 PENDING_FILE_NAME = "constitution.merge.pending.json"
@@ -159,8 +158,7 @@ def verify_pending_matches_current(
     ]
     fresh_id = derive_pending_id(fresh_entries)
 
-    pending_id = canonicalize_digest_identifier(pending.pending_id)
-    if not (pending_id == decoded_id == fresh_id):
+    if not (pending.pending_id == decoded_id == fresh_id):
         raise PendingMergeInputsMismatchError(
             message="pending merge inputs do not match the current manifest resolution",
         )
