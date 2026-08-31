@@ -44,6 +44,7 @@ def parent_with_graph(tmp_path: Path) -> tuple[Path, Path]:
     (graph / ".meta.json").write_text(
         json.dumps({"indexed_at_sha": _git(parent, "rev-parse", "HEAD")})
     )
+    (graph / "graph.json").write_text('{"nodes": [], "edges": []}\n')
     (graph / "nodes.jsonl").write_text('{"id": "n1"}\n')
 
     child = tmp_path / "child"
@@ -66,6 +67,7 @@ def test_noop_when_already_present(parent_with_graph: tuple[Path, Path]) -> None
     _, child = parent_with_graph
     existing = child / "graphify-out"
     existing.mkdir()
+    (existing / "graph.json").write_text('{"nodes": [], "edges": []}\n')
     marker = existing / "PREEXISTING"
     marker.write_text("keep me")
 
@@ -74,6 +76,17 @@ def test_noop_when_already_present(parent_with_graph: tuple[Path, Path]) -> None
     assert not (existing / "nodes.jsonl").exists(), (
         "existing dir must never be overwritten"
     )
+
+
+def test_replaces_incomplete_destination(parent_with_graph: tuple[Path, Path]) -> None:
+    _, child = parent_with_graph
+    existing = child / "graphify-out"
+    existing.mkdir()
+    (existing / ".meta.json").write_text("{}")
+
+    assert _snapshot.snapshot(child) is True
+    assert (existing / "graph.json").is_file()
+    assert (existing / "nodes.jsonl").is_file()
 
 
 def test_noop_when_parent_has_no_graph(tmp_path: Path) -> None:
@@ -89,7 +102,9 @@ def test_noop_when_parent_has_no_graph(tmp_path: Path) -> None:
 
     child = tmp_path / "child"
     _git(parent, "worktree", "add", "-q", "-b", "feature/x", str(child))
-    assert not (parent / "graphify-out").exists()
+    incomplete_graph = parent / "graphify-out"
+    incomplete_graph.mkdir()
+    (incomplete_graph / ".meta.json").write_text("{}")
 
     assert _snapshot.snapshot(child) is False
     assert not (child / "graphify-out").exists()

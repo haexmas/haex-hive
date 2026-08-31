@@ -24,11 +24,11 @@ Both hooks are thin entrypoints installed by `install.py` (see [install.cli.md](
 
 **Behavior**:
 1. If the third argument is not `1`, exit 0 immediately — this hook only cares about branch/worktree checkouts.
-2. If `graphify-out/` already exists in the current working directory, exit 0 immediately — never overwrite (FR-008 acceptance scenario 2).
-3. Otherwise, locate the parent worktree (the first entry of `git worktree list --porcelain`). If it has no `graphify-out/` either (fresh repo, never indexed), exit 0 — nothing to copy; the agent's own bootstrap-when-absent behavior applies on first use (User Story 3, scenario 3).
+2. If a complete `graphify-out/` containing `graph.json` already exists in the current working directory, exit 0 immediately — never overwrite. An incomplete destination directory is treated as absent and may be replaced after a complete parent graph is found (FR-008 acceptance scenario 2).
+3. Otherwise, locate the parent worktree (the first entry of `git worktree list --porcelain`). If it has no complete `graphify-out/` with `graph.json` (fresh repo, failed/incomplete index), exit 0 — nothing to copy; the agent's own bootstrap-when-absent/incomplete behavior applies on first use (User Story 3, scenario 3).
 4. Otherwise, copy the parent's `graphify-out/` into the current working directory's `graphify-out/`, recursively, preserving the freshness marker as-is (it correctly reflects the fork-point commit, not the new branch's HEAD).
 
-**On failure** (copy fails partway, e.g. disk full): print a warning to stderr; exit 0 regardless — a checkout MUST NOT fail because this hook could not copy a cache directory. A partially-copied or absent `graphify-out/` is caught by the agent-side bootstrap-when-absent behavior on first use.
+**On failure** (copy fails partway, e.g. disk full): print a warning to stderr; exit 0 regardless — a checkout MUST NOT fail because this hook could not copy a cache directory. A partially-copied or absent/incomplete `graphify-out/` is caught by the agent-side bootstrap-when-absent/incomplete behavior on first use.
 
 ## Shared failure principle
 
