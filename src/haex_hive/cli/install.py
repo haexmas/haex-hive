@@ -14,6 +14,7 @@ from haex_hive.util import exit_codes
 
 
 def run(args: argparse.Namespace) -> int:
+    """Refuse until the Spec 008 install pipeline is implemented."""
     del args
     sys.stderr.write("haex install: not-yet-implemented (Spec 008 Phase 1 stub)\n")
     return exit_codes.SYSTEM_REFUSE

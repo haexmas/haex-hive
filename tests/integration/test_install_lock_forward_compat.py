@@ -15,6 +15,7 @@ pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git binary 
 
 
 def _run_haex(repo_root: Path, *args: str, state_root: Path) -> subprocess.CompletedProcess:
+    """Run the haex CLI against an isolated repository and state root."""
     env = os.environ.copy()
     env["HAEX_HIVE_STATE"] = str(state_root)
     return subprocess.run(
@@ -27,6 +28,7 @@ def _run_haex(repo_root: Path, *args: str, state_root: Path) -> subprocess.Compl
 
 
 def test_unknown_atoms_field_survives_assemble(single_source_constitution_fixture: dict) -> None:
+    """Preserve a future install-lock field during constitution assembly."""
     consumer = single_source_constitution_fixture["consumer"]
     state_root = single_source_constitution_fixture["state_root"]
 

@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from haex_hive.io import json_deterministic
+from haex_hive.io.file_hash import canonicalize_digest_identifier
 from haex_hive.model._immutable import freeze_json, thaw_json
 from haex_hive.schema import validator as schema_validator
 from haex_hive.util.errors import (
@@ -52,6 +53,16 @@ class InstallLock:
     def from_json(raw: bytes) -> InstallLock:
         try:
             data = json.loads(raw.decode("utf-8"))
+            if isinstance(data, dict):
+                constitution_data = data.get("constitution")
+                if isinstance(constitution_data, dict):
+                    integrity = constitution_data.get("content_integrity")
+                    if isinstance(integrity, str):
+                        constitution_data[
+                            "content_integrity"
+                        ] = canonicalize_digest_identifier(
+                            integrity
+                        )
             schema_validator.validate(data, "install-lock.v2.schema.json")
         except (UnicodeError, ValueError) as exc:
             raise InstallLockSchemaInvalidError(

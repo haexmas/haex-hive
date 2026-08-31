@@ -18,6 +18,7 @@ _VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
 
 
 def _installed_version() -> tuple[int, int, int]:
+    """Return the installed package version as a numeric tuple."""
     try:
         version = importlib.metadata.version("haex-hive")
     except importlib.metadata.PackageNotFoundError:
@@ -33,6 +34,7 @@ INSTALLED_VERSION_STRING = ".".join(str(n) for n in INSTALLED_VERSION)
 
 
 def _check_min_version(repo_root: Path) -> None:
+    """Refuse execution when the repository requires a newer haex version."""
     manifest_path = repo_root / ".haex-hive.json"
     if not manifest_path.exists():
         return
@@ -61,6 +63,7 @@ def _check_min_version(repo_root: Path) -> None:
 
 
 def _build_parser() -> argparse.ArgumentParser:
+    """Build the top-level command-line parser."""
     parser = argparse.ArgumentParser(prog="haex")
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -90,6 +93,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Parse arguments, dispatch a command, and render typed refusals."""
     parser = _build_parser()
     args = parser.parse_args(argv)
 

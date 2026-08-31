@@ -25,6 +25,7 @@
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/rootRecord" },
+      "uniqueItems": true,
       "description": "New in Spec 008. MUST match visibility.json.participating_roots byte-identically at seal time."
     },
     "visibility_marker": {
@@ -126,7 +127,8 @@
         "paths": {
           "type": "array",
           "items": { "$ref": "#/$defs/pathOwnershipRecord" },
-          "uniqueItems": true
+          "uniqueItems": true,
+          "$comment": "Path identity uniqueness is enforced by the haex schema validator because Draft 2020-12 uniqueItems compares complete objects."
         }
       }
     },

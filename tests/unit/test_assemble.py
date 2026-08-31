@@ -19,6 +19,7 @@ from haex_hive.util.errors import PostWriteValidationError
 def test_publish_rejects_mismatched_published_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Reject publication when the persisted lock digest is corrupted."""
     body = b"# Constitution\n"
     source = ConstitutionSource(
         id="com.example.constitution",
@@ -52,6 +53,7 @@ def test_publish_rejects_mismatched_published_lock(
 def test_multi_source_adapter_receives_contributions_in_stable_order(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Pass multi-source contributions to adapters in stable ID order."""
     contributions = [
         ResolvedConstitutionContribution(
             source=ConstitutionSource(

@@ -32,7 +32,8 @@ _TOKEN_RE = re.compile(
 )
 
 
-def _sample() -> "OwnerToken":
+def _sample() -> OwnerToken:
+    """Build a representative owner token."""
     return OwnerToken(
         pid=31245,
         hostname="laptop-hex.local",
@@ -42,41 +43,49 @@ def _sample() -> "OwnerToken":
 
 
 def test_serialize_matches_contract_shape() -> None:
+    """Ensure serialized tokens have the four-field contract shape."""
     token = _sample()
     serialized = token.serialize()
     assert _TOKEN_RE.match(serialized), serialized
 
 
 def test_serialize_stays_within_128_bytes() -> None:
+    """Ensure serialized tokens fit the on-disk size limit."""
     token = _sample()
     assert len(token.serialize().encode("utf-8")) <= 128
 
 
 def test_round_trip_parse_serialize() -> None:
+    """Ensure parsing preserves a serialized owner token."""
     token = _sample()
     assert OwnerToken.parse(token.serialize()) == token
 
 
 def test_hostname_sanitises_disallowed_characters() -> None:
+    """Remove characters outside the hostname contract alphabet."""
     token = OwnerToken.emit(pid=1, hostname="foo bar!$baz", start_ns=0)
     assert token.hostname == "foobarbaz"
 
 
 def test_hostname_truncates_to_64_chars() -> None:
+    """Limit emitted hostnames to the contract maximum length."""
     token = OwnerToken.emit(pid=1, hostname="a" * 200, start_ns=0)
     assert token.hostname == "a" * 64
 
 
 def test_empty_hostname_falls_back_to_unknown() -> None:
+    """Use the stable fallback for an empty sanitized hostname."""
     token = OwnerToken.emit(pid=1, hostname="   !!!   ", start_ns=0)
     assert token.hostname == "unknown"
 
 
 def test_parse_rejects_wrong_field_count() -> None:
+    """Reject tokens that do not contain four fields."""
     with pytest.raises(ValueError):
         OwnerToken.parse("1:host:0")
 
 
 def test_parse_rejects_uppercase_uuid() -> None:
+    """Reject uppercase UUID hex in parsed owner tokens."""
     with pytest.raises(ValueError):
         OwnerToken.parse("1:host:0:" + "F" * 32)
