@@ -67,6 +67,7 @@ def _publish_constitution(
     repo_root: Path,
     *,
     tool_version: str,
+    state_root: Path | None = None,
 ) -> None:
     """Publish the effective constitution and install.lock atomically.
 
@@ -120,7 +121,21 @@ def _publish_constitution(
                 message="on-disk constitution.md does not match recorded content_integrity",
             )
 
-    transaction.publish_pair(repo_root, body, lock_bytes, post_write_verify=post_write_verify)
+    if state_root is None:
+        transaction.publish_pair(
+            repo_root,
+            body,
+            lock_bytes,
+            post_write_verify=post_write_verify,
+        )
+    else:
+        transaction.publish_pair(
+            repo_root,
+            body,
+            lock_bytes,
+            post_write_verify=post_write_verify,
+            state_root=state_root,
+        )
 
 
 def assemble_single_source(
@@ -128,12 +143,17 @@ def assemble_single_source(
     repo_root: Path,
     *,
     tool_version: str,
+    state_root: Path | None = None,
 ) -> None:
     validate_no_plaintext_secrets(
         contribution.body, location=f"constitution source {contribution.source.id}"
     )
     _publish_constitution(
-        (contribution.source,), contribution.body, repo_root, tool_version=tool_version
+        (contribution.source,),
+        contribution.body,
+        repo_root,
+        tool_version=tool_version,
+        state_root=state_root,
     )
 
 
@@ -158,6 +178,7 @@ def assemble_multi_source(
     accept_merged_path: Path | None,
     tool_version: str,
     task_prompt: str = DEFAULT_TASK_PROMPT,
+    state_root: Path | None = None,
 ) -> int:
     if accept_merged_path is not None and llm_method is not None:
         raise UsageError(message="--accept-merged and --llm are mutually exclusive")
@@ -176,7 +197,13 @@ def assemble_multi_source(
 
         validate_no_concealment_instructions(candidate)
 
-        _publish_constitution(sorted_sources, candidate, repo_root, tool_version=tool_version)
+        _publish_constitution(
+            sorted_sources,
+            candidate,
+            repo_root,
+            tool_version=tool_version,
+            state_root=state_root,
+        )
         with suppress(FileNotFoundError):
             pending_path(repo_root).unlink()
         return exit_codes.SUCCESS
@@ -196,5 +223,11 @@ def assemble_multi_source(
 
     validate_no_concealment_instructions(result.candidate)
 
-    _publish_constitution(sorted_sources, result.candidate, repo_root, tool_version=tool_version)
+    _publish_constitution(
+        sorted_sources,
+        result.candidate,
+        repo_root,
+        tool_version=tool_version,
+        state_root=state_root,
+    )
     return exit_codes.SUCCESS

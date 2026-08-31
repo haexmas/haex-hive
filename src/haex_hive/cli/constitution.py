@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-import os
+from contextlib import ExitStack
 from pathlib import Path
 
 from haex_hive.cli.main import INSTALLED_VERSION_STRING
@@ -11,6 +11,7 @@ from haex_hive.constitution.assemble import assemble_multi_source, assemble_sing
 from haex_hive.constitution.resolve import resolve_constitution_contributions
 from haex_hive.constitution.show import show as render_constitution
 from haex_hive.io import transaction
+from haex_hive.io.state import default_state_root, transaction_paths
 from haex_hive.io.writer_lock import ConstitutionWriterLock
 from haex_hive.model.consumer_manifest import ConsumerManifest
 from haex_hive.util import exit_codes
@@ -19,9 +20,7 @@ from haex_hive.util.errors import HaexError, NoSourcesDeclaredError
 
 def _state_root() -> Path:
     """Return the haex-hive state directory path from env or default location."""
-    if os.environ.get("HAEX_HIVE_STATE"):
-        return Path(os.environ["HAEX_HIVE_STATE"])
-    return Path.home() / ".local" / "share" / "haex-hive"
+    return default_state_root()
 
 
 def _load_consumer_manifest(repo_root: Path) -> ConsumerManifest:
@@ -64,14 +63,20 @@ def run_assemble(args: argparse.Namespace) -> int:
         HaexError: On manifest errors, no sources declared, or assembly failure.
     """
     repo_root = Path(args.repo_root).resolve()
-    lock_path = repo_root / transaction.HAEX_HIVE_DIR / transaction.WRITER_LOCK_NAME
+    state_root = _state_root()
+    paths = transaction_paths(repo_root, state_root)
 
     try:
-        with ConstitutionWriterLock(lock_path):
-            transaction.recover_if_journaled(repo_root)
+        with ExitStack() as stack:
+            stack.enter_context(ConstitutionWriterLock(paths.mutex))
+            # Keep old Spec-007 writers from racing while their legacy lock file
+            # still exists. New runs never create this compatibility lock.
+            if paths.legacy_mutex.exists():
+                stack.enter_context(ConstitutionWriterLock(paths.legacy_mutex))
+            transaction.recover_if_journaled(repo_root, state_root=state_root)
 
             manifest = _load_consumer_manifest(repo_root)
-            contributions = resolve_constitution_contributions(manifest, _state_root())
+            contributions = resolve_constitution_contributions(manifest, state_root)
 
             if args.accept_merged is not None:
                 return assemble_multi_source(
@@ -80,6 +85,7 @@ def run_assemble(args: argparse.Namespace) -> int:
                     llm_method=args.llm,
                     accept_merged_path=args.accept_merged,
                     tool_version=INSTALLED_VERSION_STRING,
+                    state_root=state_root,
                 )
 
             if not contributions:
@@ -87,7 +93,10 @@ def run_assemble(args: argparse.Namespace) -> int:
 
             if len(contributions) == 1:
                 assemble_single_source(
-                    contributions[0], repo_root, tool_version=INSTALLED_VERSION_STRING
+                    contributions[0],
+                    repo_root,
+                    tool_version=INSTALLED_VERSION_STRING,
+                    state_root=state_root,
                 )
                 return exit_codes.SUCCESS
 
@@ -97,6 +106,7 @@ def run_assemble(args: argparse.Namespace) -> int:
                 llm_method=args.llm,
                 accept_merged_path=None,
                 tool_version=INSTALLED_VERSION_STRING,
+                state_root=state_root,
             )
     except HaexError:
         raise
@@ -123,7 +133,11 @@ def run_show(args: argparse.Namespace) -> int:
     """
     repo_root = Path(args.repo_root).resolve()
     try:
-        render_constitution(repo_root, no_preface=args.no_preface)
+        render_constitution(
+            repo_root,
+            no_preface=args.no_preface,
+            state_root=_state_root(),
+        )
         return exit_codes.SUCCESS
     except HaexError:
         raise

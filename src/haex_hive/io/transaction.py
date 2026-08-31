@@ -1,11 +1,12 @@
 """Durable-journal pair publication for the constitution + install-lock (FR-035).
 
-Journal is at `<repo_root>/.haex-hive/constitution-transaction.json`. Recovery
-protocol: if a live journal exists, restore each target from its recorded
-backup (or remove the target if the recorded prior state was `absent`), then
-remove the journal. `publish_pair` writes both targets atomically, invokes an
-optional `post_write_verify` callback while the journal is still on disk, and
-only removes the journal after that callback returns cleanly.
+New CLI calls place the journal under the shared device-local transaction state
+root. Recovery also discovers the legacy `.haex-hive` journal, restores each
+target from its recorded backup (or removes the target if its prior state was
+`absent`), then removes the journal. `publish_pair` writes both targets
+atomically, invokes an optional `post_write_verify` callback while the journal
+is still on disk, and only removes the journal after that callback returns
+cleanly.
 """
 
 from __future__ import annotations
@@ -21,12 +22,16 @@ from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import Any, cast
 
+from haex_hive.io.state import transaction_paths, write_identity_record
+
 _IS_WINDOWS = sys.platform == "win32"
 
-JOURNAL_NAME = "constitution-transaction.json"
+JOURNAL_NAME = "constitution-transaction.json"  # legacy Spec-007 name
 CONSTITUTION_NAME = "constitution.md"
 INSTALL_LOCK_NAME = "install.lock"
-WRITER_LOCK_NAME = "constitution-transaction.lock"
+WRITER_LOCK_NAME = "constitution-transaction.lock"  # legacy Spec-007 name
+INSTALL_JOURNAL_NAME = "install.journal"
+INSTALL_MUTEX_NAME = "install.mutex"
 HAEX_HIVE_DIR = ".haex-hive"
 
 
@@ -115,12 +120,23 @@ def _remove_if_exists(path: Path) -> None:
         path.unlink()
 
 
-def _journal_path(repo_root: Path) -> Path:
-    return repo_root / HAEX_HIVE_DIR / JOURNAL_NAME
+def _journal_path(repo_root: Path, state_root: Path | None = None) -> Path:
+    if state_root is None:
+        return repo_root / HAEX_HIVE_DIR / JOURNAL_NAME
+    return transaction_paths(repo_root, state_root).journal
 
 
-def is_journaled(repo_root: Path) -> bool:
-    return _journal_path(repo_root).exists()
+def is_journaled(repo_root: Path, state_root: Path | None = None) -> bool:
+    """Return whether new or legacy transaction state needs recovery."""
+    if state_root is None:
+        return _journal_path(repo_root).exists()
+    try:
+        paths = transaction_paths(repo_root, state_root)
+    except ValueError:
+        # `constitution show` must still report a missing output for a folder
+        # that has no identity yet; only legacy journal discovery is possible.
+        return _journal_path(repo_root).exists()
+    return paths.journal.exists() or paths.legacy_journal.exists()
 
 
 def _read_journal(journal: Path) -> dict[str, Any]:
@@ -128,17 +144,17 @@ def _read_journal(journal: Path) -> dict[str, Any]:
         return cast(dict[str, Any], json.loads(fh.read().decode("utf-8")))
 
 
-def _write_journal(journal: Path, entries: list[_TargetEntry]) -> None:
+def _write_journal(journal: Path, repo_root: Path, entries: list[_TargetEntry]) -> None:
     journal.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "targets": [
             {
                 "logical": e.logical,
-                "target": str(e.target.relative_to(journal.parent.parent)),
-                "staged": str(e.staged.relative_to(journal.parent.parent)),
+                "target": str(e.target.relative_to(repo_root)),
+                "staged": str(e.staged.relative_to(repo_root)),
                 "prior_state": e.prior_state,
                 "backup": (
-                    str(e.backup.relative_to(journal.parent.parent))
+                    str(e.backup.relative_to(repo_root))
                     if e.backup is not None
                     else None
                 ),
@@ -160,12 +176,16 @@ def _write_journal(journal: Path, entries: list[_TargetEntry]) -> None:
     _fsync_dir(journal.parent)
 
 
-def recover_if_journaled(repo_root: Path) -> bool:
+def recover_if_journaled(repo_root: Path, state_root: Path | None = None) -> bool:
     """Restore both targets from their recorded backup state, then remove the journal.
 
     Returns True if recovery ran, False if no journal was present.
     """
-    journal = _journal_path(repo_root)
+    if state_root is None:
+        journal = _journal_path(repo_root)
+    else:
+        paths = transaction_paths(repo_root, state_root)
+        journal = paths.journal if paths.journal.exists() else paths.legacy_journal
     if not journal.exists():
         return False
     payload = _read_journal(journal)
@@ -246,8 +266,14 @@ def publish_pair(
     install_lock_bytes: bytes,
     *,
     post_write_verify: Callable[[], None] | None = None,
+    state_root: Path | None = None,
 ) -> None:
-    """Atomically publish both targets under the durable journal protocol."""
+    """Atomically publish both targets under the durable journal protocol.
+
+    Calls that provide ``state_root`` use the shared Spec-008 journal location;
+    omitted state roots retain the legacy direct-call behaviour for Spec-007
+    compatibility and tests.
+    """
 
     hive_dir = repo_root / HAEX_HIVE_DIR
     hive_dir.mkdir(parents=True, exist_ok=True)
@@ -276,7 +302,13 @@ def publish_pair(
         _fsync_dir(hive_dir)
 
         journal = _journal_path(repo_root)
-        _write_journal(journal, entries)
+        if state_root is None:
+            journal = _journal_path(repo_root)
+        else:
+            paths = transaction_paths(repo_root, state_root)
+            write_identity_record(paths)
+            journal = paths.journal
+        _write_journal(journal, repo_root, entries)
         _crash_after("journal")
 
         for entry in entries:
