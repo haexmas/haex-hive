@@ -29,6 +29,7 @@
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/rootDigest" },
+      "uniqueItems": true,
       "description": "One entry per participating output root. Order MUST be lexicographic on `root` for determinism."
     },
     "written_at": {

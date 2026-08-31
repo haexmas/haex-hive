@@ -23,12 +23,14 @@ from haex_hive.util.errors import PendingMergeInputsMismatchError
 def _contribution(
     atom_id: str, revision: str, source: str, body: bytes
 ) -> ResolvedConstitutionContribution:
+    """Build a resolved constitution contribution for pending-state tests."""
     return ResolvedConstitutionContribution(
         source=ConstitutionSource(id=atom_id, revision=revision, source=source), body=body
     )
 
 
 def test_pending_id_matches_decoded_pending_json() -> None:
+    """Bind serialized pending inputs to their decoded pending ID."""
     contributions = [
         _contribution("com.b.b", "1" * 40, "https://github.com/b/b", b"body-b"),
         _contribution("com.a.a", "0" * 40, "https://github.com/a/a", b"body-a"),
@@ -44,6 +46,7 @@ def test_pending_id_matches_decoded_pending_json() -> None:
 
 
 def test_pending_id_matches_freshly_resolved_contributions() -> None:
+    """Bind pending inputs to the freshly resolved contributions."""
     contributions = [
         _contribution("com.a.a", "0" * 40, "https://github.com/a/a", b"body-a"),
         _contribution("com.b.b", "1" * 40, "https://github.com/b/b", b"body-b"),
@@ -58,6 +61,7 @@ def test_pending_id_matches_freshly_resolved_contributions() -> None:
 
 
 def test_sources_sorted_by_bytewise_utf8_id() -> None:
+    """Serialize pending sources in bytewise UTF-8 ID order."""
     contributions = [
         _contribution("com.z.z", "1" * 40, "https://github.com/z/z", b"z"),
         _contribution("com.a.a", "0" * 40, "https://github.com/a/a", b"a"),
@@ -67,6 +71,7 @@ def test_sources_sorted_by_bytewise_utf8_id() -> None:
 
 
 def test_body_base64_is_padded_standard_encoding() -> None:
+    """Keep opaque pending bodies in standard padded Base64."""
     contributions = [_contribution("com.a.a", "0" * 40, "https://github.com/a/a", b"\xff\xfe\x00")]
     data = json.loads(serialize_pending(contributions, "prompt").decode("utf-8"))
     assert data["sources"][0]["body_base64"] == base64.b64encode(b"\xff\xfe\x00").decode("ascii")
@@ -82,12 +87,14 @@ def test_body_base64_is_padded_standard_encoding() -> None:
     ],
 )
 def test_any_field_drift_changes_pending_id(mutate) -> None:
+    """Change the pending ID when any bound source field changes."""
     original = [("com.a.a", "0" * 40, "https://github.com/a/a", b"body")]
     mutated = mutate(original)
     assert derive_pending_id(original) != derive_pending_id(mutated[:1])
 
 
 def test_load_pending_round_trips(tmp_path: Path) -> None:
+    """Load a serialized pending merge without changing its fields."""
     contributions = [_contribution("com.a.a", "0" * 40, "https://github.com/a/a", b"body")]
     pending_bytes = serialize_pending(contributions, "merge prompt")
     path = pending_path(tmp_path)
@@ -129,6 +136,7 @@ def test_load_pending_round_trips(tmp_path: Path) -> None:
     ],
 )
 def test_load_pending_rejects_malformed_state(tmp_path: Path, payload: bytes) -> None:
+    """Reject malformed pending merge state."""
     path = pending_path(tmp_path)
     path.parent.mkdir(parents=True)
     path.write_bytes(payload)
@@ -138,6 +146,7 @@ def test_load_pending_rejects_malformed_state(tmp_path: Path, payload: bytes) ->
 
 
 def test_verify_pending_matches_current_accepts_identical_state(tmp_path: Path) -> None:
+    """Accept pending state when current resolution is identical."""
     contributions = [_contribution("com.a.a", "0" * 40, "https://github.com/a/a", b"body")]
     pending_bytes = serialize_pending(contributions, "merge prompt")
     path = pending_path(tmp_path)
@@ -148,7 +157,23 @@ def test_verify_pending_matches_current_accepts_identical_state(tmp_path: Path) 
     verify_pending_matches_current(pending, contributions)  # no raise
 
 
+def test_verify_pending_matches_current_accepts_legacy_padded_id(
+    tmp_path: Path,
+) -> None:
+    """Accept a pending ID persisted in the legacy padded encoding."""
+    contributions = [_contribution("com.a.a", "0" * 40, "https://github.com/a/a", b"body")]
+    data = json.loads(serialize_pending(contributions, "merge prompt").decode("utf-8"))
+    digest = base64.urlsafe_b64decode(data["pending_id"].removeprefix("sha256-") + "===")
+    data["pending_id"] = "sha256-" + base64.b64encode(digest).decode("ascii")
+    path = pending_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(data))
+
+    verify_pending_matches_current(load_pending(tmp_path), contributions)
+
+
 def test_verify_pending_matches_current_rejects_drift(tmp_path: Path) -> None:
+    """Reject pending state after contribution content drifts."""
     contributions = [_contribution("com.a.a", "0" * 40, "https://github.com/a/a", b"body")]
     pending_bytes = serialize_pending(contributions, "merge prompt")
     path = pending_path(tmp_path)
@@ -162,6 +187,7 @@ def test_verify_pending_matches_current_rejects_drift(tmp_path: Path) -> None:
 
 
 def test_verify_pending_matches_current_rejects_invalid_base64(tmp_path: Path) -> None:
+    """Reject pending state containing invalid source body Base64."""
     contributions = [_contribution("com.a.a", "0" * 40, "https://github.com/a/a", b"body")]
     data = json.loads(serialize_pending(contributions, "merge prompt").decode("utf-8"))
     data["sources"][0]["body_base64"] = "not-base64!"

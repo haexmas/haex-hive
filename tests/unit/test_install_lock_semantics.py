@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 
 import pytest
@@ -24,12 +25,14 @@ _BASE = {
 
 
 def _payload(sources: list[dict]) -> bytes:
+    """Build an install lock payload containing the supplied sources."""
     data = json.loads(json.dumps(_BASE))
     data["constitution"]["sources"] = sources
     return json.dumps(data).encode("utf-8")
 
 
 def test_rejects_duplicate_ids() -> None:
+    """Reject duplicate constitution source identities."""
     sources = [
         {"id": "com.a.b", "revision": "0" * 40, "source": "https://github.com/a/b"},
         {"id": "com.a.b", "revision": "0" * 40, "source": "https://github.com/a/b"},
@@ -39,6 +42,7 @@ def test_rejects_duplicate_ids() -> None:
 
 
 def test_rejects_wrong_sort_order() -> None:
+    """Reject constitution sources outside bytewise ID order."""
     sources = [
         {"id": "com.b.b", "revision": "0" * 40, "source": "https://github.com/b/b"},
         {"id": "com.a.b", "revision": "0" * 40, "source": "https://github.com/a/b"},
@@ -47,7 +51,21 @@ def test_rejects_wrong_sort_order() -> None:
         InstallLock.from_json(_payload(sources))
 
 
+def test_accepts_legacy_padded_digest() -> None:
+    """Accept and canonicalize a legacy padded lock digest."""
+    data = json.loads(_payload([]))
+    digest = bytes([251]) * 32
+    data["constitution"]["content_integrity"] = (
+        "sha256-" + base64.b64encode(digest).decode()
+    )
+    lock = InstallLock.from_json(json.dumps(data).encode("utf-8"))
+    assert lock.constitution is not None
+    expected = "sha256-" + base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+    assert lock.constitution.content_integrity == expected
+
+
 def test_forward_compat_preserves_unknown_fields() -> None:
+    """Preserve unknown top-level fields across lock round-trips."""
     raw = json.dumps(
         {
             "haex_hive_version": "2",

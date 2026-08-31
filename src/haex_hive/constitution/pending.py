@@ -18,6 +18,7 @@ from pathlib import Path
 
 from haex_hive.constitution.resolve import ResolvedConstitutionContribution
 from haex_hive.io import json_deterministic, transaction
+from haex_hive.io.file_hash import canonicalize_digest_identifier
 from haex_hive.util.errors import PendingMergeInputsMismatchError
 
 PENDING_FILE_NAME = "constitution.merge.pending.json"
@@ -41,10 +42,12 @@ class PendingMerge:
 
 
 def pending_path(repo_root: Path) -> Path:
+    """Return the pending merge state path for a repository."""
     return repo_root / transaction.HAEX_HIVE_DIR / PENDING_FILE_NAME
 
 
 def _length_prefixed(value: bytes) -> bytes:
+    """Frame bytes with their ASCII length and a NUL separator."""
     return str(len(value)).encode("ascii") + b"\x00" + value
 
 
@@ -65,6 +68,7 @@ def derive_pending_id(entries: list[tuple[str, str, str, bytes]]) -> str:
 def serialize_pending(
     contributions: list[ResolvedConstitutionContribution], task_prompt: str
 ) -> bytes:
+    """Serialize a deterministic pending merge payload."""
     entries = [
         (c.source.id, c.source.revision, c.source.source, c.body) for c in contributions
     ]
@@ -87,6 +91,7 @@ def serialize_pending(
 
 
 def load_pending(repo_root: Path) -> PendingMerge:
+    """Load and structurally validate pending merge state from disk."""
     raw = pending_path(repo_root).read_bytes()
     try:
         data = json.loads(raw.decode("utf-8"))
@@ -132,6 +137,7 @@ def load_pending(repo_root: Path) -> PendingMerge:
 def verify_pending_matches_current(
     pending: PendingMerge, freshly_resolved: list[ResolvedConstitutionContribution]
 ) -> None:
+    """Verify pending inputs still identify the freshly resolved contributions."""
     try:
         decoded_entries = [
             (
@@ -153,7 +159,8 @@ def verify_pending_matches_current(
     ]
     fresh_id = derive_pending_id(fresh_entries)
 
-    if not (pending.pending_id == decoded_id == fresh_id):
+    pending_id = canonicalize_digest_identifier(pending.pending_id)
+    if not (pending_id == decoded_id == fresh_id):
         raise PendingMergeInputsMismatchError(
             message="pending merge inputs do not match the current manifest resolution",
         )
