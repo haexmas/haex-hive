@@ -8,12 +8,12 @@
     "sources": [
       {
         "id": "com.github.haexmas.haex-hive.constitution",
-        "revision": "cc5fa948264369fa58f91b61fbd7bec62ebf6c69",
+        "revision": "443c3af57255f3d85a57774c1f54439190462534",
         "source": "https://github.com/haexmas/haex-hive"
       },
       {
         "id": "com.github.haexmas.haex-hive.graphify-first-authoring",
-        "revision": "5a4e0d1cc04cce7a8a01ca280ee7ba26268897da",
+        "revision": "a83ef22cf171133cd62a26be489cc791aec0b053",
         "source": "https://github.com/haexmas/haex-hive"
       }
     ]
