@@ -6,9 +6,9 @@
 
 ## Content Quality
 
-- [x] No implementation details (languages, frameworks, APIs)
+- [x] Implementation details are limited to the explicit transaction contract and its platform constraints
 - [x] Focused on user value and business needs
-- [x] Written for non-technical stakeholders
+- [x] User value is stated before the technical contract details
 - [x] All mandatory sections completed
 
 ## Requirement Completeness
@@ -27,10 +27,11 @@
 - [x] All functional requirements have clear acceptance criteria
 - [x] User scenarios cover primary flows
 - [x] Feature meets measurable outcomes defined in Success Criteria
-- [x] No implementation details leak into specification
+- [x] Required implementation constraints are explicit, justified, and testable
 
 ## Notes
 
-- FR-021 resolved: `install.mutex` and `install.journal` placed under `$HAEX_HIVE_STATE/locks/<repo-identity>/` (default `~/.local/share/haex-hive/`). The in-repo `.haex-hive/` stays 100% committed content.
+- FR-021 resolved: `install.mutex` and `install.journal` placed under `$HAEX_HIVE_STATE/locks/<repo-key>/`, where `<repo-key>` is a SHA-256 key of the canonical project identity. The full identity is stored separately; the in-repo `.haex-hive/` stays 100% committed content.
 - FR-022 added: `$HAEX_HIVE_STATE` MUST NOT contain secret material — Principle I extends to the state root. Secrets live in the OS keychain; only keychain identity aliases may reside in the state root.
+- The specification is a deliberately technical transaction contract; its implementation constraints are recorded where they are required for atomicity, recovery, portability, or conformance.
 - Spec is ready for `/speckit-clarify` (optional, no markers remain) or `/speckit-plan`.

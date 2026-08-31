@@ -35,6 +35,7 @@
         "plan_snapshot_sealed",
         "commit_snapshot_verified",
         "stage_file",
+        "delete_orphan",
         "hook_step_started",
         "hook_step_ended",
         "overlay_pointer_swapped",
@@ -47,7 +48,7 @@
     },
     "payload": {
       "type": "object",
-      "description": "Entry-type-specific payload. Consumers MUST reject unknown keys per entry_type in Spec 008; forward-compat with new entry types is handled by a version bump on this schema."
+      "description": "Entry-type-specific payload. `stage_file` and `delete_orphan` payloads MUST include the root-relative path, prior existence, prior digest, and a transaction-relative pre-image reference before the mutation. Cleanup payloads identify only transaction-owned staging or rollback paths. Consumers MUST reject unknown keys per entry_type in Spec 008; forward-compat with new entry types is handled by a version bump on this schema."
     },
     "tail_hash": {
       "type": "string",

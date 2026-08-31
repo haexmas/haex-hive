@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/haexmas/haex-hive/schemas/install-lock.v2.schema.json",
   "title": "haex-hive Install Lockfile v2 (Spec 008 extension)",
-  "description": "Extension of Spec 007's install-lock.v2 schema. Backward-compatible: adds `atoms[]`, `participating_roots`, and `visibility_marker` fields. Pre-Spec-008 records without these fields remain valid; the first Spec-008-vintage install after upgrade re-writes the lock with the new shape.",
+  "description": "Extension of Spec 007's install-lock.v2 schema. Backward-compatible: adds `atoms[]`, `participating_roots`, `visibility_marker`, and a versioned per-path ownership set. Pre-Spec-008 records without these fields remain valid; the first Spec-008-vintage install after upgrade re-writes the lock with the new shape.",
   "type": "object",
   "required": ["haex_hive_version", "generated_by"],
   "properties": {
@@ -30,6 +30,10 @@
     "visibility_marker": {
       "$ref": "#/$defs/visibilityMarkerRef",
       "description": "New in Spec 008. Cross-reference to the .haex-hive/visibility.json marker this lock corresponds to."
+    },
+    "ownership": {
+      "$ref": "#/$defs/ownershipSet",
+      "description": "New in Spec 008. The authoritative set of paths owned by this generation; unowned mixed-root entries are excluded."
     }
   },
   "$defs": {
@@ -112,6 +116,70 @@
           "pattern": "^g_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{4}$"
         },
         "content_integrity": { "$ref": "#/$defs/sriDigest" }
+      }
+    },
+    "ownershipSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "paths"],
+      "properties": {
+        "version": { "const": 1 },
+        "paths": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/pathOwnershipRecord" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "pathOwnershipRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "owner", "generation_id", "content_integrity", "previous"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^\\.[A-Za-z0-9._-]+/[^\\u0000-\\u001F\\u007F]+$",
+          "description": "Root-relative POSIX path owned by this generation."
+        },
+        "owner": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "resource"],
+          "properties": {
+            "kind": { "type": "string", "enum": ["atom", "adapter", "hook"] },
+            "resource": { "type": "string", "minLength": 1 },
+            "source": { "type": "string", "format": "uri" },
+            "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+          }
+        },
+        "generation_id": {
+          "type": "string",
+          "pattern": "^g_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{4}$"
+        },
+        "content_integrity": { "$ref": "#/$defs/sriDigest" },
+        "previous": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["generation_id", "existed", "content_integrity"],
+              "properties": {
+                "generation_id": {
+                  "type": "string",
+                  "pattern": "^g_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{4}$"
+                },
+                "existed": { "type": "boolean" },
+                "content_integrity": {
+                  "oneOf": [
+                    { "$ref": "#/$defs/sriDigest" },
+                    { "type": "null" }
+                  ]
+                }
+              }
+            }
+          ]
+        }
       }
     }
   }
