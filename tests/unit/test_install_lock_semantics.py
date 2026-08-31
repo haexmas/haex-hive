@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 
 import pytest
@@ -49,19 +48,6 @@ def test_rejects_wrong_sort_order() -> None:
     ]
     with pytest.raises(InstallLockSourcesNotCanonicalError):
         InstallLock.from_json(_payload(sources))
-
-
-def test_accepts_legacy_padded_digest() -> None:
-    """Accept and canonicalize a legacy padded lock digest."""
-    data = json.loads(_payload([]))
-    digest = bytes([251]) * 32
-    data["constitution"]["content_integrity"] = (
-        "sha256-" + base64.b64encode(digest).decode()
-    )
-    lock = InstallLock.from_json(json.dumps(data).encode("utf-8"))
-    assert lock.constitution is not None
-    expected = "sha256-" + base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
-    assert lock.constitution.content_integrity == expected
 
 
 def test_forward_compat_preserves_unknown_fields() -> None:

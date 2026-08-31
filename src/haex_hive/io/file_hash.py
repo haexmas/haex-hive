@@ -13,12 +13,9 @@ The digest returned is `sha256-<base64url-nopad>` (RFC 4648 §5, unpadded).
 from __future__ import annotations
 
 import base64
-import binascii
 import hashlib
-import re
 
 _CONSTITUTION_PATH = b"constitution.md"
-_LEGACY_SHA256_RE = re.compile(r"^sha256-[A-Za-z0-9+/]{43}=$")
 
 
 def _serialize(path_bytes: bytes, body: bytes) -> bytes:
@@ -40,17 +37,4 @@ def d15_one_file_tree_digest(body: bytes) -> str:
     """Return the unpadded Base64URL SRI digest for a constitution body."""
     tree_bytes = _serialize(_CONSTITUTION_PATH, body)
     digest = hashlib.sha256(tree_bytes).digest()
-    return "sha256-" + base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-
-
-def canonicalize_digest_identifier(value: str) -> str:
-    """Convert a valid legacy padded Base64 SHA-256 identifier to Base64URL."""
-    if not _LEGACY_SHA256_RE.fullmatch(value):
-        return value
-    try:
-        digest = base64.b64decode(value.removeprefix("sha256-"), validate=True)
-    except (ValueError, binascii.Error):
-        return value
-    if len(digest) != hashlib.sha256().digest_size:
-        return value
     return "sha256-" + base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
