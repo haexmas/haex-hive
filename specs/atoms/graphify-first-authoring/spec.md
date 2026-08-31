@@ -1,6 +1,6 @@
 # Feature Specification: graphify-first-authoring atom/molecule
 
-**Feature Branch**: `atoms/graphify-first-authoring`
+**Feature Branch**: `20260831-082047-graphify-first-authoring`
 **Created**: 2026-08-31
 **Status**: Draft
 **Input**: User description: "graphify-first-authoring atom/molecule: opt-in constitution rule requiring agents to consult the project's graphify knowledge graph before authoring new named code"
@@ -8,6 +8,13 @@
 **Design source of truth**: [docs/plans/2026-08-31-graphify-first-authoring-design.md](../../../docs/plans/2026-08-31-graphify-first-authoring-design.md). This spec inherits all decisions from that design doc (atom/molecule naming, file layout, hook mechanics, dependency handling) and does not restate them.
 
 **Scope note**: This is deliberately **not** part of haex-hive's core constitution. It is one opt-in atom, packaged and adopted the same way any external consumer would adopt any atom, that haex-hive also chooses to adopt on itself. It lives outside the sequential `specs/NNN-*` numbering used for core-engine specs (001–010 are already spoken for, including the not-yet-created 006/008/009/010) — opt-in atoms live under `specs/atoms/<atom-name>/` instead, on their own track.
+
+## Clarifications
+
+### Session 2026-08-31
+
+- Q: If the `post-commit` hook's `graphify-out/` refresh invocation fails (graphify crashes, times out, corrupted graph), does that block the commit? → A: No — warn-and-continue. The commit succeeds regardless; a warning is printed, and the stale freshness marker is caught by the agent-side backstop (bootstrap/refresh-when-stale) the next time an agent needs the graph.
+- Q: If the agent's own graphify consultation fails at authoring time (the query invocation errors or times out), does the agent block until it succeeds? → A: No — warn-and-proceed. The agent notes the consult failed, authors the code anyway, and flags it for a manual check later, consistent with the hook's own failure semantics above.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -82,6 +89,8 @@ An operator adopting this atom should not have to separately discover and instal
 - What happens when an agent needs to author code on a feature branch whose snapshot predates a large amount of work already merged into the tracked branch? The snapshot intentionally reflects the fork point, not current tracked-branch state — this is by design (User Story 3), not a bug to fix here.
 - What happens when HEAD on a tracked branch advances through a rebase or hard reset rather than a normal commit? The staleness check compares the graph's recorded revision against current HEAD regardless of how HEAD moved, so the agent-side backstop (User Story 1) still triggers a refresh.
 - What happens when a human commits directly (no agent session open) on a tracked branch? The post-commit hook still fires, since it is git plumbing independent of any agent being present — the graph stays current either way.
+- What happens when the `post-commit` hook's refresh invocation itself fails (graphify crashes, times out, corrupted graph)? The commit still succeeds — the hook warns rather than blocks, and the resulting stale freshness marker is caught by the agent-side backstop the next time an agent needs the graph (see Clarifications).
+- What happens when the agent's own graph consultation fails mid-session (the `graphify query`/`path`/`explain` invocation errors or times out)? The agent warns and proceeds with authoring rather than blocking, flagging the skipped consultation for a manual check later (see Clarifications).
 - What happens if the operator suspends the rule for a session and then starts a new session without re-suspending? The rule applies again immediately — suspension never persists past the session that requested it.
 
 ## Requirements *(mandatory)*
@@ -91,9 +100,9 @@ An operator adopting this atom should not have to separately discover and instal
 - **FR-001**: The atom MUST contribute a constitution principle file that becomes part of an adopting project's assembled constitution via the existing `haex constitution assemble` mechanism.
 - **FR-002**: The contributed principle MUST require agents to consult the project's graphify knowledge graph before authoring any new named function, class, component, store, module, or CLI command.
 - **FR-003**: The contributed principle MUST require agents to prefer extending an existing identical, near-identical, or incomplete artifact discovered in the graph over authoring a duplicate — regardless of whether that artifact is currently exported.
-- **FR-004**: The contributed principle MUST require the agent to name the candidate, state the delta versus what is needed, and propose the extension, rather than silently authoring a parallel implementation.
+- **FR-004**: The contributed principle MUST require the agent to name the candidate, state the delta versus what is needed, and propose the extension, rather than silently authoring a parallel implementation. If the graph consultation itself fails (the invocation errors or times out), the agent MUST warn and proceed with authoring rather than blocking, flagging the skipped consultation for a manual check later.
 - **FR-005**: The contributed principle MUST allow the operator to suspend it for a single session via an explicit instruction, and the suspension MUST NOT persist beyond that session.
-- **FR-006**: The atom MUST provide a git `post-commit` hook that incrementally refreshes `graphify-out/` after every commit on a tracked branch.
+- **FR-006**: The atom MUST provide a git `post-commit` hook that incrementally refreshes `graphify-out/` after every commit on a tracked branch. If the refresh invocation itself fails, the hook MUST warn rather than block — the commit MUST succeed regardless, leaving the freshness marker stale for the agent-side backstop (FR-010) to catch on next use.
 - **FR-007**: Tracked branches MUST be determined as the repository's auto-detected default branch, plus any additional branches declared in `.haex-hive.json`'s `tracked_branches[]`.
 - **FR-008**: The atom MUST provide a git `post-checkout` hook that copies `graphify-out/` from the parent worktree into a newly created worktree, if not already present there.
 - **FR-009**: `graphify-out/` MUST never be committed to version control in an adopting repo.
@@ -120,7 +129,7 @@ An operator adopting this atom should not have to separately discover and instal
 - **SC-001**: An operator can go from "atom not installed" to "rule enforced and graph auto-refreshing" by running exactly one installer command, with no separate manual steps to install or wire up the underlying graph tool.
 - **SC-002**: Across a working session, an agent bound by the adopted rule never authors a new function/class/component that is identical or near-identical to one already present and discoverable in the graph, without first surfacing it to the operator.
 - **SC-003**: A newly created feature-branch worktree has a usable, non-empty knowledge graph available immediately, with no full rebuild required before the first authoring decision.
-- **SC-004**: The graph on a tracked branch never falls further behind than the most recent commit on that branch, regardless of whether the commit came from an agent session or a direct human commit.
+- **SC-004**: Under normal operation (no tool failure), the graph on a tracked branch never falls further behind than the most recent commit on that branch, regardless of whether the commit came from an agent session or a direct human commit. When a refresh does fail, the next agent-initiated consultation still reflects the current commit, since the agent-side backstop refreshes on demand.
 
 ## Assumptions
 
