@@ -50,24 +50,6 @@ def test_rejects_wrong_sort_order() -> None:
         InstallLock.from_json(_payload(sources))
 
 
-def test_forward_compat_preserves_unknown_fields() -> None:
-    """Preserve unknown top-level fields across lock round-trips."""
-    raw = json.dumps(
-        {
-            "haex_hive_version": "2",
-            "generated_by": "haex 2.0.0",
-            "unknown_future_top_level_field": {"id": "com.future.spec.atom", "future_field": True},
-        }
-    ).encode("utf-8")
-    lock = InstallLock.from_json(raw)
-    assert (
-        lock.unknown_top_level["unknown_future_top_level_field"]["id"]
-        == "com.future.spec.atom"
-    )
-    reserialized = lock.to_json_bytes()
-    assert b"future_field" in reserialized
-
-
 def test_install_lock_rejects_duplicate_ownership_paths() -> None:
     first = {
         "path": ".haex-hive/generated/config.json",

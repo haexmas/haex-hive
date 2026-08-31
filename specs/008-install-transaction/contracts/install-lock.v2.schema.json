@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/haexmas/haex-hive/schemas/install-lock.v2.schema.json",
-  "title": "haex-hive Install Lockfile v2 (Spec 008 extension)",
-  "description": "Extension of Spec 007's install-lock.v2 schema. Backward-compatible: adds `atoms[]`, `participating_roots`, `visibility_marker`, and a versioned per-path ownership set. Pre-Spec-008 records without these fields remain valid; the first Spec-008-vintage install after upgrade re-writes the lock with the new shape.",
+  "title": "haex-hive Install Lockfile v2 (Spec 008)",
+  "description": "Schema for `.haex-hive/install.lock` as authored by Spec 008. Adds `atoms[]`, `participating_roots`, `visibility_marker`, and a versioned per-path ownership set on top of Spec 007's constitution block. The constitution-only shape (no atoms, no roots) is what `haex constitution assemble` writes today; the full shape lands with `haex install`.",
   "type": "object",
   "required": ["haex_hive_version", "generated_by"],
   "properties": {
