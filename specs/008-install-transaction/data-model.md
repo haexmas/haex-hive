@@ -1,0 +1,210 @@
+# Data Model: Install Transaction Contract
+
+**Feature**: Spec 008 — Install Transaction Contract
+**Date**: 2026-08-31
+**Purpose**: dataclass-level shapes and relationships for the install pipeline. Every persisted format has a matching JSON Schema under [contracts/](./contracts/); this file records the in-memory shapes and the state transitions of a running install.
+
+---
+
+## Entities
+
+### PlanSnapshot
+
+Sealed capture of every input the transaction depends on. Immutable after seal.
+
+| Field | Type | Notes |
+|---|---|---|
+| `sealed_at_ns` | `int` | Monotonic nanoseconds at seal time (informational). |
+| `haex_hive_json_digest` | `str` | `sha256-<b64u>` of the exact bytes of `.haex-hive.json` at seal. |
+| `publisher_manifest_digests` | `dict[str, str]` | Keyed by publisher `source + revision`; value is `sha256-<b64u>` of the publisher `manifest.json` bytes. |
+| `atom_manifest_digests` | `dict[str, str]` | Keyed by atom-id; value is `sha256-<b64u>` of the atom `manifest.json` bytes. |
+| `plan_snapshot_digest` | `str` | `sha256-<b64u>` over the deterministic serialisation of the four fields above. |
+| `steps` | `list[PlanStep]` | Ordered list of transaction steps derived from the resolved atom set. |
+
+**Validation**:
+- `sealed_at_ns` MUST be non-negative and derived from `time.monotonic_ns()`.
+- Every digest MUST be in `sha256-<b64u>` SRI-style format.
+- `steps` MUST be non-empty; a zero-step plan is a bug in plan-build.
+
+### CommitSnapshot
+
+Fresh re-read of the same inputs immediately before publication. Compared with `PlanSnapshot` to detect mid-install source mutation (FR-006).
+
+Same shape as `PlanSnapshot` fields `haex_hive_json_digest`, `publisher_manifest_digests`, `atom_manifest_digests`. Recorded verbatim; on any mismatch, install aborts.
+
+### PlanStep
+
+One participant in the transaction. The plan is a linear list of steps; each corresponds to one or more journal entries during execution.
+
+| Field | Type | Notes |
+|---|---|---|
+| `step_id` | `int` | Monotonically increasing within one plan (0, 1, 2 …). |
+| `step_type` | `Literal[...]` | `"stage_file"`, `"delete_orphan"`, `"overlay_pointer"`, `"hook_invoke"` (Spec 009 extension), `"seal_install_lock"`, `"publish_marker"`. |
+| `participating_root` | `str` | Repo-relative path of the root this step touches (e.g. `.haex-hive/`, `.claude/`). |
+| `payload` | `dict` | Step-type-specific payload; see JSON schema for exact shapes per type. |
+
+### JournalEntry
+
+One line of `install.journal`. See [contracts/install-journal.v1.schema.json](./contracts/install-journal.v1.schema.json).
+
+| Field | Type | Notes |
+|---|---|---|
+| `entry_id` | `int` | Monotonically increasing from 0. |
+| `wrote_at_ns` | `int` | Monotonic nanoseconds at write. |
+| `step_id` | `int \| null` | Corresponding `PlanStep.step_id`; null for lifecycle entries (start, commit, rollback). |
+| `entry_type` | `Literal[...]` | One of the R7 step-type enumeration. |
+| `payload` | `dict` | Type-specific. |
+| `tail_hash` | `str` | `sha256-<b64u>` of `<line-json>\n<prev-tail-hash>`. |
+
+**Validation**:
+- `entry_id` MUST equal the number of preceding entries (0-indexed).
+- The first entry's `<prev-tail-hash>` component is the empty string.
+- A journal whose `tail_hash` chain is broken MUST fail recovery with a diagnostic — no partial replay.
+
+### OwnerToken
+
+Runtime representation of the fenced-lease owner token (see R4).
+
+| Field | Type | Notes |
+|---|---|---|
+| `pid` | `int` | Process id at acquisition. |
+| `hostname` | `str` | `socket.gethostname()` at acquisition. |
+| `start_ns` | `int` | `time.monotonic_ns()` at acquisition. |
+| `uuid4_hex` | `str` | 32 hex chars, from `uuid.uuid4().hex`. |
+
+**Serialisation**: `<pid>:<hostname>:<start_ns>:<uuid4_hex>`. Total length ≤ 128 bytes; hostname is validated against `[A-Za-z0-9.-]{1,64}$` at acquisition to keep the format ASCII-safe.
+
+### InstallMutexFile
+
+Layout of `install.mutex` (device-local, under `$HAEX_HIVE_STATE/locks/<repo-identity>/`).
+
+```json
+{
+  "owner_token": "<pid>:<hostname>:<start_ns>:<uuid4>",
+  "acquired_at_ns": 1727612345678901234,
+  "heartbeat_at_ns": 1727612345678901234,
+  "ttl_ns": 60000000000
+}
+```
+
+Rewritten by the owner's heartbeat thread every 5 seconds; `heartbeat_at_ns` updates, other fields stay stable through the lease lifetime.
+
+### VisibilityMarker
+
+Sole publication event's on-disk representation: `.haex-hive/visibility.json`. See [contracts/visibility-marker.v1.schema.json](./contracts/visibility-marker.v1.schema.json).
+
+| Field | Type | Notes |
+|---|---|---|
+| `haex_hive_version` | `Literal["2"]` | Matches Spec 007. |
+| `generation_id` | `str` | Deterministic per-plan; see R8. |
+| `install_lock_content_integrity` | `str` | `sha256-<b64u>` of `install.lock` bytes. |
+| `participating_roots` | `list[RootDigest]` | One entry per participating output root. |
+| `written_at` | `str` | UTC ISO 8601 for operator diagnostics; not used in verification. |
+
+### RootDigest
+
+| Field | Type | Notes |
+|---|---|---|
+| `root` | `str` | Repo-relative directory (e.g. `.haex-hive/`). |
+| `content_integrity` | `str` | Per-root digest per R5. |
+| `overlay_paths` | `list[str] \| null` | For mixed-ownership roots, the exhaustive owned-path allowlist. `null` (or field absent) for haex-owned roots (whole tree owned). |
+
+### InstallLock
+
+Extended shape of `.haex-hive/install.lock`. See [contracts/install-lock.v2.schema.json](./contracts/install-lock.v2.schema.json). Backward-compatible extension of Spec 007's schema.
+
+| Field | Type | Notes |
+|---|---|---|
+| `haex_hive_version` | `Literal["2"]` | Unchanged from Spec 007. |
+| `generated_by` | `str` | e.g. `"haex 2.1.0"`. |
+| `constitution` | `ConstitutionBlock` | Existing Spec 007 shape; unchanged. |
+| `atoms` | `list[AtomInstallRecord]` | New in Spec 008; per-atom install detail. |
+| `participating_roots` | `list[RootRecord]` | New in Spec 008; matches `VisibilityMarker.participating_roots` byte-identically at seal time. |
+| `visibility_marker` | `VisibilityMarkerRef` | New; `{ "generation_id": "...", "content_integrity": "sha256-..." }`. |
+
+### AtomInstallRecord
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `str` | Reverse-DNS atom id. |
+| `source` | `str` | Publisher repo URL. |
+| `revision` | `str` | Full 40-char SHA. |
+| `content_integrity` | `str` | Digest of the atom's sealed contribution. |
+| `contributed_paths` | `list[str]` | Repo-relative paths this atom contributed under participating roots. |
+
+### RootRecord
+
+Same shape as `RootDigest`; `install.lock` records the authoritative content, `visibility.json` cross-references it via digest.
+
+---
+
+## State machine of a running install
+
+```text
+START
+  │
+  ▼
+[acquire_lock]  ──── on stale lease → [reclaim_lease] ──┐
+  │                                                     │
+  ▼                                                     ▼
+[verify_or_recover_journal]  ◄────────── incomplete journal from prior run
+  │
+  ▼
+[build_plan_snapshot]
+  │
+  ▼
+[stage_all_outputs]  (per-step journal entry BEFORE each replace)
+  │
+  ▼
+[invoke_hooks]  (Spec 009 extension point; MAY be no-op in Spec 008)
+  │
+  ▼
+[commit_snapshot_verify]  ──── mismatch → [abort + rollback]
+  │
+  ▼
+[seal_install_lock]
+  │
+  ▼
+[publish_visibility_marker]  ◄── the SOLE publication event
+  │
+  ▼
+[cleanup_staging]
+  │
+  ▼
+END (success)
+
+
+At any state above ↓
+[crash] → next `haex install` or `haex verify --recover`
+  │
+  ▼
+[replay_journal]  → determine last consistent state
+  │
+  ├── after publish_visibility_marker + marker present → cleanup only
+  ├── after seal_install_lock but no marker → publish marker (idempotent)
+  └── earlier → roll back per-file replaces, restore prior gen, cleanup
+```
+
+**Invariants at every transition**:
+- The exclusive lock is held from `[acquire_lock]` through `[cleanup_staging]`.
+- Every filesystem mutation is preceded by its journal entry, fsynced.
+- The visibility marker is written LAST; no other write publishes the new generation.
+
+---
+
+## Relationships between entities
+
+- One `PlanSnapshot` ⇌ many `PlanStep`s (composition).
+- One `PlanSnapshot` ⇌ one `CommitSnapshot` (compared for equality on published-digest fields).
+- One install ⇌ one `install.mutex` file ⇌ one live `OwnerToken`.
+- Many `JournalEntry`s ⇌ zero-or-one `PlanStep` (lifecycle entries carry no step reference).
+- One successful install ⇌ one `VisibilityMarker` ⇌ one `InstallLock` (their digests cross-reference).
+- One `InstallLock` ⇌ many `AtomInstallRecord`s ⇌ many `RootRecord`s.
+
+---
+
+## Boundaries and non-goals
+
+- **Publisher-hook payloads** (Spec 009 territory): `PlanStep.step_type = "hook_invoke"` reserves the slot; the payload shape is Spec 009's design decision. Spec 008 records the step type so recovery can identify hook-boundary journal entries but does not itself execute hooks.
+- **Adapter output payloads** (Spec 010 territory): the plan step's `payload` for adapter-emitted files is opaque to Spec 008; the pipeline stages, digests, and publishes them per the transaction contract without introspecting content.
+- **Cross-version migration** of `install.lock`: Spec 007 records passing forward unchanged; Spec 008's extensions default to sensible values when reading a Spec-007-vintage lock (`participating_roots` synthesised from the constitution block; `visibility_marker` null → treated as a legacy install requiring re-install). A dedicated migration is out of scope; the first Spec-008 install after upgrade rewrites the lock in the new shape.

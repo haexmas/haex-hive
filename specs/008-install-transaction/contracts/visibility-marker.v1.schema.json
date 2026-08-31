@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haexmas/haex-hive/schemas/visibility-marker.v1.schema.json",
+  "title": "haex-hive Visibility Marker v1",
+  "description": "Schema for .haex-hive/visibility.json — the sole publication event for a completed haex install transaction. See Spec 008 FR-004, FR-005.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "haex_hive_version",
+    "generation_id",
+    "install_lock_content_integrity",
+    "participating_roots"
+  ],
+  "properties": {
+    "haex_hive_version": {
+      "const": "2",
+      "description": "Matches the Spec 007 unified-manifest version this install belongs to."
+    },
+    "generation_id": {
+      "type": "string",
+      "pattern": "^g_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{4}$",
+      "description": "Deterministic per-plan generation identifier. See Spec 008 research §R8."
+    },
+    "install_lock_content_integrity": {
+      "$ref": "#/$defs/sriDigest",
+      "description": "SRI-style digest of the sealed install.lock bytes."
+    },
+    "participating_roots": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/rootDigest" },
+      "description": "One entry per participating output root. Order MUST be lexicographic on `root` for determinism."
+    },
+    "written_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC ISO 8601 wall-clock at marker write. Informational only; verification uses generation_id + digests."
+    }
+  },
+  "$defs": {
+    "sriDigest": {
+      "type": "string",
+      "pattern": "^sha256-[A-Za-z0-9_-]{43}$",
+      "description": "SRI-style SHA-256 digest, base64url-nopad (43 chars for 32 bytes)."
+    },
+    "rootDigest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "content_integrity"],
+      "properties": {
+        "root": {
+          "type": "string",
+          "pattern": "^\\.[A-Za-z0-9._-]+/$",
+          "description": "Repo-relative directory path with trailing slash. Examples: '.haex-hive/', '.claude/', '.codex/'."
+        },
+        "content_integrity": {
+          "$ref": "#/$defs/sriDigest",
+          "description": "Per-root digest computed per Spec 008 research §R5."
+        },
+        "overlay_paths": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^\\.[A-Za-z0-9._-]+/[^\\u0000-\\u001F\\u007F]+$",
+                "description": "Repo-relative POSIX path under the root."
+              },
+              "description": "Exhaustive overlay-owned-path allowlist for a mixed-ownership root."
+            },
+            { "type": "null", "description": "haex-owned root; the whole tree is owned." }
+          ],
+          "description": "Present for mixed-ownership roots (.claude/, .codex/, adapter roots). Null or absent for haex-owned roots."
+        }
+      }
+    }
+  }
+}
