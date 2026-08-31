@@ -245,6 +245,23 @@ def test_recover_rejects_legacy_shared_journal_for_another_checkout(
         transaction.recover_if_journaled(tmp_path, state_root=state_root)
 
 
+def test_checkout_recovery_ignores_legacy_journals(tmp_path: Path) -> None:
+    """The Spec 008 recovery path leaves both legacy journal locations alone."""
+    (tmp_path / ".haex-hive.json").write_text(
+        json.dumps({"identity": "com.example.consumer"})
+    )
+    state_root = tmp_path / "state"
+    paths = transaction_paths(tmp_path, state_root)
+    paths.legacy_journal.parent.mkdir(parents=True)
+    paths.legacy_journal.write_text("legacy checkout journal")
+    paths.legacy_shared_journal.parent.mkdir(parents=True)
+    paths.legacy_shared_journal.write_text("legacy shared journal")
+
+    assert not transaction.recover_checkout_journaled(tmp_path, state_root=state_root)
+    assert paths.legacy_journal.read_text() == "legacy checkout journal"
+    assert paths.legacy_shared_journal.read_text() == "legacy shared journal"
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="fcntl-based lock is POSIX-only")
 def test_concurrent_writer_refused(tmp_path: Path) -> None:
     lock_path = tmp_path / ".haex-hive" / "constitution-transaction.lock"

@@ -1,7 +1,7 @@
 """T008 — contract test for install-lock v2 (Spec 008 shape).
 
 Assertions
-- The three MVP shapes validate: minimal Spec-007-shape (constitution only), a
+- The three MVP shapes validate: minimal Spec-008 constitution-only shape, a
   Spec-008 full shape with atoms + participating_roots + visibility_marker +
   ownership, and the in-tree valid fixtures used by `tests/contract/`.
 - Negative cases prove the schema tightens where Spec 008 needs it: atoms items
@@ -22,8 +22,8 @@ _ZERO_DIGEST = "sha256-" + "A" * 43  # base64url-nopad SHA-256 of 32 zero bytes
 _GENERATION_ID = "g_20260831T142011Z_a4c2"
 
 
-def _spec_007_shape() -> dict:
-    """Build the minimal Spec 007-compatible install lock shape."""
+def _minimal_spec_008_shape() -> dict:
+    """Build the minimal Spec 008 constitution-only install lock shape."""
     return {
         "haex_hive_version": "2",
         "generated_by": "haex 2.0.0",
@@ -43,7 +43,7 @@ def _spec_007_shape() -> dict:
 
 def _spec_008_shape() -> dict:
     """Build a complete valid Spec 008 install lock shape."""
-    base = _spec_007_shape()
+    base = _minimal_spec_008_shape()
     base["atoms"] = [
         {
             "id": "com.example.publisher.constitution",
@@ -88,9 +88,9 @@ def test_schema_loads() -> None:
     assert schema["title"].startswith("haex-hive Install Lockfile v2")
 
 
-def test_minimal_spec_007_shape_validates() -> None:
-    """Keep the pre-Spec-008 install lock shape valid."""
-    validate(_spec_007_shape(), SCHEMA_NAME)
+def test_minimal_spec_008_shape_validates() -> None:
+    """Accept the constitution-only Spec 008 install lock shape."""
+    validate(_minimal_spec_008_shape(), SCHEMA_NAME)
 
 
 def test_full_spec_008_shape_validates() -> None:
@@ -108,7 +108,7 @@ def test_atom_missing_source_is_rejected() -> None:
 
 def test_padded_base64_digest_is_rejected() -> None:
     """Reject legacy padded digest values in new lock records."""
-    data = _spec_007_shape()
+    data = _minimal_spec_008_shape()
     data["constitution"]["content_integrity"] = "sha256-" + "A" * 43 + "="
     with pytest.raises(SchemaValidationError):
         validate(data, SCHEMA_NAME)
