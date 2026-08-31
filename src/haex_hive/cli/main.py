@@ -81,6 +81,11 @@ def _build_parser() -> argparse.ArgumentParser:
     show = constitution_sub.add_parser("show", help="print effective constitution")
     show.add_argument("--no-preface", action="store_true")
 
+    subparsers.add_parser(
+        "install",
+        help="resolve `.haex-hive.json` atoms and publish a new generation (Spec 008)",
+    )
+
     return parser
 
 
@@ -106,6 +111,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return constitution_cli.run_assemble(args)
             if args.constitution_command == "show":
                 return constitution_cli.run_show(args)
+        if args.command == "install":
+            from haex_hive.cli import install as install_cli
+
+            return install_cli.run(args)
     except HaexError as exc:
         emit_refuse(exc)
         return exc.exit_code
