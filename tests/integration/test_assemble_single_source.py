@@ -47,6 +47,7 @@ def test_successful_straight_copy(single_source_constitution_fixture: dict) -> N
         }
     ]
     assert lock_data["constitution"]["content_integrity"].startswith("sha256-")
+    assert not (consumer / ".haex-hive" / "constitution-transaction.lock").exists()
 
 
 def test_determinism_across_two_runs(single_source_constitution_fixture: dict) -> None:

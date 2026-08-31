@@ -56,6 +56,37 @@ def test_publish_with_state_root_uses_shared_paths(tmp_path: Path) -> None:
     assert not paths.legacy_journal.exists()
 
 
+def test_publish_cleans_backups_when_identity_write_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".haex-hive.json").write_text(
+        json.dumps({"identity": "com.example.consumer"})
+    )
+    hive = _hive(tmp_path)
+    hive.mkdir()
+    constitution = hive / transaction.CONSTITUTION_NAME
+    lock = hive / transaction.INSTALL_LOCK_NAME
+    constitution.write_bytes(b"old body")
+    lock.write_bytes(b"old lock")
+
+    def fail_identity_write(paths: object) -> None:
+        raise OSError("identity record unavailable")
+
+    monkeypatch.setattr(transaction, "write_identity_record", fail_identity_write)
+
+    with pytest.raises(OSError, match="identity record unavailable"):
+        transaction.publish_pair(
+            tmp_path,
+            b"new body",
+            b"new lock",
+            state_root=tmp_path / "state",
+        )
+
+    assert constitution.read_bytes() == b"old body"
+    assert lock.read_bytes() == b"old lock"
+    assert not list(hive.glob("*.backup.*.tmp"))
+
+
 def test_publish_replaces_existing_and_removes_journal(tmp_path: Path) -> None:
     transaction.publish_pair(tmp_path, b"old body", b"{}")
     transaction.publish_pair(tmp_path, b"new body", b"{\"generated_by\": \"haex 2.0.0\"}")

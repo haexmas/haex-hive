@@ -311,6 +311,7 @@ def publish_pair(
     install_lock_target = hive_dir / INSTALL_LOCK_NAME
 
     entries: list[_TargetEntry] = []
+    journal: Path | None = None
     try:
         for logical, target, data in (
             ("constitution", constitution_target, constitution_body),
@@ -330,7 +331,6 @@ def publish_pair(
             )
         _fsync_dir(hive_dir)
 
-        journal = _journal_path(repo_root)
         journal_repo_key: str | None = None
         journal_checkout_key: str | None = None
         if state_root is None:
@@ -372,6 +372,18 @@ def publish_pair(
     except BaseException:
         for entry in entries:
             _remove_if_exists(entry.staged)
+        # Before the durable journal exists, backups are only temporary
+        # pre-images. Do not leave them in the committed output directory when
+        # identity/state setup fails. Once a journal exists, retain backups for
+        # crash recovery.
+        if journal is None or not journal.exists():
+            removed_backup = False
+            for entry in entries:
+                if entry.backup is not None and entry.backup.exists():
+                    _remove_if_exists(entry.backup)
+                    removed_backup = True
+            if removed_backup:
+                _fsync_dir(hive_dir)
         raise
 
 
