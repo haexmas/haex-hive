@@ -6,6 +6,17 @@
 
 **2026-09-01 amendment (R1/R7 rewrite)**: Sections §R1 and §R7 were rewritten to replace the earlier "per-file `os.replace()` + durable JSONL journal + tail-hash chain + sidecar" design with a directory rename-swap contract plus three-directory in-flight recovery state. §R9 was trimmed of the now-obsolete journal-migration wording. Downstream sections (spec.md FR-002 / FR-011 / FR-014 / FR-021, data-model.md §PlanStep / §In-flight recovery state / §State machine, tasks.md T014 / T020 / T042 and the US1/US3/US4 wording) were updated for consistency. `install/journal.py`, `install-journal.v1.schema.json`, and their contract tests will be retired in the follow-up code-cleanup PR.
 
+**2026-09-01 amendment (trust-git simplification)**: Recognised that most of Spec 008's digest ceremony was defence-in-depth against a threat model that git's content-addressed storage already covers. Under the project's declared usage (operator generates `.haex-hive/` on one device, commits it to git, satellites `git pull` — and a satellite that re-runs `haex install` produces byte-identical output because the pinned publisher revisions deliver byte-identical bytes via `git show <sha>`), the following are redundant with git and therefore retired:
+
+- **§R5 (per-root Merkle-tree digest)** — retired. Git tree hashes already give content-addressed integrity; the `sha256-<b64u>` fields we would have computed are strictly weaker than the git SHAs stored in `.haex-hive.json` atoms and in git's own tree objects.
+- **§R6 (implicitly)** and **FR-006 (stable staged-input reads through commit)** — retired. The `PlanSnapshot` / `CommitSnapshot` re-hash-under-lock check defends against a "rogue writer that ignores the exclusive lock" scenario that has no concrete threat model under pre-user policy. The exclusive lock is trusted.
+- **All `content_integrity` fields** on `install.lock` (constitution, atoms, participating_roots, ownership.paths, visibility_marker) — retired. Every referenced input is either (a) the operator's local `.haex-hive.json` bytes, or (b) publisher content addressed by full 40-char git SHA. Git provides the byte-identity guarantee.
+- **`haex constitution show`'s integrity-mismatch check** — retired. `git status` / `git diff` surface any local tampering with committed files; reimplementing that inside our tool duplicates git's job.
+
+**What we keep**: the rename-swap primitive (§R1), the three-directory recovery state (§R7), the exclusive install lock (writer_lock + install.mutex), and the immutable-revision pin discipline on `.haex-hive.json` (Principle IV, enforced in Spec 007's schema). Those are the pieces git does *not* do for us.
+
+Downstream sections retired or slimmed by this amendment: spec.md FR-004 / FR-005 / FR-006 / FR-009 / FR-014 (SC-007) / Key Entities entries for InstallLock / VisibilityMarker; data-model.md §PlanSnapshot / §CommitSnapshot / §PlanStep / §OwnershipSet / §PathOwnershipRecord (retired) plus every `content_integrity` field on the remaining entities; contracts/install-lock.v2.schema.json + contracts/visibility-marker.v1.schema.json (all `content_integrity` and digest fields removed); tasks.md T012 / T018 / T023 / T024 / T025 (retired) plus T016 / T027 / T028 / T029 / T030 / T031 (simplified). The follow-up code-cleanup PR deletes `install/plan.py`'s snapshot classes, drops `content_integrity` fields from `model/install_lock.py`, retires `install/digest.py`, and reduces `constitution/assemble.py` + the future `install()` orchestration to a thin ~50-LoC composition around `publish_generation`.
+
 ---
 
 ## R1. Directory rename-swap for the `.haex-hive/` root
@@ -137,28 +148,11 @@ keeps the new pointer and only removes obsolete generations.
 
 ---
 
-## R5. Per-root Merkle-tree digest scheme
+## ~~R5. Per-root Merkle-tree digest scheme~~ (retired)
 
-**Decision**:
-- **Algorithm**: SHA-256.
-- **Per-root normalisation**: enumerate the root's owned paths in POSIX-byte-sorted order (lexicographic on UTF-8-encoded bytes). For each path, compute `content_hash = SHA-256(bytes-of-file)`. Concatenate `<repo-relative-path>:<hex-content-hash>\n` for every path (LF terminator per line). The root's digest is `SHA-256(concatenation)`.
-- **Mixed-ownership root**: enumerate ONLY the overlay-owned paths recorded in `install.lock` (never sibling entries).
-- **`.haex-hive/` root**: enumerate every file under `.haex-hive/` EXCEPT `visibility.json` and `install.lock`; excluding both avoids recursive lock/marker integrity references. The lock's marker reference uses a canonical marker projection without `install_lock_content_integrity` and `written_at`, so it remains computable.
-- **Emission format**: `sha256-<base64url-nopad(digest)>` — matches Spec 007's SRI-style `content_integrity` representation for consistency.
+**Retired by the trust-git amendment (2026-09-01).** Content integrity for anything under a participating output root is provided by git: the operator commits `.haex-hive/` to git, git's tree hash covers every byte, and satellites `git pull` receive byte-identical content. A separate `sha256-<b64u>` field on each root would be strictly weaker than the git tree object git already stores. Recomputing it inside our tool duplicates git's job.
 
-**Rationale**:
-- **SHA-256** is Spec 007's existing choice; introducing a different algorithm would fragment the codebase's integrity vocabulary.
-- **Byte-sorted paths + LF-terminated lines** — deterministic; independent of iteration order returned by the OS's directory listing; independent of locale.
-- **Excluding `visibility.json` from `.haex-hive/`'s digest** — needed because `visibility.json` records that digest; including it would be self-referential.
-- **Excluding `install.lock` from the digest** — the lock contains the participating-root digest and the marker contains the lock digest. Excluding the lock and marker breaks that cycle without weakening the digest of any other committed output.
-- **base64url-nopad** — URL-safe, no padding characters, compact — matches SRI convention.
-
-**Alternatives considered**:
-- **Blake3** for speed: rejected for consistency (Spec 007 uses SHA-256 everywhere).
-- **Merkle-tree with tree-shaped hashing** (each directory a hash of its subtree, root a hash of top-level): more complex, no measurable benefit for the small file counts Spec 008 targets (typically ≤50 files). Rejected as premature complexity.
-- **Include `visibility.json` via placeholder-hash**: adds fragility with no benefit. Rejected.
-
-**Residual risk**: A path containing an LF byte would break the concatenation format. Mitigation: refuse at input validation. POSIX allows LF in paths but the atom-manifest schema (Spec 007) forbids control characters in `repoRelativePath` — that rule extends here.
+Consequences carried through the amendment: `install.lock` no longer carries `content_integrity`/`participating_roots[].content_integrity`/`ownership.paths[].content_integrity`; `visibility.json` no longer carries `install_lock_content_integrity`/`participating_roots[].content_integrity`; `install/digest.py` is deleted in the follow-up code-cleanup PR.
 
 ---
 
