@@ -68,7 +68,7 @@ def test_active_writer_is_excluded(
         proc = _run_haex(consumer, state_root=state_root)
 
     assert proc.returncode == 9
-    assert "key=constitution-writer-busy" in proc.stderr
+    assert "key=install-lock-busy" in proc.stderr
 
 
 def test_determinism_across_two_runs(single_source_constitution_fixture: dict) -> None:
