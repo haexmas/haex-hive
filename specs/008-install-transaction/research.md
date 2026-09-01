@@ -1,27 +1,45 @@
 # Phase 0 Research: Install Transaction Contract for `haex install`
 
 **Feature**: Spec 008 — Install Transaction Contract
-**Date**: 2026-08-31
+**Date**: 2026-08-31 (amended 2026-09-01)
 **Purpose**: Resolve every load-bearing implementation decision the plan reserved as "chosen in research". Each section below records the decision, the rationale, and the alternatives considered. Where a decision has a residual risk, that risk is called out explicitly.
+
+**2026-09-01 amendment (R1/R7 rewrite)**: Sections §R1 and §R7 were rewritten to replace the earlier "per-file `os.replace()` + durable JSONL journal + tail-hash chain + sidecar" design with a directory rename-swap contract plus three-directory in-flight recovery state. §R9 was trimmed of the now-obsolete journal-migration wording. Downstream sections (spec.md FR-002 / FR-011 / FR-014 / FR-021, data-model.md §PlanStep / §In-flight recovery state / §State machine, tasks.md T014 / T020 / T042 and the US1/US3/US4 wording) were updated for consistency. `install/journal.py`, `install-journal.v1.schema.json`, and their contract tests will be retired in the follow-up code-cleanup PR.
 
 ---
 
-## R1. Atomic per-file publication primitive across OSes
+## R1. Directory rename-swap for the `.haex-hive/` root
 
-**Decision**: Use `os.replace(src, dst)` for every file publication step. Sequence per-file replacements via the durable journal (see R7). The visibility marker publication is one final `os.replace()` call and is the sole publication event (FR-004). No directory-exchange primitive is part of this contract.
+**Decision**: For the haex-owned `.haex-hive/` root, publication is a **directory rename-swap**, not a per-file `os.replace()` sequence. The transaction writes an entire fresh generation into a same-filesystem sibling, verifies it, then performs at most two directory renames to atomically flip which sibling is the live `.haex-hive/`. Only three directory names are ever in use at the root's parent: the live `.haex-hive/`, the in-progress `.haex-hive.next/`, and the rollback pre-image `.haex-hive.prev/`. The presence/absence of those three directories is the durable in-flight state — no separate journal file is needed to disambiguate crash windows (see R7).
+
+For **mixed-ownership roots** (`.claude/`, `.codex/`, future Spec 010 adapters), publication follows the symlink/junction A/B contract in R3, unchanged. Only owned overlay pointers are swapped there; sibling entries in the mixed-ownership root are never touched.
+
+**Publication order** for `.haex-hive/`:
+
+1. Stage every file into `.haex-hive.next/` (same-filesystem sibling per R2), fsync each file and the staging directory. `.haex-hive.next/visibility.json` is written last inside the staging tree and covers every file about to become live.
+2. Verify: re-read the staged files, recompute the per-root digest (R5), and confirm it equals the digest written into the staged `visibility.json`. Any mismatch aborts before any rename.
+3. **Rename A**: if `.haex-hive/` exists, `os.rename(".haex-hive", ".haex-hive.prev")`, then fsync the parent directory.
+4. **Rename B**: `os.rename(".haex-hive.next", ".haex-hive")`, then fsync the parent directory.
+5. Cleanup: `rmtree(".haex-hive.prev")`, fsync parent.
+
+Renames A and B are each atomic on POSIX (`rename(2)`) and Windows (`MoveFileExW`). Between them the live `.haex-hive/` name briefly does not exist; a reader in that window sees no installation and is required to treat it as unavailable per FR-005. On single-syscall rename-swap primitives (`renameat2(RENAME_EXCHANGE)` on Linux ≥ 3.15, `renamex_np(RENAME_SWAP)` on macOS ≥ 10.13) an implementation MAY collapse steps 3+4 into one syscall when available, but the two-rename fallback is the reference contract.
 
 **Rationale**:
-- Linux/macOS: `os.replace()` calls `rename(2)` — atomic when `src` and `dst` are on the same filesystem, replacing the target if present.
-- Windows: `os.replace()` calls `MoveFileExW(..., MOVEFILE_REPLACE_EXISTING)` — atomic for files with an existing target; documented as such in the Win32 API.
-- Same-filesystem guarantee is preserved by staging bytes into `<root>.staging.<gen>/` siblings of each participating output root (see R2).
-- fsync of parent directory after each replace on POSIX (`os.fsync(os.open(parent, os.O_RDONLY))`); Windows uses `FlushFileBuffers` on the file handle before rename per Spec 007's proven durability contract.
+- **One in-flight state, three directory names**. Recovery reads `os.listdir(parent)` and dispatches on the presence/absence of the three names (R7). There is no chained journal to parse, no tail-hash to recompute, no sidecar.
+- **Fewer moving parts than the per-file replace design**. The per-file approach required a durable journal (bespoke JSON or JSONL) with per-entry sequencing so a mid-swap crash could distinguish which files were replaced. Under rename-swap the only mid-swap crash points are the two rename boundaries, and both are resolvable by inspecting directory names.
+- **The visibility marker inside the fresh `.haex-hive.next/` is the sole publication event** (FR-004). Renaming `.haex-hive.next/` to `.haex-hive/` is the atomic commit; every reader that opens `.haex-hive/visibility.json` after step 4 either sees the new generation or, in the between-renames window, sees no marker at all.
+- **Constitutional `.haex-hive/constitution.md` invariant preserved**. `.haex-hive/constitution.md` is committed content per the constitution's Reserved-paths clause. The rename-swap keeps `.haex-hive/constitution.md` at the exact same path with a regular file — no symlinks committed to git, no per-install generation directories piling up in the tree.
 
 **Alternatives considered**:
-- **`renameat2(RENAME_EXCHANGE)`** (Linux ≥ 3.15) / **`renamex_np(RENAME_SWAP)`** (macOS ≥ 10.13) for atomic directory-swap. Rejected: requires filesystem support (not all ext4 configurations, not tmpfs on older kernels; not portable to Windows). The per-file replace + journal approach reaches the same outcome without a filesystem-specific dependency.
-- **Copy-and-truncate**: not atomic; a reader can observe a torn file. Rejected — violates FR-005.
-- **Write-then-hardlink-swap**: works but adds complexity and doesn't buy anything over `os.replace()` on same filesystem. Rejected.
+- **Per-file `os.replace()` + durable JSONL journal**: the previous decision. Rejected in the R1/R7 rewrite because the crash-recovery complexity (chain integrity, sidecar count, per-entry state machine) buys nothing over the three-directory-name state under pre-user policy. Reserved as future work only if a real requirement forces per-file semantics inside `.haex-hive/`.
+- **Symlink pointing `.haex-hive` at `.haex-hive.gens/<gen>/`** (full Android-A/B): rejected. Committing the symlink and its target directory to git would either force every install to commit a fresh generation directory (tree bloat) or force a git-ignored target (breaks first-clone reproducibility because the target does not exist yet).
+- **`renameat2(RENAME_EXCHANGE)` / `renamex_np(RENAME_SWAP)`**: partial adoption is fine (fastpath on supporting kernels), but not required. Portability floor stays at `os.rename` on same filesystem.
+- **Copy-and-truncate per file**: not atomic; a reader can observe a torn file. Rejected — violates FR-005.
 
-**Residual risk**: `os.replace()` on Windows for a file being read by another process fails with `ERROR_SHARING_VIOLATION`. If a downstream agent CLI holds an open handle on `.haex-hive/constitution.md`, the swap fails. Mitigation: retry with bounded backoff; if still failing, refuse the install with a diagnostic naming the holding process (via `handle.exe` or `Restart Manager API` in a future revision). MVP: three retries at 100ms, then refuse.
+**Residual risk**:
+- **Between-renames window**: readers that scan `.haex-hive/` in the window between steps 3 and 4 see a missing directory. Per FR-005 that is a legitimate "unavailable" reading; polite readers already retry via `visibility.json`. The window is expected to be sub-millisecond.
+- **`rename()` on Windows for a directory containing an open handle**: `MoveFileExW` refuses to move a directory whose children are open (`ERROR_SHARING_VIOLATION`). If a downstream agent CLI is reading `.haex-hive/constitution.md` during publication, step 3 or 4 fails. Mitigation is the same as the retired per-file design: bounded backoff (three retries at 100 ms), then refuse the install with a diagnostic naming the observed sharing violation. A future revision may integrate the Windows Restart Manager API to identify the holding process.
+- **`.haex-hive.prev/` orphaned across a crash after step 4**: recovery deletes it (R7).
 
 ---
 
@@ -38,7 +56,7 @@
 - **Central `$HAEX_HIVE_STATE/staging/<repo-identity>/<gen>/`**: could cross filesystems (state root often on a different volume than the project checkout). Rejected — same-filesystem invariant broken.
 - **`<root>/.staging/`**: an inside-the-root staging subdirectory. Rejected for mixed-ownership roots (`.claude/`, `.codex/`) — the transaction is not allowed to enumerate or write siblings inside those roots, and a `.staging` subdirectory would violate that.
 
-**Residual risk**: interrupted install leaves `<root>.staging.<gen>/` behind. Recovery discovers and either finalises it (if journal indicates progress) or `rmtree`s it (if journal indicates abort). A stale staging directory from an abandoned pre-lock crash is cleaned on next successful acquisition of the exclusive lock.
+**Residual risk**: interrupted install leaves `<root>.staging.<gen>/` (renamed `<root>.next/` in the R1 rename-swap contract for `.haex-hive/`) behind. Recovery inspects the three directory names — `<root>/`, `<root>.next/`, `<root>.prev/` — and dispatches per R7. A stale directory from an abandoned pre-lock crash is cleaned on next successful acquisition of the exclusive lock.
 
 ---
 
@@ -136,33 +154,44 @@
 
 ---
 
-## R7. Durable journal format and replay semantics
+## R7. In-flight recovery via directory-name state
 
-**Decision**:
-- **Format**: one JSON object per line (JSONL), UTF-8, LF-terminated. Each entry has: `entry_id` (monotonically increasing integer), `entry_type` (enum), `payload` (step-specific object), `tail_hash` (SHA-256 over canonical UTF-8 entry JSON without `tail_hash`, one LF, and the previous tail hash as ASCII). The first previous hash is empty and the JSONL record's trailing LF is separate from the hash preimage.
-- **PlanStep-to-journal mapping**: `stage_file` → `stage_file`, `delete_orphan` → `delete_orphan`, `overlay_pointer` → `overlay_pointer_swapped`, `hook_invoke` → one lifecycle pair `hook_step_started`/`hook_step_ended` plus one `stage_file` entry for each hook-produced filesystem output, `seal_install_lock` → `install_lock_sealed`, and `publish_marker` → `commit_marker_published`. Every filesystem mutation has exactly one mutation entry written before it; lifecycle entries are not PlanSteps.
-- **Write discipline**: append the line, `fsync(fd)`, `fsync(parent_dir_fd)`, then execute the corresponding filesystem mutation. Each state transition writes its own journal entry BEFORE the mutation. This is the "write-ahead" invariant of FR-002.
-- **Replay on recovery**:
-  1. Open the journal; verify `tail_hash` chain from the first entry; abort recovery on a broken chain (integrity violation).
-  2. Walk entries in order; determine the last consistent state.
-  3. If the last publication entry is `commit_marker_published` and the marker file on disk matches, the install committed — treat any following `cleanup_started` or `cleanup_completed` entries as cleanup-only state and resume or finish cleanup without rolling back (rmtree staging directories).
-  4. If the last publication entry is `commit_marker_published` but the marker file on disk is absent or mismatched, roll back to the previous generation's marker, regardless of any following cleanup entries.
-  5. If the last entry is `install_lock_sealed` but not `commit_marker_published`, complete the marker publication (idempotent — it's a single-file replace).
-  6. If any earlier state, roll back: undo any per-file replaces recorded in the journal, restore prior-generation content from `<root>.rollback.<prev-gen>/` if present, `rmtree` staging.
-- **Entry types**: `plan_snapshot_sealed`, `commit_snapshot_verified`, `stage_file`, `delete_orphan`, `hook_step_started`, `hook_step_ended` (for Spec 009 extensibility), `overlay_pointer_swapped`, `install_lock_sealed`, `commit_marker_published`, `cleanup_started`, `cleanup_completed`, `install_aborted`. Recovery tests cover crashes after both cleanup entries and preserve a valid published marker.
+**Decision**: There is no durable JSONL journal, no tail-hash chain, and no per-entry sidecar. The transaction's in-flight state is encoded entirely in the presence or absence of three directory names beside each participating output root:
+
+- `<root>/` — the live generation. Its `visibility.json` names the currently-published `generation_id`.
+- `<root>.next/` — a staged, verified fresh generation, ready to become live but not yet renamed in.
+- `<root>.prev/` — the previous live generation, retained during the swap so it can be restored on a mid-swap crash.
+
+Every install transitions through these three names in the R1 rename-swap order. Recovery reads the directory listing on every `haex install` startup (or `haex verify --recover`) and dispatches on the combination it observes. No other durable state is required.
+
+**Recovery state table** for one participating root:
+
+| `<root>/` | `<root>.next/` | `<root>.prev/` | Interpretation | Recovery action |
+|---|---|---|---|---|
+| present | absent | absent | steady state — nothing in flight | none |
+| present | present | absent | pre-swap crash (staging existed but rename A did not run) | `rmtree(<root>.next/)`; rerun of install proceeds normally |
+| absent | present | present | mid-swap crash between rename A and rename B | complete forward: `os.rename(<root>.next/, <root>/)`, then `rmtree(<root>.prev/)` |
+| present | absent | present | post-swap crash before cleanup | `rmtree(<root>.prev/)` |
+| absent | absent | present | rename B ran but somehow lost `<root>.next/` — treated as data-integrity failure | refuse; require operator to `rmtree(<root>.prev/)` manually and re-install |
+| present | present | present | reserved illegal combination (would require concurrent installs; the exclusive lock forbids it) | refuse; require operator cleanup |
+| absent | present | absent | mid-swap crash immediately after rename A but rename B failed AND `<root>.prev/` lost — treated as data-integrity failure | refuse; recover from git |
+| absent | absent | absent | fresh checkout, no install ever ran | none — install proceeds |
+
+Recovery always completes **forward** when a verified `<root>.next/` is present alongside `<root>.prev/`. This satisfies FR-011 (`complete-new-generation` or `rollback-to-previous-generation` — never a torn state) while keeping the recovery decision deterministic: a `<root>.next/` that reached the point of rename A was already digest-verified in step 2 of R1, so completing forward is safe under pre-user policy.
 
 **Rationale**:
-- **JSONL** — line-append is atomic below PIPE_BUF (4096 bytes on Linux, 512 on some POSIX); journal entries are ≤512 bytes and thus atomic on append.
-- **Tail-hash chain** — detects torn writes and adversarial modification. Not a security boundary (attacker with write access can forge entries), but a robustness check.
-- **Write-ahead** — the essential FR-002 property. Without it, a crash between mutation and journal-write leaves an unrecorded state that recovery cannot handle.
-- **Explicit step types** — enumerating them makes recovery a state machine, easier to reason about and test.
+- **The filesystem IS the durable state**. Three directory names covering 2³ = 8 combinations is a complete state machine; five are legal, three are integrity failures. No journal file to append, no chain to verify, no sidecar to synchronise.
+- **Renames are the only durable state transitions**. Because both step 3 and step 4 of R1 are atomic single syscalls, every intermediate observable state is one of the eight rows above.
+- **No parallel state to keep in sync**. The previous JSONL-plus-sidecar design had two files (`install.journal` and `install.journal.meta`) whose atomic update relative to each other required its own recovery logic. That whole layer disappears.
 
 **Alternatives considered**:
-- **SQLite journal**: overkill for tens of entries per install; adds a runtime dependency.
-- **Binary format**: more compact but less debuggable. Human-inspectable JSONL wins for a tool operators will occasionally inspect.
-- **Redo/undo log with separate files**: more complex, no benefit at this scale.
+- **Retain a lightweight in-flight marker file** with the current generation ID. Rejected: adds an artefact whose durability relative to the renames must itself be reasoned about, without adding any signal the directory names do not already convey. Under pre-user policy this level of belt-and-braces is not warranted.
+- **Encode the state in a single file inside `<root>.next/`** (e.g. `.state`). Rejected: reading it requires the not-yet-live `<root>.next/` to be traversable, which conflates recovery-state discovery with generation content.
+- **Retain the JSONL journal for extensibility** (Spec 009 hooks, Spec 010 adapters). Rejected in this rewrite: Spec 009 hooks run before rename A, so their outputs are staged into `<root>.next/` and covered by the same state machine; Spec 010 mixed-ownership overlays get their own symlink-swap contract per R3.
 
-**Residual risk**: journal grows unbounded if never cleaned. Mitigation: `cleanup_completed` removes the checkout-scoped journal atomically at the end of every successful install. Recovery from a corrupt or truncated journal falls back to `install.lock` reconciliation (see R10 in future revision — not in Spec 008 scope).
+**Residual risk**:
+- **Integrity failures** (rows 5, 6 above) require operator action. In practice these arise only from filesystem corruption, out-of-band tampering, or a bug in the implementation; the operator diagnostic tells them exactly which directories to clean.
+- **Parent-directory listing cost**: recovery reads `os.listdir(parent_of_root)`. For `.haex-hive/` the parent is the repo root, which may contain many entries; the check is bounded to matching `<root>{,.next,.prev}` and is O(entries) with tiny constants. Not a concern at realistic repo sizes.
 
 ---
 
@@ -191,7 +220,7 @@
 - The existing `.haex-hive/install.lock` schema is EXTENDED with `atoms`, `overlay_paths` per participating root, a `visibility_marker` block, `participating_roots`, and a versioned `ownership` set. Digest fields move to base64url no-pad. **Under the project's pre-user policy** (no external adopters, breaking changes fine — see `haex_hive_pre_user.md` in agent memory), this is a hard cut: a Spec 007-vintage `install.lock` fails Spec 008 schema validation with `InstallLockSchemaInvalidError` and there is no in-tool migration. Operator recovery is to remove the stale file and re-run `haex constitution assemble`.
 - `haex constitution assemble` (invoked directly) still works — it becomes a shortcut that runs the install transaction with a plan filtered to constitution-only steps. This preserves the current UX.
 - Multi-source LLM-merge (Spec 007's `--llm=file` two-phase flow) is preserved unchanged.
-- Shared path helpers derive `$HAEX_HIVE_STATE`, the canonical project identity, its SHA-256 `<repo-key>`, the repository mutex, and a checkout-scoped journal under `checkouts/<checkout-key>/`. Both `constitution assemble` and `constitution show` use these helpers. No in-repository transaction lock or journal is created or inspected.
+- Shared path helpers derive `$HAEX_HIVE_STATE`, the canonical project identity, its SHA-256 `<repo-key>`, and the repository mutex. Both `constitution assemble` and `constitution show` use these helpers. The rename-swap contract (R1) plus in-flight recovery state (R7) replace the earlier durable-JSONL-journal design; no journal file is created inside the state root by either command.
 - The pre-user rollout guarantees that no older haex process is active during installation, so no cross-version writer exclusion is required.
 
 **Rationale**:
