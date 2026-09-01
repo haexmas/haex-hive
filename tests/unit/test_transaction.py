@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -293,6 +294,7 @@ def test_concurrent_writer_refused(tmp_path: Path) -> None:
 
 
 def _sample_token() -> OwnerToken:
+    """Return a stable owner token for writer-lock tests."""
     return OwnerToken(
         pid=12345,
         hostname="test-host",
@@ -319,6 +321,27 @@ def test_writer_lock_writes_mutex_metadata_when_owner_token_supplied(
     assert isinstance(record["heartbeat_at_ns_wallclock"], int)
 
 
+def test_writer_lock_releases_after_initial_metadata_write_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed initial write must not leave the mutex held by this process."""
+    lock_path = tmp_path / "install.mutex"
+    write_failure = Mock(side_effect=OSError("metadata write failed"))
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            writer_lock.ConstitutionWriterLock,
+            "_rewrite_locked_bytes",
+            write_failure,
+        )
+        with pytest.raises(
+            OSError, match="metadata write failed"
+        ), writer_lock.ConstitutionWriterLock(lock_path, _sample_token()):
+            pass
+
+    with writer_lock.ConstitutionWriterLock(lock_path):
+        pass
+
+
 def test_writer_lock_heartbeat_updates_in_place_without_changing_inode(
     tmp_path: Path,
 ) -> None:
@@ -329,7 +352,7 @@ def test_writer_lock_heartbeat_updates_in_place_without_changing_inode(
         initial = json.loads(lock_path.read_bytes())
         # Ensure the wall clock advances beyond nanosecond granularity.
         import time as _time
-        _time.sleep(0.001)
+        _time.sleep(0.05)
         lock.heartbeat()
         after = json.loads(lock_path.read_bytes())
         inode_after = lock_path.stat().st_ino
