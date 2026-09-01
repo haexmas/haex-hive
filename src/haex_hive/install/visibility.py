@@ -30,9 +30,15 @@ class RootDigest:
 
     root: str
     content_integrity: str
-    overlay_paths: list[str] | None = None
+    overlay_paths: tuple[str, ...] | None = None
+
+    def __post_init__(self) -> None:
+        """Normalize the optional allowlist to an immutable tuple."""
+        if self.overlay_paths is not None:
+            object.__setattr__(self, "overlay_paths", tuple(self.overlay_paths))
 
     def to_dict(self) -> dict[str, Any]:
+        """Return the schema shape, converting immutable paths to a list."""
         obj: dict[str, Any] = {
             "root": self.root,
             "content_integrity": self.content_integrity,
@@ -53,6 +59,8 @@ class VisibilityMarker:
     written_at: str | None = None
 
     def __post_init__(self) -> None:
+        """Normalize roots and reject empty or duplicate participating roots."""
+        object.__setattr__(self, "participating_roots", tuple(self.participating_roots))
         if not self.participating_roots:
             raise ValueError("participating_roots must be non-empty")
         seen: set[str] = set()
@@ -62,6 +70,7 @@ class VisibilityMarker:
             seen.add(entry.root)
 
     def to_dict(self) -> dict[str, Any]:
+        """Return the JSON-compatible visibility marker representation."""
         obj: dict[str, Any] = {
             "haex_hive_version": self.haex_hive_version,
             "generation_id": self.generation_id,

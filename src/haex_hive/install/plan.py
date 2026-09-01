@@ -11,10 +11,12 @@ from __future__ import annotations
 import base64
 import hashlib
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from haex_hive.install.journal import canonical_json
+from haex_hive.model._immutable import freeze_json, thaw_json
 
 StepType = Literal[
     "stage_file",
@@ -33,14 +35,19 @@ class PlanStep:
     step_id: int
     step_type: StepType
     participating_root: str
-    payload: dict[str, Any] = field(default_factory=dict)
+    payload: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Copy and recursively freeze payload data at construction time."""
+        object.__setattr__(self, "payload", freeze_json(dict(self.payload)))
 
     def to_dict(self) -> dict[str, Any]:
+        """Return a detached JSON-serializable representation of this step."""
         return {
             "step_id": self.step_id,
             "step_type": self.step_type,
             "participating_root": self.participating_root,
-            "payload": dict(self.payload),
+            "payload": thaw_json(self.payload),
         }
 
 
@@ -56,12 +63,24 @@ class PlanSnapshot:
 
     sealed_at_ns: int
     haex_hive_json_digest: str
-    publisher_manifest_digests: dict[str, str]
-    atom_manifest_digests: dict[str, str]
+    publisher_manifest_digests: Mapping[str, str]
+    atom_manifest_digests: Mapping[str, str]
     steps: tuple[PlanStep, ...]
     plan_snapshot_digest: str
 
     def __post_init__(self) -> None:
+        """Normalize snapshot collections and validate the sealed digest."""
+        object.__setattr__(
+            self,
+            "publisher_manifest_digests",
+            freeze_json(dict(self.publisher_manifest_digests)),
+        )
+        object.__setattr__(
+            self,
+            "atom_manifest_digests",
+            freeze_json(dict(self.atom_manifest_digests)),
+        )
+        object.__setattr__(self, "steps", tuple(self.steps))
         if self.sealed_at_ns < 0:
             raise ValueError(f"sealed_at_ns must be non-negative: {self.sealed_at_ns}")
         if not self.steps:
@@ -70,6 +89,16 @@ class PlanSnapshot:
         if step_ids != list(range(len(self.steps))):
             raise ValueError(
                 f"step_id sequence must be 0..N-1 monotonic, got {step_ids}"
+            )
+        expected_digest = _plan_snapshot_digest(
+            haex_hive_json_digest=self.haex_hive_json_digest,
+            publisher_manifest_digests=self.publisher_manifest_digests,
+            atom_manifest_digests=self.atom_manifest_digests,
+            steps=self.steps,
+        )
+        if self.plan_snapshot_digest != expected_digest:
+            raise ValueError(
+                "plan_snapshot_digest does not match the sealed plan contents"
             )
 
     @classmethod
@@ -101,8 +130,8 @@ class PlanSnapshot:
         return cls(
             sealed_at_ns=actual_sealed_at_ns,
             haex_hive_json_digest=haex_hive_json_digest,
-            publisher_manifest_digests=dict(publisher_manifest_digests),
-            atom_manifest_digests=dict(atom_manifest_digests),
+            publisher_manifest_digests=publisher_manifest_digests,
+            atom_manifest_digests=atom_manifest_digests,
             steps=steps,
             plan_snapshot_digest=plan_snapshot_digest,
         )
@@ -120,18 +149,59 @@ class CommitSnapshot:
 
     haex_hive_json_digest: str
     haex_hive_json_bytes: bytes
-    publisher_manifest_digests: dict[str, str]
-    publisher_manifest_bytes: dict[str, bytes]
-    atom_manifest_digests: dict[str, str]
-    atom_manifest_bytes: dict[str, bytes]
+    publisher_manifest_digests: Mapping[str, str]
+    publisher_manifest_bytes: Mapping[str, bytes]
+    atom_manifest_digests: Mapping[str, str]
+    atom_manifest_bytes: Mapping[str, bytes]
 
     def __post_init__(self) -> None:
+        """Freeze captured inputs and validate each digest against its bytes."""
+        object.__setattr__(self, "haex_hive_json_bytes", bytes(self.haex_hive_json_bytes))
+        object.__setattr__(
+            self,
+            "publisher_manifest_digests",
+            freeze_json(dict(self.publisher_manifest_digests)),
+        )
+        object.__setattr__(
+            self,
+            "publisher_manifest_bytes",
+            freeze_json(
+                {key: bytes(value) for key, value in self.publisher_manifest_bytes.items()}
+            ),
+        )
+        object.__setattr__(
+            self,
+            "atom_manifest_digests",
+            freeze_json(dict(self.atom_manifest_digests)),
+        )
+        object.__setattr__(
+            self,
+            "atom_manifest_bytes",
+            freeze_json(
+                {key: bytes(value) for key, value in self.atom_manifest_bytes.items()}
+            ),
+        )
         _expect_same_keys(
             "publisher_manifest",
             self.publisher_manifest_digests,
             self.publisher_manifest_bytes,
         )
         _expect_same_keys(
+            "atom_manifest",
+            self.atom_manifest_digests,
+            self.atom_manifest_bytes,
+        )
+        _expect_digest(
+            "haex_hive_json",
+            self.haex_hive_json_digest,
+            self.haex_hive_json_bytes,
+        )
+        _expect_map_digests(
+            "publisher_manifest",
+            self.publisher_manifest_digests,
+            self.publisher_manifest_bytes,
+        )
+        _expect_map_digests(
             "atom_manifest",
             self.atom_manifest_digests,
             self.atom_manifest_bytes,
@@ -149,8 +219,8 @@ class CommitSnapshot:
 def _digest_preimage(
     *,
     haex_hive_json_digest: str,
-    publisher_manifest_digests: dict[str, str],
-    atom_manifest_digests: dict[str, str],
+    publisher_manifest_digests: Mapping[str, str],
+    atom_manifest_digests: Mapping[str, str],
     steps: tuple[PlanStep, ...],
 ) -> bytes:
     """Canonical UTF-8 JSON preimage for the plan_snapshot_digest."""
@@ -163,11 +233,57 @@ def _digest_preimage(
     return canonical_json(body)
 
 
+def _plan_snapshot_digest(
+    *,
+    haex_hive_json_digest: str,
+    publisher_manifest_digests: Mapping[str, str],
+    atom_manifest_digests: Mapping[str, str],
+    steps: tuple[PlanStep, ...],
+) -> str:
+    """Return the SRI digest for the mutation-relevant plan fields."""
+    digest = hashlib.sha256(
+        _digest_preimage(
+            haex_hive_json_digest=haex_hive_json_digest,
+            publisher_manifest_digests=publisher_manifest_digests,
+            atom_manifest_digests=atom_manifest_digests,
+            steps=steps,
+        )
+    ).digest()
+    return "sha256-" + base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+
+def _content_digest(content: bytes) -> str:
+    """Return the base64url-nopad SHA-256 digest used by install snapshots."""
+    digest = hashlib.sha256(content).digest()
+    return "sha256-" + base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+
+def _expect_digest(field_name: str, recorded: str, content: bytes) -> None:
+    """Raise when one recorded content digest does not match its bytes."""
+    actual = _content_digest(content)
+    if recorded != actual:
+        raise ValueError(
+            f"{field_name} digest does not match captured bytes: "
+            f"expected {recorded}, got {actual}"
+        )
+
+
+def _expect_map_digests(
+    field_name: str,
+    digests: Mapping[str, str],
+    bytes_map: Mapping[str, bytes],
+) -> None:
+    """Validate every recorded digest in a keyed byte map."""
+    for key, recorded in digests.items():
+        _expect_digest(f"{field_name}[{key!r}]", recorded, bytes_map[key])
+
+
 def _expect_same_keys(
     field_name: str,
-    digests: dict[str, str],
-    bytes_map: dict[str, bytes],
+    digests: Mapping[str, str],
+    bytes_map: Mapping[str, bytes],
 ) -> None:
+    """Require a one-to-one correspondence between digest and byte keys."""
     if set(digests) != set(bytes_map):
         missing = set(digests) - set(bytes_map)
         extra = set(bytes_map) - set(digests)
