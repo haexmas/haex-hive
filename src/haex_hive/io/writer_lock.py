@@ -18,7 +18,6 @@ top of the `heartbeat()` primitive this module exposes.
 from __future__ import annotations
 
 import errno
-import json
 import os
 import sys
 import time
@@ -26,10 +25,16 @@ from pathlib import Path
 from types import TracebackType
 
 from haex_hive.install.lock import OwnerToken
+from haex_hive.io import json_deterministic
 from haex_hive.util.errors import ConstitutionWriterBusyError
 
 _IS_WINDOWS = sys.platform == "win32"
 _ERROR_LOCK_VIOLATION = 33
+# Windows byte-range locks are mandatory, unlike POSIX advisory locks. Keep the
+# coordination byte beyond the payload so readers can inspect install.mutex
+# while its owner still holds the exclusive lock.
+_WINDOWS_LOCK_OFFSET = 0x7FFF_FFFF
+_WINDOWS_LOCK_LENGTH = 1
 
 HEARTBEAT_INTERVAL_NS = 5_000_000_000        # 5 seconds
 TTL_NS = 60_000_000_000                      # 60 seconds
@@ -61,7 +66,7 @@ def _mutex_payload(
         "ttl_ns": TTL_NS,
         "safety_margin_ns": SAFETY_MARGIN_NS,
     }
-    return json.dumps(obj, sort_keys=True, indent=2).encode("utf-8") + b"\n"
+    return json_deterministic.dumps(obj)
 
 
 class ConstitutionWriterLock:
@@ -90,13 +95,23 @@ class ConstitutionWriterLock:
         self._acquired_at_ns: int | None = None
 
     def __enter__(self) -> ConstitutionWriterLock:
+        """Acquire the OS lock and publish owner metadata when requested."""
         self._lock_path.parent.mkdir(parents=True, exist_ok=True)
         if _IS_WINDOWS:
             self._acquire_windows()
         else:
             self._acquire_posix()
         if self._owner_token is not None:
-            self._write_initial_payload()
+            try:
+                self._write_initial_payload()
+            except BaseException:
+                try:
+                    if _IS_WINDOWS:
+                        self._release_windows()
+                    else:
+                        self._release_posix()
+                finally:
+                    raise
         return self
 
     def __exit__(
@@ -105,6 +120,7 @@ class ConstitutionWriterLock:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
+        """Release the OS lock and close its underlying handle."""
         if _IS_WINDOWS:
             self._release_windows()
         else:
@@ -123,6 +139,7 @@ class ConstitutionWriterLock:
         self._rewrite_locked_bytes(payload)
 
     def _write_initial_payload(self) -> None:
+        """Write the first owner-metadata snapshot through the locked handle."""
         now_ns = time.time_ns()
         self._acquired_at_ns = now_ns
         assert self._owner_token is not None
@@ -141,6 +158,7 @@ class ConstitutionWriterLock:
             self._rewrite_posix(payload)
 
     def _rewrite_posix(self, payload: bytes) -> None:
+        """Replace the payload in place and flush it durably on POSIX."""
         assert self._fd is not None
         os.lseek(self._fd, 0, os.SEEK_SET)
         os.ftruncate(self._fd, 0)
@@ -151,6 +169,7 @@ class ConstitutionWriterLock:
         os.fsync(self._fd)
 
     def _rewrite_windows(self, payload: bytes) -> None:
+        """Replace the payload in place and flush it durably on Windows."""
         import ctypes
         from ctypes import wintypes
 
@@ -180,6 +199,7 @@ class ConstitutionWriterLock:
             raise ctypes.WinError()
 
     def _acquire_posix(self) -> None:
+        """Open the mutex and acquire a non-blocking POSIX advisory lock."""
         import fcntl
 
         fd = os.open(str(self._lock_path), os.O_RDWR | os.O_CREAT, 0o644)
@@ -195,6 +215,7 @@ class ConstitutionWriterLock:
         self._fd = fd
 
     def _release_posix(self) -> None:
+        """Release and close the POSIX mutex descriptor, if acquired."""
         import fcntl
 
         if self._fd is not None:
@@ -205,6 +226,7 @@ class ConstitutionWriterLock:
                 self._fd = None
 
     def _acquire_windows(self) -> None:
+        """Open the mutex and acquire its non-blocking Windows lock byte."""
         import ctypes
         from ctypes import wintypes
 
@@ -242,12 +264,14 @@ class ConstitutionWriterLock:
             ]
 
         overlapped = OVERLAPPED()
+        overlapped.Offset = _WINDOWS_LOCK_OFFSET
+        overlapped.OffsetHigh = 0
         result = kernel32.LockFileEx(
             wintypes.HANDLE(handle),
             wintypes.DWORD(LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY),
+            wintypes.DWORD(_WINDOWS_LOCK_OFFSET),
+            wintypes.DWORD(_WINDOWS_LOCK_LENGTH),
             wintypes.DWORD(0),
-            wintypes.DWORD(0xFFFFFFFF),
-            wintypes.DWORD(0xFFFFFFFF),
             ctypes.byref(overlapped),
         )
         if not result:
@@ -261,6 +285,7 @@ class ConstitutionWriterLock:
         self._handle = handle
 
     def _release_windows(self) -> None:
+        """Close the Windows mutex handle, releasing its byte-range lock."""
         import ctypes
         from ctypes import wintypes
 
