@@ -448,7 +448,13 @@ def _read_atom_manifest_bytes(
     """Fetch an atom's `manifest.json` bytes via the publisher's atoms map."""
     from haex_hive.model.publisher_manifest import PublisherManifest
 
-    publisher = PublisherManifest.from_json(publisher_bytes)
+    try:
+        publisher = PublisherManifest.from_json(publisher_bytes)
+    except (ValueError, KeyError) as exc:
+        raise MissingPublisherManifestError(
+            message=f"publisher manifest at {revision[:12]} is invalid: {exc}",
+            context={"sha_short": revision[:12]},
+        ) from exc
     entry = publisher.atoms.get(atom_id)
     if entry is None:
         raise MissingAtomManifestError(
