@@ -45,18 +45,36 @@ Renames A and B are each atomic on POSIX (`rename(2)`) and Windows (`MoveFileExW
 
 ## R2. Same-filesystem staging layout
 
-**Decision**: Stage all pre-publication bytes under a per-generation sibling directory of each participating output root, named `<root>.staging.<gen>/`. Example: `.haex-hive.staging.g_20260831T142011Z_a4c2/`. `<gen>` is the time-based, collision-checked generation identifier from R8.
+**Decision**: For the haex-owned `.haex-hive/` root, stage all pre-publication
+bytes under the same-filesystem sibling `<root>.next/`. Mixed-ownership roots
+use the versioned adapter-owned overlay generations defined by R3 and never
+receive a transaction-owned `.next` or `.prev` directory. The generation ID
+from R8 is recorded in the staged metadata and overlay-generation name.
 
 **Rationale**:
-- Guarantees `os.replace(staged_file, canonical_file)` stays on the same filesystem — a rename that crosses filesystems degrades to copy+unlink and loses atomicity.
-- Sibling-directory naming is clearly not the operator's — the `.staging.<gen>` suffix identifies the transaction's ownership and disambiguates concurrent invocations even if the lock were somehow bypassed.
-- Cleanup is trivial: after successful publication, the whole staging directory is `rmtree`d as the transaction's final step.
+- Guarantees the directory rename from `<root>.next` to `<root>` stays on the
+  same filesystem — a cross-filesystem rename would degrade to copy+unlink and
+  lose atomicity.
+- The fixed `.next` name is the durable state inspected by R1 and R7; the
+  exclusive install lock serialises transactions, so a per-generation staging
+  suffix is unnecessary.
+- Cleanup is trivial: after successful publication, the retained
+  `<root>.prev` directory is `rmtree`d as the transaction's final step.
 
 **Alternatives considered**:
-- **Central `$HAEX_HIVE_STATE/staging/<repo-identity>/<gen>/`**: could cross filesystems (state root often on a different volume than the project checkout). Rejected — same-filesystem invariant broken.
-- **`<root>/.staging/`**: an inside-the-root staging subdirectory. Rejected for mixed-ownership roots (`.claude/`, `.codex/`) — the transaction is not allowed to enumerate or write siblings inside those roots, and a `.staging` subdirectory would violate that.
+- **Central `$HAEX_HIVE_STATE/staging/<repo-identity>/<gen>/`**: could cross
+  filesystems (state root often on a different volume than the project
+  checkout). Rejected — same-filesystem invariant broken.
+- **`<root>.staging.<gen>/`**: would introduce a durable state not covered by
+  R1/R7. Rejected in favour of the fixed `<root>.next/` name.
+- **`<root>/.staging/`**: an inside-the-root staging subdirectory. Rejected for
+  mixed-ownership roots (`.claude/`, `.codex/`) because the transaction may not
+  enumerate or write siblings inside those roots.
 
-**Residual risk**: interrupted install leaves `<root>.staging.<gen>/` (renamed `<root>.next/` in the R1 rename-swap contract for `.haex-hive/`) behind. Recovery inspects the three directory names — `<root>/`, `<root>.next/`, `<root>.prev/` — and dispatches per R7. A stale directory from an abandoned pre-lock crash is cleaned on next successful acquisition of the exclusive lock.
+**Residual risk**: an interrupted install leaves `<root>.next/` or
+`<root>.prev/` behind. Recovery inspects exactly those names alongside
+`<root>/` and dispatches per R7. Mixed-root overlay generations are recovered
+through their R3 pointer contract.
 
 ---
 
@@ -66,6 +84,15 @@ Renames A and B are each atomic on POSIX (`rename(2)`) and Windows (`MoveFileExW
 - **Directory-scoped overlay** (e.g. `.claude/skills/`, `.claude/agents/`): POSIX → `os.symlink()`; Windows → directory junction via `mklink /J` or the `CreateSymbolicLinkW` API with `SYMBOLIC_LINK_FLAG_DIRECTORY`. Junctions work on Windows without Developer Mode.
 - **File-scoped overlay** (e.g. `.claude/settings.json`): POSIX → `os.symlink()`; Windows without Developer Mode → **refused per FR-003**, install exits with a diagnostic naming the unsupported path. Launcher-indirection for file-scoped overlays is a future refinement (Spec 010 or later); not in Spec 008 scope.
 - Every overlay is recorded in `install.lock`'s per-root `overlay_paths` array; publication touches ONLY the paths in that array; sibling entries in the mixed-ownership root are never enumerated, copied, or replaced (FR-003).
+
+The new overlay generation is fully materialised and verified before its
+current-generation pointer is switched. That pointer switch occurs while the
+old `.haex-hive/visibility.json` marker is still live; a reader that sees the
+new overlay with the old marker observes a digest mismatch and reports the
+installation as unavailable. If the process stops before the haex-owned
+rename-swap publishes the new marker, recovery restores the prior overlay
+pointer from its retained generation. After the marker is published, recovery
+keeps the new pointer and only removes obsolete generations.
 
 **Rationale**:
 - Directory junctions on Windows are OS-native, need no elevation, work identically to symlinks for readers, and cover the common case of adapters that publish a whole directory of skills/agents/rules.
@@ -156,31 +183,39 @@ Renames A and B are each atomic on POSIX (`rename(2)`) and Windows (`MoveFileExW
 
 ## R7. In-flight recovery via directory-name state
 
-**Decision**: There is no durable JSONL journal, no tail-hash chain, and no per-entry sidecar. The transaction's in-flight state is encoded entirely in the presence or absence of three directory names beside each participating output root:
+**Decision**: There is no durable JSONL journal, no tail-hash chain, and no per-entry sidecar. For each haex-owned output root, the transaction's in-flight state is encoded entirely in the presence or absence of three directory names beside the root:
 
 - `<root>/` — the live generation. Its `visibility.json` names the currently-published `generation_id`.
 - `<root>.next/` — a staged, verified fresh generation, ready to become live but not yet renamed in.
-- `<root>.prev/` — the previous live generation, retained during the swap so it can be restored on a mid-swap crash.
+- `<root>.prev/` — the previous live generation, retained during the swap so it can be restored on a mid-swap crash. Mixed-ownership roots use the retained overlay generations and stable pointers defined by R3 instead of these directory names.
 
-Every install transitions through these three names in the R1 rename-swap order. Recovery reads the directory listing on every `haex install` startup (or `haex verify --recover`) and dispatches on the combination it observes. No other durable state is required.
+Every haex-owned install transitions through these three names in the R1 rename-swap order. Recovery reads the directory listing on every `haex install` startup (or `haex verify --recover`) and dispatches on the combination it observes. Mixed-root recovery uses the adapter's retained generation and pointer state. No separate journal is required.
 
-**Recovery state table** for one participating root:
+**Recovery state table** for one haex-owned root:
 
 | `<root>/` | `<root>.next/` | `<root>.prev/` | Interpretation | Recovery action |
 |---|---|---|---|---|
 | present | absent | absent | steady state — nothing in flight | none |
 | present | present | absent | pre-swap crash (staging existed but rename A did not run) | `rmtree(<root>.next/)`; rerun of install proceeds normally |
-| absent | present | present | mid-swap crash between rename A and rename B | complete forward: `os.rename(<root>.next/, <root>/)`, then `rmtree(<root>.prev/)` |
-| present | absent | present | post-swap crash before cleanup | `rmtree(<root>.prev/)` |
-| absent | absent | present | rename B ran but somehow lost `<root>.next/` — treated as data-integrity failure | refuse; require operator to `rmtree(<root>.prev/)` manually and re-install |
+| absent | present | present | mid-swap crash between rename A and rename B | verify `<root>.next/`; if valid, complete forward with `os.rename(<root>.next/, <root>/)` and then `rmtree(<root>.prev/)`; otherwise restore a verified `<root>.prev/` |
+| present | absent | present | post-swap crash before cleanup | verify the live marker; clean `<root>.prev/` if valid, otherwise restore the verified `<root>.prev/` with `os.rename(<root>.prev/, <root>/)` |
+| absent | absent | present | rename A completed but the staged generation was lost or invalid | restore a verified `<root>.prev/` with `os.rename(<root>.prev/, <root>/)`; refuse if it does not verify |
 | present | present | present | reserved illegal combination (would require concurrent installs; the exclusive lock forbids it) | refuse; require operator cleanup |
-| absent | present | absent | mid-swap crash immediately after rename A but rename B failed AND `<root>.prev/` lost — treated as data-integrity failure | refuse; recover from git |
+| absent | present | absent | first-install crash before rename B, or rename A completed but `<root>.prev/` was lost | verify `<root>.next/` and complete forward with `os.rename(<root>.next/, <root>/)`; refuse if it does not verify |
 | absent | absent | absent | fresh checkout, no install ever ran | none — install proceeds |
 
-Recovery always completes **forward** when a verified `<root>.next/` is present alongside `<root>.prev/`. This satisfies FR-011 (`complete-new-generation` or `rollback-to-previous-generation` — never a torn state) while keeping the recovery decision deterministic: a `<root>.next/` that reached the point of rename A was already digest-verified in step 2 of R1, so completing forward is safe under pre-user policy.
+Recovery completes **forward** only when the staged generation verifies against
+its marker and root digests. If the staged generation is absent or fails
+verification while a verified `<root>.prev/` exists, recovery restores that
+previous generation with one rename and fsyncs the parent. This makes rollback
+reachable without a journal and satisfies FR-011: recovery produces either a
+valid new generation or the intact previous generation, never a torn state.
 
 **Rationale**:
-- **The filesystem IS the durable state**. Three directory names covering 2³ = 8 combinations is a complete state machine; five are legal, three are integrity failures. No journal file to append, no chain to verify, no sidecar to synchronise.
+- **The filesystem IS the durable state**. The three directory names cover all
+  2³ combinations; recovery verifies the candidate generation before choosing
+  forward completion or restoration from `.prev`. No journal file, chain, or
+  sidecar must be synchronised.
 - **Renames are the only durable state transitions**. Because both step 3 and step 4 of R1 are atomic single syscalls, every intermediate observable state is one of the eight rows above.
 - **No parallel state to keep in sync**. The previous JSONL-plus-sidecar design had two files (`install.journal` and `install.journal.meta`) whose atomic update relative to each other required its own recovery logic. That whole layer disappears.
 
@@ -190,7 +225,10 @@ Recovery always completes **forward** when a verified `<root>.next/` is present 
 - **Retain the JSONL journal for extensibility** (Spec 009 hooks, Spec 010 adapters). Rejected in this rewrite: Spec 009 hooks run before rename A, so their outputs are staged into `<root>.next/` and covered by the same state machine; Spec 010 mixed-ownership overlays get their own symlink-swap contract per R3.
 
 **Residual risk**:
-- **Integrity failures** (rows 5, 6 above) require operator action. In practice these arise only from filesystem corruption, out-of-band tampering, or a bug in the implementation; the operator diagnostic tells them exactly which directories to clean.
+- **Integrity failures** (an illegal combination or a candidate generation that
+  fails verification) require operator action. In practice these arise only
+  from filesystem corruption, out-of-band tampering, or an implementation bug;
+  the operator diagnostic tells them exactly which directories to clean.
 - **Parent-directory listing cost**: recovery reads `os.listdir(parent_of_root)`. For `.haex-hive/` the parent is the repo root, which may contain many entries; the check is bounded to matching `<root>{,.next,.prev}` and is O(entries) with tiny constants. Not a concern at realistic repo sizes.
 
 ---
@@ -200,7 +238,7 @@ Recovery always completes **forward** when a verified `<root>.next/` is present 
 **Decision**: `g_<UTC-ISO8601-basic-format>_<content-hash-prefix>` — e.g. `g_20260831T142011Z_a4c2` — where `<content-hash-prefix>` is the first 4 hex chars of `SHA-256(plan-snapshot-digest)`. The timestamp is the UTC allocation time, not a deterministic input. The allocator advances the timestamp if the candidate equals an existing generation ID, making IDs unique and lexicographically time-ordered under the exclusive install lock.
 
 **Rationale**:
-- **Stable plan identity** — the hash suffix is derived from the sealed plan snapshot, while the timestamp identifies allocation order. Recovery uses the generation ID recorded in the journal rather than recomputing the full ID from inputs.
+- **Stable plan identity** — the hash suffix is derived from the sealed plan snapshot, while the timestamp identifies allocation order. Recovery uses the generation ID recorded in the staged marker rather than recomputing the full ID from inputs.
 - **Human-inspectable** — the timestamp lets the operator eyeball the install order in `.haex-hive/visibility.json.previous/` (if we ever add generation history — future revision).
 - **UTC ISO 8601 basic** — no locale-specific format issues, sortable as ASCII.
 
@@ -265,17 +303,18 @@ Each `paths[]` record contains the root-relative POSIX path, an owner resource
 and its prior digest (or `null`). The array is unique and bytewise sorted.
 
 The previous and current ownership sets are the only inputs to orphan planning.
-For every write or delete, the journal records the pre-image existence, digest,
-and a transaction-relative rollback reference before the mutation. The rollback
-reference is never an absolute path and is not persisted in the committed lock;
-it points to the same-filesystem rollback tree while the journal is live. This
-allows rollback to restore deleted bytes while ensuring an unowned sibling in a
-mixed-ownership root is never inferred or touched.
+The ownership sets describe which paths belong to the current generation and
+which paths are removed by omission from the next generation. Actual rollback
+bytes are retained by the complete `<root>.prev/` tree for haex-owned roots or
+by the prior adapter overlay generation for mixed-ownership roots. Rollback
+restores that prior generation as a whole; no journal, per-path pre-image, or
+transaction-relative rollback reference is required, and unowned siblings are
+never inferred or touched.
 
 **Rationale**: Aggregate root digests prove what a generation contains but cannot
 answer who owns a path or whether a deletion is safe. A versioned ownership set
-provides that planning boundary while journal pre-images provide the bytes needed
-for recovery.
+provides that planning boundary, while retained prior generations provide the
+bytes needed for recovery.
 
 ---
 
@@ -284,7 +323,7 @@ for recovery.
 Recorded for the plan phase; each has a mitigation baked into R1–R6.
 
 - **`os.replace()` on Windows with a held reader handle** — see R1 residual risk (retry-backoff-then-refuse).
-- **Windows directory-junction creation** — `mklink /J` is a command-line fallback for directory targets; `CreateSymbolicLinkW(..., SYMBOLIC_LINK_FLAG_DIRECTORY)` is the native API path. Both refuse an existing matching entry. Before removal, publication moves the existing overlay to the transaction rollback tree and records the pre-image and pointer path in the journal. It then creates the new junction/symlink; on creation failure or crash before marker publication, recovery restores the saved overlay, and after marker publication cleanup removes the backup only after the new pointer verifies. The rollback path and generation are recorded in journal metadata and the ownership set.
+- **Windows directory-junction creation** — `mklink /J` is a command-line fallback for directory targets; `CreateSymbolicLinkW(..., SYMBOLIC_LINK_FLAG_DIRECTORY)` is the native API path. Both refuse an existing matching entry. The prior overlay generation remains available until the new pointer and marker have been verified; on creation failure or a crash before marker publication, recovery restores the prior pointer, and after marker publication cleanup removes the obsolete generation only after the new pointer verifies. The rollback generation and ownership set are recorded in the install metadata.
 - **Windows without Developer Mode + file-scoped symlink** — refuse per R3.
 - **`fcntl.flock` unavailable on Windows** — use `LockFileEx` through `ctypes` (R6); the lock module's Windows tests cover two concurrent readers and a writer excluded until both readers release.
 - **Path separators** — every path stored on disk is POSIX-normalised (`/`); Windows-side code converts at the OS boundary only.
@@ -295,7 +334,7 @@ Recorded for the plan phase; each has a mitigation baked into R1–R6.
 ## R12. Test infrastructure for the conformance suite
 
 **Decision**:
-- **Crash injection**: monkey-patch a controlled subset of `install/` module entrypoints to raise `SystemExit(137)` at chosen states. The pytest fixture parametrises across the journal state matrix.
+- **Crash injection**: monkey-patch a controlled subset of `install/` module entrypoints to raise `SystemExit(137)` at chosen states. The pytest fixture parametrises across the in-flight directory-state matrix and mixed-root pointer exchange.
 - **Concurrent invocation**: `multiprocessing.Process` fires the second install; the primary asserts the second's exit code, stderr contains the winner's owner token, and no output file was touched by the second.
 - **Mid-install source mutation**: a background thread rewrites `.haex-hive.json` at the moment the plan snapshot completes; the assertion is `haex install` exits with the commit-time-mismatch diagnostic and no output was published.
 - **Unowned-file survival**: the fixture pre-populates `.claude/` and `.codex/` with files not in the overlay_paths allowlist; the assertion is those files are byte-identical after install and after recovery.
