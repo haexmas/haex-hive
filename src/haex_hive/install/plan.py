@@ -15,7 +15,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from haex_hive.install.journal import canonical_json
+from haex_hive.io.json_deterministic import compact_json
 from haex_hive.model._immutable import freeze_json, thaw_json
 
 StepType = Literal[
@@ -230,7 +230,7 @@ def _digest_preimage(
         "atom_manifest_digests": dict(atom_manifest_digests),
         "steps": [step.to_dict() for step in steps],
     }
-    return canonical_json(body)
+    return compact_json(body)
 
 
 def _plan_snapshot_digest(
