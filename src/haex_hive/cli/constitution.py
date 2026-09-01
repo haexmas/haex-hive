@@ -10,14 +10,13 @@ from haex_hive.constitution.assemble import assemble_multi_source, assemble_sing
 from haex_hive.constitution.resolve import resolve_constitution_contributions
 from haex_hive.constitution.show import show as render_constitution
 from haex_hive.install import inflight
-from haex_hive.install.errors import busy_lock_from_mutex
-from haex_hive.install.lock import HeartbeatThread, OwnerToken
+from haex_hive.install.lock import OwnerToken
 from haex_hive.io import transaction
 from haex_hive.io.state import default_state_root, transaction_paths
 from haex_hive.io.writer_lock import ConstitutionWriterLock
 from haex_hive.model.consumer_manifest import ConsumerManifest
 from haex_hive.util import exit_codes
-from haex_hive.util.errors import ConstitutionWriterBusyError, HaexError, NoSourcesDeclaredError
+from haex_hive.util.errors import HaexError, NoSourcesDeclaredError
 
 
 def _state_root() -> Path:
@@ -70,14 +69,7 @@ def run_assemble(args: argparse.Namespace) -> int:
 
     try:
         paths = transaction_paths(repo_root, state_root)
-        lock = ConstitutionWriterLock(paths.mutex, OwnerToken.emit())
-        try:
-            lock.__enter__()
-        except ConstitutionWriterBusyError as exc:
-            raise busy_lock_from_mutex(paths.mutex) from exc
-        heartbeat = HeartbeatThread(lock)
-        heartbeat.start()
-        try:
+        with ConstitutionWriterLock(paths.mutex, OwnerToken.emit()):
             inflight.resolve(repo_root / transaction.HAEX_HIVE_DIR)
 
             manifest = _load_consumer_manifest(repo_root)
@@ -113,9 +105,6 @@ def run_assemble(args: argparse.Namespace) -> int:
                 tool_version=INSTALLED_VERSION_STRING,
                 state_root=state_root,
             )
-        finally:
-            heartbeat.stop()
-            lock.__exit__(None, None, None)
     except HaexError:
         raise
     except (OSError, ValueError) as exc:
