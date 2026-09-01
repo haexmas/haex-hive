@@ -17,6 +17,7 @@ from haex_hive.constitution.llm import (
     NoneMergeLLM,
     PendingMergeWritten,
     StdioMergeLLM,
+    generation_input_identities,
 )
 from haex_hive.constitution.pending import (
     load_pending,
@@ -33,6 +34,7 @@ from haex_hive.model.install_lock import (
     AssembledBy,
     ConstitutionLockSection,
     ConstitutionSource,
+    GenerationInputIdentity,
     InstallLock,
     VisibilityMarkerRef,
 )
@@ -71,6 +73,7 @@ def _publish_constitution(
     *,
     tool_version: str,
     state_root: Path | None = None,
+    generation_inputs: tuple[GenerationInputIdentity, ...] = (),
 ) -> None:
     """Publish the effective constitution and install.lock atomically.
 
@@ -117,9 +120,15 @@ def _publish_constitution(
         visibility_marker=VisibilityMarkerRef(
             generation_id=generation_id,
         ),
+        generation_inputs=tuple(
+            sorted(generation_inputs, key=lambda item: (item.kind, item.id))
+        )
+        or None,
         unknown_top_level=unknown_top_level,
     )
     lock_bytes = lock.to_json_bytes()
+    # Validate the complete lock envelope before any staged bytes are published.
+    InstallLock.from_json(lock_bytes)
     visibility_bytes = json_deterministic.dumps(marker_identity)
 
     def post_write_verify() -> None:
@@ -230,6 +239,7 @@ def assemble_multi_source(
             repo_root,
             tool_version=tool_version,
             state_root=state_root,
+            generation_inputs=generation_input_identities("file", pending.task_prompt),
         )
         with suppress(FileNotFoundError):
             pending_path(repo_root).unlink()
@@ -256,5 +266,6 @@ def assemble_multi_source(
         repo_root,
         tool_version=tool_version,
         state_root=state_root,
+        generation_inputs=result.generation_inputs,
     )
     return exit_codes.SUCCESS

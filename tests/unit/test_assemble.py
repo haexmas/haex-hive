@@ -92,3 +92,58 @@ def test_multi_source_adapter_receives_contributions_in_stable_order(
         == 0
     )
     assert received_ids == ["com.example.a", "com.example.z"]
+
+
+def test_multi_source_publishes_pinned_generation_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pass confirmed adapter identities into the published lock."""
+    contributions = [
+        ResolvedConstitutionContribution(
+            source=ConstitutionSource(
+                id="com.example.a", revision="0" * 40, source="https://example.com/a"
+            ),
+            body=b"a",
+        ),
+        ResolvedConstitutionContribution(
+            source=ConstitutionSource(
+                id="com.example.b", revision="1" * 40, source="https://example.com/b"
+            ),
+            body=b"b",
+        ),
+    ]
+    captured: dict = {}
+
+    class RecordingAdapter:
+        def merge(self, ordered, task_prompt: str) -> MergeResult:
+            del ordered, task_prompt
+            return MergeResult(
+                candidate=b"# merged\n",
+                confirmed=True,
+                generation_inputs=assemble.generation_input_identities(
+                    "test", "merge"
+                ),
+            )
+
+    def capture_publish(*args, **kwargs) -> None:
+        del args
+        captured.update(kwargs)
+
+    monkeypatch.setattr(assemble, "_select_adapter", lambda method, root: RecordingAdapter())
+    monkeypatch.setattr(assemble, "_publish_constitution", capture_publish)
+
+    assert (
+        assemble.assemble_multi_source(
+            contributions,
+            tmp_path,
+            llm_method="stdio",
+            accept_merged_path=None,
+            tool_version="2.0.0",
+        )
+        == 0
+    )
+    identities = captured["generation_inputs"]
+    assert [(item.kind, item.id) for item in identities] == sorted(
+        (item.kind, item.id) for item in identities
+    )
+    assert {item.kind for item in identities} == {"adapter", "tool-config"}

@@ -47,6 +47,7 @@
     },
     "constitutionBlock": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["sources", "assembled_by"],
       "properties": {
         "sources": { "type": "array" },
@@ -55,6 +56,7 @@
     },
     "atomInstallRecord": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["id", "source", "revision", "contributed_paths"],
       "properties": {
         "id": {

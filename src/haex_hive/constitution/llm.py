@@ -8,6 +8,7 @@ refuses).
 
 from __future__ import annotations
 
+import hashlib
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -20,7 +21,8 @@ from haex_hive.constitution.safety import (
     validate_no_plaintext_secrets,
     validate_terminal_safe_display,
 )
-from haex_hive.io import atomic
+from haex_hive.io import atomic, json_deterministic
+from haex_hive.model.install_lock import GenerationInputIdentity
 from haex_hive.util.errors import LlmRequiredForMultiSourceError
 
 _CONFIRM_RECORD = b"--haex-confirm: yes\n"
@@ -30,6 +32,7 @@ _CONFIRM_RECORD = b"--haex-confirm: yes\n"
 class MergeResult:
     candidate: bytes
     confirmed: bool
+    generation_inputs: tuple[GenerationInputIdentity, ...] = ()
 
 
 class PendingMergeWritten(Exception):
@@ -40,6 +43,44 @@ class MergeLLM(Protocol):
     def merge(
         self, contributions: Sequence[ResolvedConstitutionContribution], task_prompt: str
     ) -> MergeResult: ...
+
+
+_TEXT_SERIALIZATION_PROFILE = {
+    "format": "text",
+    "encoding": "UTF-8",
+    "newline": "LF",
+    "key_order": "not-applicable",
+    "indent": None,
+    "ensure_ascii": False,
+}
+
+
+def generation_input_identities(
+    adapter_name: str, task_prompt: str
+) -> tuple[GenerationInputIdentity, ...]:
+    """Return the pinned adapter and task-configuration identities."""
+    module_bytes = Path(__file__).read_bytes()
+    git_blob = b"blob " + str(len(module_bytes)).encode("ascii") + b"\0" + module_bytes
+    adapter_revision = "git:" + hashlib.sha1(git_blob).hexdigest()
+    config_bytes = json_deterministic.compact_json(
+        {"adapter": adapter_name, "task_prompt": task_prompt}
+    )
+    tool_config_revision = "sha256:" + hashlib.sha256(config_bytes).hexdigest()
+    profile = dict(_TEXT_SERIALIZATION_PROFILE)
+    return (
+        GenerationInputIdentity(
+            kind="adapter",
+            id=f"com.haex.hive.adapter.{adapter_name}",
+            revision=adapter_revision,
+            serialization=profile,
+        ),
+        GenerationInputIdentity(
+            kind="tool-config",
+            id=f"com.haex.hive.tool-config.{adapter_name}",
+            revision=tool_config_revision,
+            serialization=profile,
+        ),
+    )
 
 
 def _read_exact(stream: BinaryIO, size: int) -> bytes | None:
@@ -106,7 +147,11 @@ class StdioMergeLLM:
         self._out.flush()
 
         confirmed = read_confirmation_record(self._in)
-        return MergeResult(candidate=candidate, confirmed=confirmed)
+        return MergeResult(
+            candidate=candidate,
+            confirmed=confirmed,
+            generation_inputs=generation_input_identities("stdio", task_prompt),
+        )
 
 
 class FileMergeLLM:
