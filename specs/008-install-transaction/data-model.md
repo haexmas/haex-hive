@@ -94,11 +94,14 @@ Sole publication event's on-disk representation: `.haex-hive/visibility.json`. S
 | `participating_roots` | `list[str]` | One entry per participating output root, e.g. `[".haex-hive/"]`. |
 | `written_at` | `str` | UTC ISO 8601 for operator diagnostics; not used in verification. |
 
-Per-root and per-marker content-integrity fields are retired by the 2026-09-01 trust-git amendment; git provides the byte-identity guarantee for committed content.
+Per-root and per-marker content-integrity fields are retired by the 2026-09-01
+trust-git amendment. Generated payload bytes come from pinned inputs and
+canonical deterministic serialization; `generation_id` and `written_at` are
+transaction metadata and may change only for a substantive publication.
 
 ### InstallLock
 
-Slimmed shape of `.haex-hive/install.lock`. See [contracts/install-lock.v2.schema.json](./contracts/install-lock.v2.schema.json). Records the resolved atom set — the constitution block from Spec 007 plus `atoms[]`, `participating_roots`, and a `visibility_marker` cross-reference. No `content_integrity` fields per the 2026-09-01 trust-git amendment; git provides byte-identity for anything committed under `.haex-hive/`. Under the project's pre-user policy operator recovery from a corrupt/pre-amendment lock is to remove `.haex-hive/install.lock` and re-run `haex install`.
+Slimmed shape of `.haex-hive/install.lock`. See [contracts/install-lock.v2.schema.json](./contracts/install-lock.v2.schema.json). Records the resolved atom set — the constitution block from Spec 007 plus `atoms[]`, `participating_roots`, and a `visibility_marker` cross-reference. No `content_integrity` fields per the 2026-09-01 trust-git amendment; deterministic generation from pinned inputs provides byte identity for generated payloads. Under the project's pre-user policy operator recovery from a corrupt/pre-amendment lock is to remove `.haex-hive/install.lock` and re-run `haex install`.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -118,7 +121,9 @@ Slimmed shape of `.haex-hive/install.lock`. See [contracts/install-lock.v2.schem
 | `revision` | `str` | Full 40-char SHA. |
 | `contributed_paths` | `list[str]` | Repo-relative paths this atom contributed under participating roots. |
 
-No `content_integrity` per the trust-git amendment; the `revision` git SHA is the byte-identity anchor.
+No `content_integrity` per the trust-git amendment; the `revision` git SHA is
+the input-byte anchor, and the adapter/tool configuration plus serialization
+must be deterministic.
 
 ---
 

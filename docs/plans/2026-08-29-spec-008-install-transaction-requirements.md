@@ -15,12 +15,20 @@ transaction contract; Spec 008's plan/tasks reference this file rather than
 restating.
 
 **2026-09-01 trust-git amendment**: Git's immutable revisions and committed
-tree content provide byte identity for the generated `.haex-hive/` view. The
-per-root/per-file digest, journal, snapshot, and persisted mixed-root ownership
-requirements from the original draft are retired. Spec 008 keeps the
-rename-swap transaction, generation compatibility, root availability checks,
-and exclusive-lock discipline. Mixed-root ownership details are deferred to
-Spec 010.
+tree content pin the inputs to the generated `.haex-hive/` view, but they do not
+make a rerun of an arbitrary generator deterministic. Every generated payload
+byte MUST therefore be a pure function of pinned input bytes, the pinned
+adapter/tool configuration, and canonical serialization; timestamps, random
+values, environment state, locale, and filesystem enumeration order MUST NOT
+enter generated payloads. A confirmed multi-source LLM result is an input
+artifact, not an install-time inference: `haex install` consumes the reviewed,
+committed result and MUST NOT invoke the LLM again. Transaction metadata such
+as `generation_id` and `written_at` may vary only when a substantive
+publication occurs. The per-root/per-file digest, journal, snapshot, and
+persisted mixed-root ownership requirements from the original draft are
+retired. Spec 008 keeps the rename-swap transaction, generation compatibility,
+root availability checks, and exclusive-lock discipline. Mixed-root ownership
+details are deferred to Spec 010.
 
 ## Install-transaction requirements
 
@@ -109,6 +117,19 @@ interruption and are non-negotiable for the Spec 008 landing:
   mutate (native-tool outputs when they return — see Spec 007's Non-Goals
   clarifier) is sealed before `install.lock` is computed.
 
+- **Mixed-root pointer recovery**. Before the new
+  `.haex-hive/visibility.json` is published, every adapter pointer transition
+  MUST be atomic and retain a recoverable reference to its prior generation.
+  Recovery MUST compare every active pointer with the still-live marker:
+  pointers naming the candidate generation are restored to the prior
+  generation, while pointers naming the prior generation are retained. A
+  pointer naming neither generation, or a missing prior marker needed for
+  classification, MUST cause refusal without cleanup or publication. After the
+  marker is published, it is authoritative: matching candidate pointers are
+  retained and obsolete generations are cleaned only after all pointers match
+  it. This ordering makes an interrupted mixed-root exchange unavailable
+  rather than readable as a mixed generation.
+
 ## Conformance suite
 
 Spec 008's conformance suite MUST cover:
@@ -133,7 +154,8 @@ The fenced-lease contract is fixed: owner token
 `<pid>:<hostname>:<start_ns>:<uuid4_hex>`, 5-second heartbeat, 60-second TTL,
 5-second safety margin, reboot-safe `heartbeat_at_ns_wallclock` expiry values,
 the same non-blocking exclusive OS lock for recovery, unchanged-token
-revalidation, and in-place fencing before replay.
+revalidation, and in-place fencing before resolving in-flight state or
+performing recovery/rename operations.
 No in-repository transaction lock or journal is used. In-flight transaction
 state lives in same-filesystem sibling directories beside each participating
 output root; all lock state remains device-local.
