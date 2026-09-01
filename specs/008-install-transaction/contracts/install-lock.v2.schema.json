@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/haexmas/haex-hive/schemas/install-lock.v2.schema.json",
   "title": "haex-hive Install Lockfile v2 (Spec 008, trust-git amendment)",
-  "description": "Schema for `.haex-hive/install.lock` as authored by Spec 008 after the 2026-09-01 trust-git amendment. Records the resolved atom set. Per-file and per-root `content_integrity` fields are retired; git provides byte-identity for anything committed under `.haex-hive/`. The constitution-only shape (no atoms, no roots) is what `haex constitution assemble` writes today; the full shape lands with `haex install`.",
+  "description": "Schema for `.haex-hive/install.lock` as authored by Spec 008 after the 2026-09-01 trust-git amendment. Records the resolved atom set and immutable generation-input identities. Per-file and per-root `content_integrity` fields are retired; deterministic generation from pinned inputs provides byte identity for generated payloads. The constitution-only shape (no atoms, no roots) is what `haex constitution assemble` writes today; the full shape lands with `haex install`.",
   "type": "object",
   "required": ["haex_hive_version", "generated_by"],
   "properties": {
