@@ -191,7 +191,8 @@
 - The existing `.haex-hive/install.lock` schema is EXTENDED with `atoms`, `overlay_paths` per participating root, a `visibility_marker` block, `participating_roots`, and a versioned `ownership` set. Digest fields move to base64url no-pad. **Under the project's pre-user policy** (no external adopters, breaking changes fine — see `haex_hive_pre_user.md` in agent memory), this is a hard cut: a Spec 007-vintage `install.lock` fails Spec 008 schema validation with `InstallLockSchemaInvalidError` and there is no in-tool migration. Operator recovery is to remove the stale file and re-run `haex constitution assemble`.
 - `haex constitution assemble` (invoked directly) still works — it becomes a shortcut that runs the install transaction with a plan filtered to constitution-only steps. This preserves the current UX.
 - Multi-source LLM-merge (Spec 007's `--llm=file` two-phase flow) is preserved unchanged.
-- Shared path helpers derive `$HAEX_HIVE_STATE`, the canonical project identity, its SHA-256 `<repo-key>`, the repository mutex, and a checkout-scoped journal under `checkouts/<checkout-key>/`. Both `constitution assemble` and `constitution show` use these helpers. Any legacy `.haex-hive/constitution-transaction.lock`/`.json` on a satellite is not recovered by the new transaction; operator recovery is to delete the legacy files and re-run.
+- Shared path helpers derive `$HAEX_HIVE_STATE`, the canonical project identity, its SHA-256 `<repo-key>`, the repository mutex, and a checkout-scoped journal under `checkouts/<checkout-key>/`. Both `constitution assemble` and `constitution show` use these helpers. No in-repository transaction lock or journal is created or inspected.
+- The pre-user rollout guarantees that no older haex process is active during installation, so no cross-version writer exclusion is required.
 
 **Rationale**:
 - Duplicating the transaction machinery for install would be a source of drift. The extract-shared-implementation approach keeps one transaction, many participants.
@@ -202,7 +203,7 @@
 - **Deprecate `haex constitution assemble` in favour of `haex install --scope=constitution`**: too disruptive for an existing landed CLI. The UX shortcut stays.
 - **Preserve backward compatibility for `install.lock` (`sriDigest` accepts both alphabets; atoms fields optional)**: rejected under pre-user policy — cost of the shim exceeds its value while no external adopters exist. If a first adopter ever appears this decision is revisited via a spec amendment.
 
-**Residual risk**: an operator with an in-flight Spec 007-vintage `install.lock` on their dev machine gets a schema refusal on the next `haex install`. Recovery is one `rm` and `haex constitution assemble`. If the operator has a legacy `constitution-transaction.lock`/`.json` from a crashed Spec 007 assemble, those files are ignored by the new pipeline; the operator removes them before re-running. Both cases are documented in the `haex install` refusal diagnostic.
+**Residual risk**: an operator with an in-flight Spec 007-vintage `install.lock` on their dev machine gets a schema refusal on the next `haex install`. Recovery is one `rm` and `haex constitution assemble`. This is acceptable under the pre-user policy because no external adopters need an in-place state migration.
 
 ---
 

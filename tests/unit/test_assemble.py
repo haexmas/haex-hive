@@ -33,6 +33,7 @@ def test_publish_rejects_mismatched_published_lock(
         install_lock_bytes: bytes,
         *,
         post_write_verify: object,
+        state_root: Path | None,
         visibility_body: bytes,
     ) -> None:
         hive_dir = repo_root / transaction.HAEX_HIVE_DIR

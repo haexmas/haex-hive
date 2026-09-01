@@ -1,10 +1,7 @@
 """Durable-journal pair publication for the constitution + install-lock (FR-035).
 
-New CLI calls place the journal under the shared device-local transaction state
-root. The normal recovery path handles only that checkout-scoped journal.
-Legacy `.haex-hive` journal recovery remains available to the explicit
-compatibility helper for older callers, but is not part of the Spec 008 CLI
-path. `publish_pair` writes both targets atomically, invokes an optional
+Transaction journals live exclusively in the device-local, checkout-scoped
+state root. `publish_pair` writes both targets atomically, invokes an optional
 `post_write_verify` callback while the journal is still on disk, and only
 removes the journal after that callback returns cleanly.
 """
@@ -26,10 +23,8 @@ from haex_hive.io.state import TransactionPaths, transaction_paths, write_identi
 
 _IS_WINDOWS = sys.platform == "win32"
 
-JOURNAL_NAME = "constitution-transaction.json"  # legacy Spec-007 name
 CONSTITUTION_NAME = "constitution.md"
 INSTALL_LOCK_NAME = "install.lock"
-WRITER_LOCK_NAME = "constitution-transaction.lock"  # legacy Spec-007 name
 INSTALL_JOURNAL_NAME = "install.journal"
 INSTALL_MUTEX_NAME = "install.mutex"
 VISIBILITY_NAME = "visibility.json"
@@ -121,27 +116,15 @@ def _remove_if_exists(path: Path) -> None:
         path.unlink()
 
 
-def _journal_path(repo_root: Path, state_root: Path | None = None) -> Path:
-    if state_root is None:
-        return repo_root / HAEX_HIVE_DIR / JOURNAL_NAME
-    return transaction_paths(repo_root, state_root).journal
-
-
 def is_journaled(repo_root: Path, state_root: Path | None = None) -> bool:
     """Return whether transaction state should block read-only inspection."""
-    if state_root is None:
-        return _journal_path(repo_root).exists()
     try:
         paths = transaction_paths(repo_root, state_root)
     except ValueError:
         # `constitution show` must still report a missing output for a folder
-        # that has no identity yet; only legacy journal discovery is possible.
-        return _journal_path(repo_root).exists()
-    return (
-        paths.journal.exists()
-        or paths.legacy_shared_journal.exists()
-        or paths.legacy_journal.exists()
-    )
+        # that has no identity yet.
+        return False
+    return paths.journal.exists()
 
 
 def _read_journal(journal: Path) -> dict[str, Any]:
@@ -178,7 +161,7 @@ def _write_journal(
         payload["repo_key"] = repo_key
         payload["checkout_key"] = checkout_key
     fd, tmp_path = tempfile.mkstemp(
-        prefix=JOURNAL_NAME + ".",
+        prefix=INSTALL_JOURNAL_NAME + ".",
         suffix=".tmp",
         dir=str(journal.parent),
     )
@@ -192,37 +175,14 @@ def _write_journal(
 
 
 def recover_if_journaled(repo_root: Path, state_root: Path | None = None) -> bool:
-    """Compatibility recovery for new and legacy journal locations.
-
-    The Spec 008 CLI uses :func:`recover_checkout_journaled` instead, so
-    legacy files are never recovered implicitly by a CLI command.
-
-    Returns True if recovery ran, False if no journal was present.
-    """
-    if state_root is None:
-        paths = None
-        journals = [_journal_path(repo_root)]
-    else:
-        paths = transaction_paths(repo_root, state_root)
-        journals = [paths.journal, paths.legacy_shared_journal, paths.legacy_journal]
-    return _recover_journals(repo_root, paths, journals)
-
-
-def recover_checkout_journaled(repo_root: Path, state_root: Path | None = None) -> bool:
-    """Recover only the new checkout-scoped transaction journal.
-
-    Legacy journals are intentionally left untouched. Operators must remove
-    those stale files and rerun assembly under the Spec 008 hard cutover.
-
-    Returns True if recovery ran, False if no checkout journal was present.
-    """
+    """Recover the checkout-scoped transaction journal, if present."""
     paths = transaction_paths(repo_root, state_root)
     return _recover_journals(repo_root, paths, [paths.journal])
 
 
 def _recover_journals(
     repo_root: Path,
-    paths: TransactionPaths | None,
+    paths: TransactionPaths,
     journals: list[Path],
 ) -> bool:
     """Recover the supplied journal paths after validating all entries."""
@@ -239,19 +199,11 @@ def _recover_journals(
     recovered = False
     for journal in journals:
         payload = _read_journal(journal)
-        if paths is not None and journal == paths.journal:
+        if journal == paths.journal:
             if payload.get("repo_key") != paths.repo_key:
                 raise ValueError("transaction journal repository key does not match checkout")
             if payload.get("checkout_key") != paths.checkout_key:
                 raise ValueError("transaction journal checkout key does not match checkout")
-        elif paths is not None and journal == paths.legacy_shared_journal:
-            if payload.get("repo_key") not in {None, paths.repo_key}:
-                raise ValueError("legacy transaction journal repository key does not match")
-            if payload.get("checkout_key") != paths.checkout_key:
-                raise ValueError(
-                    "legacy transaction journal checkout key is missing or does not match"
-                )
-
         raw_entries = payload.get("targets")
         if not isinstance(raw_entries, list):
             raise ValueError("transaction journal targets must be a list")
@@ -331,9 +283,8 @@ def publish_pair(
 ) -> None:
     """Atomically publish both targets under the durable journal protocol.
 
-    Calls that provide ``state_root`` use the shared Spec-008 journal location;
-    omitted state roots retain the legacy direct-call behaviour for Spec-007
-    compatibility and tests.
+    The journal is always placed in the shared device-local checkout state;
+    omitting ``state_root`` uses the configured default state root.
     """
 
     hive_dir = repo_root / HAEX_HIVE_DIR
@@ -377,16 +328,11 @@ def publish_pair(
             )
         _fsync_dir(hive_dir)
 
-        journal_repo_key: str | None = None
-        journal_checkout_key: str | None = None
-        if state_root is None:
-            journal = _journal_path(repo_root)
-        else:
-            paths = transaction_paths(repo_root, state_root)
-            write_identity_record(paths)
-            journal = paths.journal
-            journal_repo_key = paths.repo_key
-            journal_checkout_key = paths.checkout_key
+        paths = transaction_paths(repo_root, state_root)
+        write_identity_record(paths)
+        journal = paths.journal
+        journal_repo_key = paths.repo_key
+        journal_checkout_key = paths.checkout_key
         _write_journal(
             journal,
             repo_root,

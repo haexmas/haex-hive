@@ -21,24 +21,32 @@ def _hive(repo_root: Path) -> Path:
     return repo_root / transaction.HAEX_HIVE_DIR
 
 
-def _paths(repo_root: Path) -> tuple[Path, Path, Path]:
+def _init_project(repo_root: Path) -> Path:
+    state_root = repo_root / "state"
+    (repo_root / ".haex-hive.json").write_text(
+        json.dumps({"identity": "com.example.consumer"})
+    )
+    return state_root
+
+
+def _paths(repo_root: Path, state_root: Path) -> tuple[Path, Path, Path]:
     hive = _hive(repo_root)
-    return hive / "constitution.md", hive / "install.lock", hive / transaction.JOURNAL_NAME
+    return hive / "constitution.md", hive / "install.lock", transaction_paths(
+        repo_root, state_root
+    ).journal
 
 
 def test_publish_creates_targets_when_absent(tmp_path: Path) -> None:
-    transaction.publish_pair(tmp_path, b"body\n", b"{}\n")
-    constitution, lock, journal = _paths(tmp_path)
+    state_root = _init_project(tmp_path)
+    transaction.publish_pair(tmp_path, b"body\n", b"{}\n", state_root=state_root)
+    constitution, lock, journal = _paths(tmp_path, state_root)
     assert constitution.read_bytes() == b"body\n"
     assert lock.read_bytes() == b"{}\n"
     assert not journal.exists()
 
 
 def test_publish_with_state_root_uses_shared_paths(tmp_path: Path) -> None:
-    (tmp_path / ".haex-hive.json").write_text(
-        json.dumps({"identity": "com.example.consumer"})
-    )
-    state_root = tmp_path / "state"
+    state_root = _init_project(tmp_path)
 
     transaction.publish_pair(tmp_path, b"body\n", b"{}\n", state_root=state_root)
 
@@ -53,7 +61,6 @@ def test_publish_with_state_root_uses_shared_paths(tmp_path: Path) -> None:
     )
     assert "com.example.consumer" in paths.identity_record.read_text()
     assert paths.mutex.name == "install.mutex"
-    assert not paths.legacy_journal.exists()
 
 
 def test_publish_cleans_backups_when_identity_write_fails(
@@ -88,39 +95,50 @@ def test_publish_cleans_backups_when_identity_write_fails(
 
 
 def test_publish_replaces_existing_and_removes_journal(tmp_path: Path) -> None:
-    transaction.publish_pair(tmp_path, b"old body", b"{}")
-    transaction.publish_pair(tmp_path, b"new body", b"{\"generated_by\": \"haex 2.0.0\"}")
-    constitution, lock, journal = _paths(tmp_path)
+    state_root = _init_project(tmp_path)
+    transaction.publish_pair(tmp_path, b"old body", b"{}", state_root=state_root)
+    transaction.publish_pair(
+        tmp_path, b"new body", b"{\"generated_by\": \"haex 2.0.0\"}", state_root=state_root
+    )
+    constitution, lock, journal = _paths(tmp_path, state_root)
     assert constitution.read_bytes() == b"new body"
     assert lock.read_bytes() == b"{\"generated_by\": \"haex 2.0.0\"}"
     assert not journal.exists()
 
 
 def test_post_write_verify_rollback_restores_previous(tmp_path: Path) -> None:
-    transaction.publish_pair(tmp_path, b"good", b"{}")
+    state_root = _init_project(tmp_path)
+    transaction.publish_pair(tmp_path, b"good", b"{}", state_root=state_root)
 
     def failing_verify() -> None:
         raise PostWriteValidationError(message="mismatch")
 
     with pytest.raises(PostWriteValidationError):
         transaction.publish_pair(
-            tmp_path, b"bad", b"{\"bad\": true}", post_write_verify=failing_verify
+            tmp_path,
+            b"bad",
+            b"{\"bad\": true}",
+            post_write_verify=failing_verify,
+            state_root=state_root,
         )
 
-    constitution, lock, journal = _paths(tmp_path)
+    constitution, lock, journal = _paths(tmp_path, state_root)
     assert constitution.read_bytes() == b"good"
     assert lock.read_bytes() == b"{}"
     assert not journal.exists()
 
 
 def test_post_write_verify_rollback_removes_previously_absent(tmp_path: Path) -> None:
+    state_root = _init_project(tmp_path)
     def failing_verify() -> None:
         raise PostWriteValidationError(message="mismatch")
 
     with pytest.raises(PostWriteValidationError):
-        transaction.publish_pair(tmp_path, b"new", b"{}", post_write_verify=failing_verify)
+        transaction.publish_pair(
+            tmp_path, b"new", b"{}", post_write_verify=failing_verify, state_root=state_root
+        )
 
-    constitution, lock, journal = _paths(tmp_path)
+    constitution, lock, journal = _paths(tmp_path, state_root)
     assert not constitution.exists()
     assert not lock.exists()
     assert not journal.exists()
@@ -128,9 +146,10 @@ def test_post_write_verify_rollback_removes_previously_absent(tmp_path: Path) ->
 
 def test_recover_after_journal_present_restores_backups(tmp_path: Path) -> None:
     """Simulate crash after journal write + target replacement."""
+    state_root = _init_project(tmp_path)
     hive = _hive(tmp_path)
     hive.mkdir(parents=True)
-    constitution, lock, journal = _paths(tmp_path)
+    constitution, lock, journal = _paths(tmp_path, state_root)
 
     constitution.write_bytes(b"original constitution")
     lock.write_bytes(b"original lock")
@@ -142,10 +161,13 @@ def test_recover_after_journal_present_restores_backups(tmp_path: Path) -> None:
 
     constitution.write_bytes(b"HALF-WRITTEN")
     lock.write_bytes(b"HALF-WRITTEN")
+    journal.parent.mkdir(parents=True)
 
     journal.write_text(
         json.dumps(
             {
+                "repo_key": transaction_paths(tmp_path, state_root).repo_key,
+                "checkout_key": transaction_paths(tmp_path, state_root).checkout_key,
                 "targets": [
                     {
                         "logical": "constitution",
@@ -166,7 +188,7 @@ def test_recover_after_journal_present_restores_backups(tmp_path: Path) -> None:
         )
     )
 
-    recovered = transaction.recover_if_journaled(tmp_path)
+    recovered = transaction.recover_if_journaled(tmp_path, state_root=state_root)
     assert recovered
     assert constitution.read_bytes() == b"original constitution"
     assert lock.read_bytes() == b"original lock"
@@ -174,16 +196,20 @@ def test_recover_after_journal_present_restores_backups(tmp_path: Path) -> None:
 
 
 def test_recover_absent_prior_removes_targets(tmp_path: Path) -> None:
+    state_root = _init_project(tmp_path)
     hive = _hive(tmp_path)
     hive.mkdir(parents=True)
-    constitution, lock, journal = _paths(tmp_path)
+    constitution, lock, journal = _paths(tmp_path, state_root)
 
     constitution.write_bytes(b"HALF-WRITTEN")
     lock.write_bytes(b"HALF-WRITTEN")
+    journal.parent.mkdir(parents=True)
 
     journal.write_text(
         json.dumps(
             {
+                "repo_key": transaction_paths(tmp_path, state_root).repo_key,
+                "checkout_key": transaction_paths(tmp_path, state_root).checkout_key,
                 "targets": [
                     {
                         "logical": "constitution",
@@ -204,67 +230,15 @@ def test_recover_absent_prior_removes_targets(tmp_path: Path) -> None:
         )
     )
 
-    (tmp_path / ".haex-hive.json").write_text(
-        json.dumps({"identity": "com.example.consumer"})
-    )
-    state_root = tmp_path / "state"
-    state_paths = transaction_paths(tmp_path, state_root)
-    state_paths.legacy_shared_journal.parent.mkdir(parents=True)
-    shared_payload = json.loads(journal.read_text())
-    shared_payload["repo_key"] = state_paths.repo_key
-    shared_payload["checkout_key"] = state_paths.checkout_key
-    state_paths.legacy_shared_journal.write_text(json.dumps(shared_payload))
-
     assert transaction.recover_if_journaled(tmp_path, state_root=state_root)
     assert not constitution.exists()
     assert not lock.exists()
     assert not journal.exists()
-    assert not state_paths.legacy_shared_journal.exists()
-
-
-def test_recover_rejects_legacy_shared_journal_for_another_checkout(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / ".haex-hive.json").write_text(
-        json.dumps({"identity": "com.example.consumer"})
-    )
-    state_root = tmp_path / "state"
-    paths = transaction_paths(tmp_path, state_root)
-    paths.legacy_shared_journal.parent.mkdir(parents=True)
-    paths.legacy_shared_journal.write_text(
-        json.dumps(
-            {
-                "repo_key": paths.repo_key,
-                "checkout_key": "another-checkout",
-                "targets": [],
-            }
-        )
-    )
-
-    with pytest.raises(ValueError, match="checkout key"):
-        transaction.recover_if_journaled(tmp_path, state_root=state_root)
-
-
-def test_checkout_recovery_ignores_legacy_journals(tmp_path: Path) -> None:
-    """The Spec 008 recovery path leaves both legacy journal locations alone."""
-    (tmp_path / ".haex-hive.json").write_text(
-        json.dumps({"identity": "com.example.consumer"})
-    )
-    state_root = tmp_path / "state"
-    paths = transaction_paths(tmp_path, state_root)
-    paths.legacy_journal.parent.mkdir(parents=True)
-    paths.legacy_journal.write_text("legacy checkout journal")
-    paths.legacy_shared_journal.parent.mkdir(parents=True)
-    paths.legacy_shared_journal.write_text("legacy shared journal")
-
-    assert not transaction.recover_checkout_journaled(tmp_path, state_root=state_root)
-    assert paths.legacy_journal.read_text() == "legacy checkout journal"
-    assert paths.legacy_shared_journal.read_text() == "legacy shared journal"
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="fcntl-based lock is POSIX-only")
 def test_concurrent_writer_refused(tmp_path: Path) -> None:
-    lock_path = tmp_path / ".haex-hive" / "constitution-transaction.lock"
+    lock_path = tmp_path / "state" / "install.mutex"
     lock = writer_lock.ConstitutionWriterLock(lock_path)
     with lock:
         second = writer_lock.ConstitutionWriterLock(lock_path)

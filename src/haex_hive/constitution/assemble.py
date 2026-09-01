@@ -187,23 +187,14 @@ def _publish_constitution(
                 message="visibility.json does not match the published install.lock",
             )
 
-    if state_root is None:
-        transaction.publish_pair(
-            repo_root,
-            body,
-            lock_bytes,
-            post_write_verify=post_write_verify,
-            visibility_body=visibility_bytes,
-        )
-    else:
-        transaction.publish_pair(
-            repo_root,
-            body,
-            lock_bytes,
-            post_write_verify=post_write_verify,
-            state_root=state_root,
-            visibility_body=visibility_bytes,
-        )
+    transaction.publish_pair(
+        repo_root,
+        body,
+        lock_bytes,
+        post_write_verify=post_write_verify,
+        state_root=state_root,
+        visibility_body=visibility_bytes,
+    )
 
 
 def assemble_single_source(

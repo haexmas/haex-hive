@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import ExitStack
 from pathlib import Path
 
 from haex_hive.cli.main import INSTALLED_VERSION_STRING
@@ -67,12 +66,8 @@ def run_assemble(args: argparse.Namespace) -> int:
 
     try:
         paths = transaction_paths(repo_root, state_root)
-        with ExitStack() as stack:
-            # Keep the legacy lock as an exclusion guard for older writers.
-            # It is never used to recover, migrate, or modify legacy journals.
-            stack.enter_context(ConstitutionWriterLock(paths.legacy_mutex))
-            stack.enter_context(ConstitutionWriterLock(paths.mutex))
-            transaction.recover_checkout_journaled(repo_root, state_root=state_root)
+        with ConstitutionWriterLock(paths.mutex):
+            transaction.recover_if_journaled(repo_root, state_root=state_root)
 
             manifest = _load_consumer_manifest(repo_root)
             contributions = resolve_constitution_contributions(manifest, state_root)
