@@ -89,21 +89,66 @@ def _semantic_errors(data: Any, schema_name: str) -> list[SchemaError]:
     if schema_name == "install-lock.v2.schema.json":
         _check_unique_keys(data, "participating_roots", "root", errors)
         _check_unique_keys(data.get("ownership"), "paths", "path", errors, prefix="/ownership")
+        _check_generation_input_identities(data, errors)
     elif schema_name == "visibility-marker.v1.schema.json":
         roots = data.get("participating_roots")
         _check_unique_keys(data, "participating_roots", "root", errors)
-        if isinstance(roots, list) and all(
+        if isinstance(roots, list) and all(isinstance(item, str) for item in roots):
+            values = roots
+        elif isinstance(roots, list) and all(
             isinstance(item, dict) and isinstance(item.get("root"), str) for item in roots
         ):
             values = [item["root"] for item in roots]
-            if values != sorted(values):
-                errors.append(
-                    SchemaError(
-                        field_path="/participating_roots",
-                        message="roots must be in lexicographic order",
-                    )
+        else:
+            values = None
+        if values is not None and values != sorted(values):
+            errors.append(
+                SchemaError(
+                    field_path="/participating_roots",
+                    message="roots must be in lexicographic order",
                 )
+            )
     return errors
+
+
+def _check_generation_input_identities(
+    data: dict[str, Any], errors: list[SchemaError]
+) -> None:
+    """Enforce generation-input identity uniqueness and canonical ordering."""
+    entries = data.get("generation_inputs")
+    if not isinstance(entries, list):
+        return
+
+    identities: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            continue
+        kind = entry.get("kind")
+        identity = entry.get("id")
+        if not isinstance(kind, str) or not isinstance(identity, str):
+            continue
+        key = (kind, identity)
+        if key in seen:
+            errors.append(
+                SchemaError(
+                    field_path=f"/generation_inputs/{index}",
+                    message="duplicate (kind, id) values are not allowed",
+                )
+            )
+        seen.add(key)
+        identities.append(key)
+
+    if identities != sorted(
+        identities,
+        key=lambda key: (key[0].encode("utf-8"), key[1].encode("utf-8")),
+    ):
+        errors.append(
+            SchemaError(
+                field_path="/generation_inputs",
+                message="generation_inputs must be in lexicographic order by (kind, id)",
+            )
+        )
 
 
 def _check_unique_keys(

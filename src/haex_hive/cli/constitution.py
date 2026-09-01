@@ -118,8 +118,7 @@ def run_assemble(args: argparse.Namespace) -> int:
 def run_show(args: argparse.Namespace) -> int:
     """Execute the `haex constitution show` command.
 
-    Verifies the on-disk constitution against install.lock's content_integrity
-    before printing the (optionally prefaced) byte-for-byte body.
+    Verifies install.lock before printing the byte-for-byte constitution body.
 
     Returns:
         exit_codes.SUCCESS on successful, verified output.

@@ -3,7 +3,6 @@ LLM-merge (US3)."""
 
 from __future__ import annotations
 
-import base64
 import datetime
 import hashlib
 import json
@@ -30,13 +29,11 @@ from haex_hive.constitution.safety import (
     validate_no_plaintext_secrets,
 )
 from haex_hive.io import json_deterministic, transaction
-from haex_hive.io.file_hash import d15_one_file_tree_digest
 from haex_hive.model.install_lock import (
     AssembledBy,
     ConstitutionLockSection,
     ConstitutionSource,
     InstallLock,
-    RootRecord,
     VisibilityMarkerRef,
 )
 from haex_hive.util import exit_codes
@@ -77,9 +74,9 @@ def _publish_constitution(
 ) -> None:
     """Publish the effective constitution and install.lock atomically.
 
-    Computes content integrity, preserves unknown top-level lock fields from
-    any existing lock, and publishes all output files as one rename-swap
-    generation with post-write verification of the published outputs.
+    Preserves unknown top-level lock fields from any existing lock and
+    publishes all output files as one rename-swap generation with post-write
+    verification of the published outputs.
 
     Args:
         sources: Constitution sources represented in the generated lock.
@@ -88,23 +85,13 @@ def _publish_constitution(
         tool_version: Tool version string for install.lock metadata.
 
     Raises:
-        PostWriteValidationError: If the on-disk digest does not match the lock.
+        PostWriteValidationError: If the published files disagree.
     """
-    content_integrity = d15_one_file_tree_digest(body)
-
     existing_lock = _read_existing_lock(repo_root)
     unknown_top_level = (
         dict(existing_lock.unknown_top_level) if existing_lock is not None else {}
     )
 
-    root_preimage = (
-        b"constitution.md:"
-        + hashlib.sha256(body).hexdigest().encode("ascii")
-        + b"\n"
-    )
-    root_digest = "sha256-" + base64.urlsafe_b64encode(
-        hashlib.sha256(root_preimage).digest()
-    ).decode("ascii").rstrip("=")
     existing_marker = existing_lock.visibility_marker if existing_lock is not None else None
     if existing_marker is not None:
         generation_id = existing_marker.generation_id
@@ -117,56 +104,40 @@ def _publish_constitution(
     marker_identity = {
         "haex_hive_version": "2",
         "generation_id": generation_id,
-        "participating_roots": [
-            {"root": ".haex-hive/", "content_integrity": root_digest}
-        ],
+        "participating_roots": [".haex-hive/"],
     }
-    marker_content_integrity = "sha256-" + base64.urlsafe_b64encode(
-        hashlib.sha256(json_deterministic.dumps(marker_identity)).digest()
-    ).decode("ascii").rstrip("=")
-
     lock = InstallLock(
         haex_hive_version="2",
         generated_by=f"{TOOL_NAME} {tool_version}",
         constitution=ConstitutionLockSection(
             sources=sources,
             assembled_by=AssembledBy(tool=TOOL_NAME, version=tool_version),
-            content_integrity=content_integrity,
         ),
-        participating_roots=(
-            RootRecord(root=".haex-hive/", content_integrity=root_digest),
-        ),
+        participating_roots=(".haex-hive/",),
         visibility_marker=VisibilityMarkerRef(
             generation_id=generation_id,
-            content_integrity=marker_content_integrity,
         ),
         unknown_top_level=unknown_top_level,
     )
     lock_bytes = lock.to_json_bytes()
-    visibility_body = dict(marker_identity)
-    visibility_body["install_lock_content_integrity"] = "sha256-" + base64.urlsafe_b64encode(
-        hashlib.sha256(lock_bytes).digest()
-    ).decode("ascii").rstrip("=")
-    visibility_bytes = json_deterministic.dumps(visibility_body)
+    visibility_bytes = json_deterministic.dumps(marker_identity)
 
     def post_write_verify() -> None:
-        """Verify the published constitution and install.lock agree on integrity.
+        """Verify the published constitution, lock, and marker agree.
 
         Raises:
             PostWriteValidationError: If digest mismatch detected.
         """
-        constitution_path = repo_root / transaction.HAEX_HIVE_DIR / transaction.CONSTITUTION_NAME
         lock_path = repo_root / transaction.HAEX_HIVE_DIR / transaction.INSTALL_LOCK_NAME
-        on_disk = constitution_path.read_bytes()
-        actual = d15_one_file_tree_digest(on_disk)
         published_lock = InstallLock.from_json(lock_path.read_bytes())
         if (
-            actual != content_integrity
-            or published_lock.constitution is None
-            or actual != published_lock.constitution.content_integrity
+            published_lock.constitution is None
+            or published_lock.visibility_marker is None
+            or published_lock.visibility_marker.generation_id != generation_id
+            or published_lock.participating_roots != (".haex-hive/",)
         ):
             raise PostWriteValidationError(
-                message="on-disk constitution.md does not match recorded content_integrity",
+                message="published install.lock does not match the assembled generation",
             )
         marker = json.loads(
             (repo_root / transaction.HAEX_HIVE_DIR / transaction.VISIBILITY_NAME)
@@ -174,15 +145,7 @@ def _publish_constitution(
         )
         if (
             marker.get("generation_id") != generation_id
-            or marker.get("participating_roots") != marker_identity["participating_roots"]
-            or marker.get("install_lock_content_integrity") != (
-                "sha256-"
-                + base64.urlsafe_b64encode(
-                    hashlib.sha256(lock_path.read_bytes()).digest()
-                )
-                .decode("ascii")
-                .rstrip("=")
-            )
+            or marker != marker_identity
         ):
             raise PostWriteValidationError(
                 message="visibility.json does not match the published install.lock",

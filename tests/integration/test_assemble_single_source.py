@@ -51,10 +51,9 @@ def test_successful_straight_copy(single_source_constitution_fixture: dict) -> N
             "source": single_source_constitution_fixture["canonical"],
         }
     ]
-    assert lock_data["constitution"]["content_integrity"].startswith("sha256-")
+    assert "content_integrity" not in lock_data["constitution"]
     marker_data = json.loads(marker.read_text())
-    assert marker_data["install_lock_content_integrity"].startswith("sha256-")
-    assert marker_data["participating_roots"][0]["root"] == ".haex-hive/"
+    assert marker_data["participating_roots"] == [".haex-hive/"]
     assert lock_data["visibility_marker"]["generation_id"] == marker_data["generation_id"]
 def test_active_writer_is_excluded(
     single_source_constitution_fixture: dict,

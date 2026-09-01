@@ -110,7 +110,7 @@ def test_install_lock_schema_invalid_refuses(single_source_constitution_fixture:
 
     lock_path = consumer / ".haex-hive" / "install.lock"
     data = json.loads(lock_path.read_text())
-    del data["constitution"]["content_integrity"]
+    del data["constitution"]["sources"]
     lock_path.write_text(json.dumps(data))
 
     proc = _show(consumer, state_root=state_root)
@@ -136,7 +136,7 @@ def test_install_lock_sources_not_canonical_refuses(
     assert b"key=install-lock-sources-not-canonical" in proc.stderr
 
 
-def test_integrity_mismatch_refuses(single_source_constitution_fixture: dict) -> None:
+def test_body_is_rendered_from_a_valid_lock(single_source_constitution_fixture: dict) -> None:
     consumer = single_source_constitution_fixture["consumer"]
     state_root = single_source_constitution_fixture["state_root"]
     _assemble(consumer, state_root)
@@ -145,9 +145,8 @@ def test_integrity_mismatch_refuses(single_source_constitution_fixture: dict) ->
     constitution_path.write_bytes(constitution_path.read_bytes() + b"tampered\n")
 
     proc = _show(consumer, state_root=state_root)
-    assert proc.returncode == 6
-    assert b"key=constitution-integrity-mismatch" in proc.stderr
-    assert proc.stdout == b""
+    assert proc.returncode == 0, proc.stderr.decode()
+    assert proc.stdout.endswith(b"tampered\n")
 
 
 @pytest.mark.parametrize(

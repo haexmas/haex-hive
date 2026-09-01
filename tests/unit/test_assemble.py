@@ -16,10 +16,10 @@ from haex_hive.model.install_lock import ConstitutionSource
 from haex_hive.util.errors import PostWriteValidationError
 
 
-def test_publish_rejects_mismatched_published_lock(
+def test_publish_rejects_mismatched_published_generation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Reject publication when the persisted lock digest is corrupted."""
+    """Reject publication when the persisted lock generation is corrupted."""
     body = b"# Constitution\n"
     source = ConstitutionSource(
         id="com.example.constitution",
@@ -40,7 +40,7 @@ def test_publish_rejects_mismatched_published_lock(
         for staged in files:
             if staged.relative_path == transaction.INSTALL_LOCK_NAME:
                 data = json.loads(staged.data)
-                data["constitution"]["content_integrity"] = "sha256-" + "A" * 43
+                data["visibility_marker"]["generation_id"] = "g_20260101T000000Z_dead"
                 (live / staged.relative_path).write_text(json.dumps(data))
             else:
                 (live / staged.relative_path).write_bytes(staged.data)

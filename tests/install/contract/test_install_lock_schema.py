@@ -3,10 +3,10 @@
 Assertions
 - The three MVP shapes validate: minimal Spec-008 constitution-only shape, a
   Spec-008 full shape with atoms + participating_roots + visibility_marker +
-  ownership, and the in-tree valid fixtures used by `tests/contract/`.
+  generation_inputs.
 - Negative cases prove the schema tightens where Spec 008 needs it: atoms items
-  without `source` are rejected, and any SRI digest in the old standard-base64
-  (padded) shape is rejected.
+  without `source` are rejected, generation-input identities are unique and
+  sorted, and retired integrity fields are rejected.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ from haex_hive.schema.validator import SchemaValidationError, validate
 
 SCHEMA_NAME = "install-lock.v2.schema.json"
 
-_ZERO_DIGEST = "sha256-" + "A" * 43  # base64url-nopad SHA-256 of 32 zero bytes
 _GENERATION_ID = "g_20260831T142011Z_a4c2"
 
 
@@ -36,7 +35,6 @@ def _minimal_spec_008_shape() -> dict:
                 }
             ],
             "assembled_by": {"tool": "haex", "version": "2.0.0"},
-            "content_integrity": _ZERO_DIGEST,
         },
     }
 
@@ -49,18 +47,14 @@ def _spec_008_shape() -> dict:
             "id": "com.example.publisher.constitution",
             "source": "https://github.com/example/publisher",
             "revision": "0" * 40,
-            "content_integrity": _ZERO_DIGEST,
             "contributed_paths": [
                 ".haex-hive/atoms/com.example.publisher.constitution/manifest.json"
             ],
         }
     ]
-    base["participating_roots"] = [
-        {"root": ".haex-hive/", "content_integrity": _ZERO_DIGEST}
-    ]
+    base["participating_roots"] = [".haex-hive/"]
     base["visibility_marker"] = {
         "generation_id": _GENERATION_ID,
-        "content_integrity": _ZERO_DIGEST,
     }
     base["generation_inputs"] = [
         {
@@ -77,23 +71,6 @@ def _spec_008_shape() -> dict:
             },
         }
     ]
-    base["ownership"] = {
-        "version": 1,
-        "paths": [
-            {
-                "path": ".haex-hive/atoms/com.example.publisher.constitution/manifest.json",
-                "owner": {
-                    "kind": "atom",
-                    "resource": "com.example.publisher.constitution",
-                    "source": "https://github.com/example/publisher",
-                    "revision": "0" * 40,
-                },
-                "generation_id": _GENERATION_ID,
-                "content_integrity": _ZERO_DIGEST,
-                "previous": None,
-            }
-        ],
-    }
     return base
 
 
@@ -129,41 +106,36 @@ def test_generation_input_requires_serialization_profile() -> None:
         validate(data, SCHEMA_NAME)
 
 
-def test_padded_base64_digest_is_rejected() -> None:
-    """Reject legacy padded digest values in new lock records."""
-    data = _minimal_spec_008_shape()
-    data["constitution"]["content_integrity"] = "sha256-" + "A" * 43 + "="
-    with pytest.raises(SchemaValidationError):
-        validate(data, SCHEMA_NAME)
-
-
-def test_pathownership_previous_can_be_object() -> None:
-    """Accept the populated previous ownership state variant."""
-    data = _spec_008_shape()
-    data["ownership"]["paths"][0]["previous"] = {
-        "generation_id": "g_20260830T101010Z_dead",
-        "existed": True,
-        "content_integrity": _ZERO_DIGEST,
-    }
-    validate(data, SCHEMA_NAME)
-
-
 def test_duplicate_participating_roots_are_rejected() -> None:
     """Reject repeated participating-root identities."""
     data = _spec_008_shape()
-    data["participating_roots"].append(
-        {"root": ".haex-hive/", "content_integrity": "sha256-" + "B" * 43}
-    )
+    data["participating_roots"].append(".haex-hive/")
     with pytest.raises(SchemaValidationError):
         validate(data, SCHEMA_NAME)
 
 
-def test_duplicate_ownership_paths_are_rejected() -> None:
-    """Reject repeated ownership path identities."""
+def test_duplicate_generation_input_identity_is_rejected() -> None:
+    """Reject duplicate identities even when their revisions differ."""
     data = _spec_008_shape()
-    duplicate = dict(data["ownership"]["paths"][0])
-    duplicate["content_integrity"] = "sha256-" + "B" * 43
-    data["ownership"]["paths"].append(duplicate)
+    duplicate = dict(data["generation_inputs"][0])
+    duplicate["revision"] = "git:" + "2" * 40
+    data["generation_inputs"].append(duplicate)
+    with pytest.raises(SchemaValidationError):
+        validate(data, SCHEMA_NAME)
+
+
+def test_generation_inputs_must_be_sorted_by_kind_and_id() -> None:
+    """Reject generation-input entries that are out of canonical order."""
+    data = _spec_008_shape()
+    data["generation_inputs"].insert(
+        0,
+        {
+            "kind": "tool-config",
+            "id": "com.example.config",
+            "revision": "sha256:" + "2" * 64,
+            "serialization": dict(data["generation_inputs"][0]["serialization"]),
+        },
+    )
     with pytest.raises(SchemaValidationError):
         validate(data, SCHEMA_NAME)
 
