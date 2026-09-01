@@ -14,6 +14,14 @@ non-negotiable for the Spec 008 landing. When Spec 008 is drafted via
 transaction contract; Spec 008's plan/tasks reference this file rather than
 restating.
 
+**2026-09-01 trust-git amendment**: Git's immutable revisions and committed
+tree content provide byte identity for the generated `.haex-hive/` view. The
+per-root/per-file digest, journal, snapshot, and persisted mixed-root ownership
+requirements from the original draft are retired. Spec 008 keeps the
+rename-swap transaction, generation compatibility, root availability checks,
+and exclusive-lock discipline. Mixed-root ownership details are deferred to
+Spec 010.
+
 ## Install-transaction requirements
 
 The following rules are load-bearing for correctness under concurrency and
@@ -28,90 +36,77 @@ interruption and are non-negotiable for the Spec 008 landing:
   time. Ordinary `haex verify` acquires a shared/read lock so a concurrent
   install cannot present it a torn view. `haex verify --recover` is a
   modifying operation: it MUST acquire the same exclusive lock as `haex
-  install` before reading the journal, and it MUST NOT first take a shared
-  lock and upgrade it before replaying or rolling back a journal or changing
-  any output root.
-- **Journal + startup recovery**. Every filesystem mutation step is recorded
-  in the device-local `install.journal` before it is executed, and the next
-  `haex install` (or `haex verify --recover`) replays or rolls back an
-  incomplete journal before any new plan is built. Journal state
-  transitions fsync the journal file and its parent directory before
-  advancing. The marker publication is the publication boundary; cleanup
-  mutations after it are also journaled and idempotent. If the marker already
-  verifies, recovery retains that generation and resumes cleanup only.
+  install` before inspecting in-flight state, and it MUST NOT first take a
+  shared lock and upgrade it before recovering or changing any output root.
+- **Directory-name startup recovery**. For each haex-owned output root, the
+  presence or absence of `<root>/`, `<root>.next/`, and `<root>.prev/` is the
+  complete durable in-flight state. The next `haex install` (or `haex
+  verify --recover`) resolves that state before building new output. Recovery
+  completes forward, restores the previous generation, or refuses according to
+  the state table in research §R7. Every rename between those names fsyncs the
+  parent directory. A generation is usable only when its metadata is
+  schema-compatible and all named roots and active overlay pointers are
+  available for the same `generation_id`.
 - **Repository-wide visibility commit**. All new bytes are written to a
   staging root next to the target (same filesystem), fsynced, and prepared as
   complete logical output-root views for `.haex-hive/`, `.claude/`, and
-  `.codex/`. `.haex-hive/` is haex-owned and may use a platform primitive that
-  atomically replaces each staged file on the same filesystem under the
-  durable journal. `.claude/` and
+  `.codex/`. `.haex-hive/` is haex-owned and uses a same-filesystem directory
+  rename-swap. `.claude/` and
   `.codex/` are mixed-ownership roots and MUST NEVER be exchanged or renamed as
   directories. Their adapter-owned leaves are instead stored under a versioned
   generation directory and published through a stable per-adapter overlay and
   current-generation pointer (for example, a supported symlink/junction or
-  adapter-managed launcher). The overlay changes only paths recorded as
-  adapter-owned; it never enumerates, copies, or replaces sibling entries in
+  adapter-managed launcher). The overlay changes only paths declared by the
+  adapter as owned; it never enumerates, copies, or replaces sibling entries in
   the mixed-ownership root. A platform without an atomic pointer or stable
   overlay mechanism MUST refuse the install rather than publish a torn direct
-  view. The digest for a mixed-ownership root covers only its managed overlay,
-  never its unowned directory contents. After every other staged output is
-  sealed, the transaction writes and fsyncs the final staged `install.lock`,
-  computes the participating-root digests over those final staged bytes, and
-  writes the staged `.haex-hive/visibility.json` marker last. The marker
-  contains a unique, time-based generation ID and the digest of every participating
-  output root; the `.haex-hive/` digest excludes both `install.lock` and the
-  marker to avoid recursive lock/marker integrity references. Readers MUST NOT treat
-  individual root replacements or adapter pointer replacements as publication.
-  The final atomic replacement of `.haex-hive/visibility.json` is the sole
-  publication event and publishes the generation. Journaled cleanup may follow
-  but cannot change the marker or generation. Readers first load the
-  marker and then verify every root's generation and digest; a missing marker
-  or mixed generation is an unavailable installation, never a partially valid
-  one. Recovery tests MUST cover a crash after each root publication step and a
+  view. After every other staged output is sealed, the transaction writes and
+  fsyncs the final staged `install.lock`, then writes the staged
+  `.haex-hive/visibility.json` marker last. The marker contains a unique,
+  time-based generation ID and the names of every participating output root.
+  Readers MUST NOT treat individual root replacements or adapter pointer
+  replacements as publication. The final rename that makes the staged
+  `.haex-hive/` directory live is the sole publication event and publishes the
+  generation. Cleanup may follow but cannot change the marker or generation.
+  Readers first load the marker and then require every named root and active
+  overlay pointer to be available for the marker's `generation_id`; a missing
+  marker, incomplete root set, or generation mismatch is an unavailable
+  installation, never a partially valid one. Recovery tests MUST cover a crash
+  after each root publication step and a
   reinstall with non-empty output roots, including an unowned `.claude/` or
   `.codex/` file modified during staging that survives unchanged, proving that
   recovery either restores the previous marker-consistent generation or
   completes the new one before readers resume.
-- **Stable staged-input reads through commit**. Plan-build captures the exact
-  bytes of `.haex-hive.json`, every publisher manifest, and every atom manifest
-  into a sealed plan snapshot and records their digests. Immediately before
-  publishing any output, still under the install lock, the transaction reads
-  the live inputs into a fresh commit snapshot, hashes those snapshot bytes,
-  and compares every digest with the plan snapshot. A source identity/metadata
-  change during capture is also a failure. On any mismatch the install aborts
-  before the first output-root swap. Only the fresh, digest-matching commit
-  snapshot is then copied into a transaction-owned immutable input snapshot and
-  used for resolution and hydration; no later step re-reads live inputs. All
-  supported haex input writers MUST use the same exclusive install lock, which
-  prevents a coordinated mutation between the final check and the first swap.
-  The conformance suite MUST cover both a changed input before the final check
-  (abort) and a coordinated mutation after the final check (blocked writer).
+- **Stable staged-input reads through commit**. The exclusive install lock is
+  trusted to prevent supported haex writers from mutating `.haex-hive.json` or
+  publisher/atom inputs during an install. All supported haex input writers
+  MUST use the same exclusive install lock; a coordinated mutation attempt is
+  therefore refused or waits until the transaction releases its fence. An
+  out-of-band writer that ignores the lock is outside Spec 008's trusted-writer
+  threat model.
 - **Every side effect through the transaction**. The following outputs
-  MUST be produced through the same staging-root+journal transaction:
+  MUST be produced through the same staging-root transaction:
   `.haex-hive/constitution.md` (Spec 007 D2), `.haex-hive/config/<atom-id>.json`
   (Spec 007 D7), every file under `.haex-hive/generated/`, and any device-local
   agent-facing copy under `.claude/`, `.codex/`, etc. that Spec 010's
   adapters emit. `install.lock` is written last, after every other output
   in the transaction has been sealed (including any deferred publisher-hook
   outputs — see Spec 007's Non-Goals "Publisher install-time outputs" clause).
-- **Delete-orphans in-transaction**. The plan computes the delta between
-  the previous `install.lock` `ownership.paths` set and the current planned
-  ownership set. Each generated path has a versioned record containing its
-  root-relative path, owning resource, current generation and digest, and
-  previous-generation existence/digest data. Files owned by removed resources
-  are staged for deletion through the same transaction as new outputs; a
-  partial state where deleted files reappear after rollback (or new files
-  persist after rollback) is not allowed. Journal pre-image records retain the
-  bytes needed to restore writes and deletes, while unowned mixed-root entries
-  are preserved.
-- **`install.lock` computed last**. The lockfile records
-  `generated_content_integrity`, every `atoms[].content_integrity`, and the
-  versioned per-path `ownership.paths` set
-  over the final sealed bytes actually swapped into place. Its own fsync
-  precedes construction of `visibility.json`; the final atomic replacement of
-  `.haex-hive/visibility.json` is the sole publication step; journaled cleanup
-  may follow without changing the marker or generation. Any output that could
-  still mutate (native-tool outputs when they return — see Spec 007's Non-Goals
+- **Delete-orphans in-transaction**. The complete staged directory for a
+  haex-owned root is materialised from the current resolved output set. Files
+  owned by removed resources are omitted from `<root>.next/` and disappear
+  atomically when the staged directory replaces the live root. The retained
+  `<root>.prev/` directory supplies whole-generation rollback; no per-path
+  ownership record, content-integrity field, or rollback log is defined by
+  Spec 008. Mixed-root ownership and deletion rules are deferred to Spec 010;
+  unowned mixed-root entries remain outside the adapter overlay.
+- **`install.lock` computed last**. The lockfile records the resolved atom set,
+  `participating_roots`, and its `visibility_marker.generation_id`
+  cross-reference over the final staged outputs. It has no per-file or per-root
+  content-integrity fields and no persisted mixed-root ownership inventory.
+  Its own fsync precedes construction of `visibility.json`; the final atomic
+  directory rename is the sole publication step. Any output that could still
+  mutate (native-tool outputs when they return — see Spec 007's Non-Goals
   clarifier) is sealed before `install.lock` is computed.
 
 ## Conformance suite
@@ -120,28 +115,25 @@ Spec 008's conformance suite MUST cover:
 
 - Concurrent `haex install` invocations (one wins, the other waits or fails
   with owner detail)
-- Crash recovery from every journal state
-- Mid-install `.haex-hive.json` mutation (aborted at commit-time re-hash) and
-  a coordinated mutation attempted after the final check (blocked by the lock)
+- Crash recovery from every `<root>{,.next,.prev}` state
+- A coordinated `.haex-hive.json` mutation attempt while the install lock is
+  held (blocked by the lock)
 - Rollback of a partially-applied delete-orphans plan
 
-## `install.mutex` / `install.journal` placement
+## `install.mutex` placement
 
 The resolved placement is the device-local state root:
 `$HAEX_HIVE_STATE/locks/<repo-key>/`, alongside the content store, keeping
-`.haex-hive/` fully committed content. The repository mutex lives directly
-under that directory; each checkout's journal lives under
-`checkouts/<checkout-key>/install.journal`. `<repo-key>` is the lowercase
-hexadecimal SHA-256 of the canonical Spec-007 repo identity and
-`<checkout-key>` is a device-local hash of the resolved checkout path. The full
-identity is stored separately in `repo-identity.v1.json` for diagnostics and
-collision detection; neither key contains the identity or a path verbatim.
+`.haex-hive/` fully committed content. `<repo-key>` is the lowercase
+hexadecimal SHA-256 of the canonical Spec-007 repo identity. The full identity
+is stored separately in `repo-identity.v1.json` for diagnostics and collision
+detection; the key contains neither the identity nor a path verbatim.
 
 The fenced-lease contract is fixed: owner token
 `<pid>:<hostname>:<start_ns>:<uuid4_hex>`, 5-second heartbeat, 60-second TTL,
 5-second safety margin, reboot-safe `heartbeat_at_ns_wallclock` expiry values,
 the same non-blocking exclusive OS lock for recovery, unchanged-token
 revalidation, and in-place fencing before replay.
-No in-repository transaction lock or journal is used. All transaction state is
-device-local under the shared lock and checkout-scoped journal paths defined by
-the new contract.
+No in-repository transaction lock or journal is used. In-flight transaction
+state lives in same-filesystem sibling directories beside each participating
+output root; all lock state remains device-local.

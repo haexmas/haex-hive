@@ -1,7 +1,7 @@
 # Data Model: Install Transaction Contract
 
 **Feature**: Spec 008 — Install Transaction Contract
-**Date**: 2026-08-31
+**Date**: 2026-08-31 (amended 2026-09-01)
 **Purpose**: dataclass-level shapes and relationships for the install pipeline. Every persisted format has a matching JSON Schema under [contracts/](./contracts/); this file records the in-memory shapes and the state transitions of a running install.
 
 ---
@@ -24,7 +24,7 @@ combination of three directory names beside that root:
 | Directory | Meaning |
 |---|---|
 | `<root>/` | The currently-live generation. Its `visibility.json` names the published `generation_id`. |
-| `<root>.next/` | A staged, fully-written, digest-verified fresh generation awaiting rename-in. |
+| `<root>.next/` | A staged, fully-written generation with schema-compatible metadata, awaiting rename-in. |
 | `<root>.prev/` | The previous generation, retained during the swap so it can be restored on a mid-swap crash. |
 
 Every legal combination of presence/absence and its recovery action is
@@ -94,7 +94,7 @@ Sole publication event's on-disk representation: `.haex-hive/visibility.json`. S
 | `participating_roots` | `list[str]` | One entry per participating output root, e.g. `[".haex-hive/"]`. |
 | `written_at` | `str` | UTC ISO 8601 for operator diagnostics; not used in verification. |
 
-Per-root and per-marker `content_integrity` fields retired by the 2026-09-01 trust-git amendment; git provides the byte-identity guarantee for committed content.
+Per-root and per-marker content-integrity fields are retired by the 2026-09-01 trust-git amendment; git provides the byte-identity guarantee for committed content.
 
 ### InstallLock
 
@@ -135,16 +135,7 @@ START
   │                                per §R7 state table (complete forward,
   │                                roll back, or refuse)
   ▼
-[build_plan_snapshot]
-  │
-  ▼
-[commit_snapshot_verify]  ──── mismatch → [abort + delete <root>.next/]
-  │
-  ▼
-[seal_commit_inputs]
-  │
-  ▼
-[resolve_and_hydrate_from_commit_snapshot]
+[resolve_and_hydrate]
   │
   ▼
 [materialise_haex_root_next]  (write haex-owned files into <root>.next/, fsync)
@@ -162,7 +153,7 @@ START
 [write_visibility_marker_inside_next]  (write .haex-hive.next/visibility.json)
   │
   ▼
-[verify_next_digests]  (recompute per-root digest vs staged visibility.json)
+[validate_staged_generation]  (schema-compatible marker/lock and available roots)
   │
   ▼
 [publish_overlay_pointers]  (swap mixed-root pointers; preserve unowned siblings)
@@ -186,11 +177,11 @@ At any state above ↓
   ▼
 [resolve_in_flight_state]  → read <root>{,.next,.prev} presence
   │
-  ├── row 3 of §R7 (mid-swap, <root>/ absent) → verify and complete forward, or refuse
-  ├── row 4 of §R7 (post-swap, <root>.prev/ still present) → cleanup, or verified rollback
+  ├── row 3 of §R7 (mid-swap, <root>/ absent) → validate availability and complete forward, or refuse
+  ├── row 4 of §R7 (post-swap, <root>.prev/ still present) → cleanup, or restore an available previous generation
   ├── row 2 of §R7 (staged but pre-swap) → restore mixed-root pointers, delete <root>.next/, plan afresh
-  ├── row 5 of §R7 (both live and staged absent) → verified rollback
-  ├── row 7 of §R7 (first install, <root>/ and <root>.prev/ absent) → verify and complete forward, or refuse
+  ├── row 5 of §R7 (both live and staged absent) → restore an available previous generation
+  ├── row 7 of §R7 (first install, <root>/ and <root>.prev/ absent) → validate availability and complete forward, or refuse
   └── other rows → per §R7 state table
 ```
 
@@ -215,4 +206,4 @@ At any state above ↓
 
 - **Publisher-hook payloads** (Spec 009 territory): hook execution happens while `<root>.next/` is being materialised — whatever the hook produces lands in `.next/` and is committed atomically by the rename-swap. Spec 009 defines the hook-invocation surface; Spec 008 does not need a typed plan step to reserve it.
 - **Adapter output payloads** (Spec 010 territory): adapter-emitted files land in `.next/` alongside constitution.md; the rename-swap commits them atomically. Any per-adapter ownership or overlay-pointer bookkeeping is Spec 010's design decision.
-- **Cross-version migration** of `install.lock` and transaction state: **out of scope for Spec 008 under the project's pre-user policy.** A Spec 007-vintage `install.lock` fails Spec 008 schema validation (padded base64 digests, missing atoms shape) and the transaction refuses with `InstallLockSchemaInvalidError`. If a future adopter requires an in-place migration path, it lands under an explicit `haex migrate` verb per Principle VI v1.3.0, not as an implicit tool-side rewrite.
+- **Cross-version migration** of `install.lock` and transaction state: **out of scope for Spec 008 under the project's pre-user policy.** A Spec 007-vintage `install.lock` fails Spec 008 schema validation (missing the amended atom/root shape) and the transaction refuses with `InstallLockSchemaInvalidError`. If a future adopter requires an in-place migration path, it lands under an explicit `haex migrate` verb per Principle VI v1.3.0, not as an implicit tool-side rewrite.

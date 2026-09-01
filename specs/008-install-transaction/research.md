@@ -27,8 +27,8 @@ For **mixed-ownership roots** (`.claude/`, `.codex/`, future Spec 010 adapters),
 
 **Publication order** for `.haex-hive/`:
 
-1. Stage every file into `.haex-hive.next/` (same-filesystem sibling per R2), fsync each file and the staging directory. `.haex-hive.next/visibility.json` is written last inside the staging tree and covers every file about to become live.
-2. Verify: re-read the staged files, recompute the per-root digest (R5), and confirm it equals the digest written into the staged `visibility.json`. Any mismatch aborts before any rename.
+1. Stage every file into `.haex-hive.next/` (same-filesystem sibling per R2), fsync each file and the staging directory. `.haex-hive.next/visibility.json` is written last inside the staging tree and names the generation and every participating root about to become live.
+2. Verify: re-read the staged metadata, validate the `install.lock` and `visibility.json` schemas, and confirm that the marker's `generation_id` matches the lock cross-reference and that every participating root is available for that generation. Any schema, generation, or root-availability mismatch aborts before any rename.
 3. **Rename A**: if `.haex-hive/` exists, `os.rename(".haex-hive", ".haex-hive.prev")`, then fsync the parent directory.
 4. **Rename B**: `os.rename(".haex-hive.next", ".haex-hive")`, then fsync the parent directory.
 5. Cleanup: `rmtree(".haex-hive.prev")`, fsync parent.
@@ -94,13 +94,13 @@ through their R3 pointer contract.
 **Decision**: Per-platform overlay primitives selected from a small allowlist:
 - **Directory-scoped overlay** (e.g. `.claude/skills/`, `.claude/agents/`): POSIX → `os.symlink()`; Windows → a true directory junction via `mklink /J` or a native `CreateJunction` helper implemented with the Windows reparse-point API. `CreateSymbolicLinkW(..., SYMBOLIC_LINK_FLAG_DIRECTORY)` creates a directory symbolic link, not a junction, and is not used as the junction fallback. Junctions work on Windows without Developer Mode.
 - **File-scoped overlay** (e.g. `.claude/settings.json`): POSIX → `os.symlink()`; Windows without Developer Mode → **refused per FR-003**, install exits with a diagnostic naming the unsupported path. Launcher-indirection for file-scoped overlays is a future refinement (Spec 010 or later); not in Spec 008 scope.
-- Every overlay is recorded in `install.lock`'s per-root `overlay_paths` array; publication touches ONLY the paths in that array; sibling entries in the mixed-ownership root are never enumerated, copied, or replaced (FR-003).
+- Each adapter declares the paths it owns through the Spec 010 overlay contract; publication touches ONLY those declared paths; sibling entries in the mixed-ownership root are never enumerated, copied, or replaced (FR-003). Spec 008 does not persist that ownership inventory in `install.lock`.
 
-The new overlay generation is fully materialised and verified before its
-current-generation pointer is switched. That pointer switch occurs while the
-old `.haex-hive/visibility.json` marker is still live; a reader that sees the
-new overlay with the old marker observes a digest mismatch and reports the
-installation as unavailable. If the process stops before the haex-owned
+The new overlay generation is fully materialised and schema-compatible before
+its current-generation pointer is switched. That pointer switch occurs while
+the old `.haex-hive/visibility.json` marker is still live; a reader that sees
+the new overlay with the old marker observes a generation mismatch and reports
+the installation as unavailable. If the process stops before the haex-owned
 rename-swap publishes the new marker, recovery restores the prior overlay
 pointer from its retained generation. After the marker is published, recovery
 keeps the new pointer and only removes obsolete generations.
@@ -109,10 +109,10 @@ keeps the new pointer and only removes obsolete generations.
 - Directory junctions on Windows are OS-native, need no elevation, work identically to symlinks for readers, and cover the common case of adapters that publish a whole directory of skills/agents/rules.
 - Per-file symlinks on POSIX are trivially supported.
 - File-scoped symlinks on Windows require Developer Mode — treating that as an install-time refusal is consistent with FR-003 ("A platform without an atomic pointer or stable overlay mechanism MUST refuse the install rather than publish a torn direct view").
-- The `overlay_paths` allowlist in `install.lock` is the mechanical enforcement of "touch only what we own" — the publication code MUST NOT enumerate the target root; it iterates the allowlist.
+- The adapter-owned path allowlist is the mechanical enforcement of "touch only what we own" — the publication code MUST NOT enumerate the target root; it iterates the paths supplied by the adapter contract.
 
 **Alternatives considered**:
-- **Copy-with-drift-marker** (byte-copy instead of symlink, verify hash on next install): works portably but reintroduces the drift-risk symlinks were chosen to avoid. Rejected for MVP.
+- **Copy-with-drift-marker** (byte-copy instead of symlink, detect drift on next install): works portably but reintroduces the direct-view drift risk symlinks were chosen to avoid. Rejected for MVP.
 - **Adapter-managed launcher** (a small script that redirects to the current generation directory): universal, no elevation, but adds indirection cost per read. Deferred to a future revision.
 - **Refuse Windows entirely for mixed-ownership roots**: too broad — directory-scoped overlays via junctions cover the common Spec 010 adapter cases. File-scoped-only refusal is the narrower and more accurate stance.
 
@@ -191,29 +191,31 @@ Every haex-owned install transitions through these three names in the R1 rename-
 |---|---|---|---|---|
 | present | absent | absent | steady state — nothing in flight | none |
 | present | present | absent | pre-swap crash (staging existed but rename A did not run) | restore each mixed-root pointer to its retained prior overlay generation per R3, fsync the pointer parent, then `rmtree(<root>.next/)`; rerun of install proceeds normally |
-| absent | present | present | mid-swap crash between rename A and rename B | verify `<root>.next/`; if valid, complete forward with `os.rename(<root>.next/, <root>/)` and then `rmtree(<root>.prev/)`; if the present candidate fails verification, refuse without publishing |
-| present | absent | present | post-swap crash before cleanup | verify the live marker; clean `<root>.prev/` if valid; if the live root fails verification, remove its invalid tree with `rmtree(<root>/)`, fsync the parent, then restore the verified `<root>.prev/` with `os.rename(<root>.prev/, <root>/)` and fsync again |
-| absent | absent | present | rename A completed but the staged generation was lost | verify `<root>.prev/`, then restore it with `os.rename(<root>.prev/, <root>/)` and fsync the parent; refuse if the previous generation does not verify |
+| absent | present | present | mid-swap crash between rename A and rename B | verify that `<root>.next/` contains schema-compatible metadata and that all participating roots are generation-compatible and available; if so, complete forward with `os.rename(<root>.next/, <root>/)` and then `rmtree(<root>.prev/)`; otherwise refuse without publishing |
+| present | absent | present | post-swap crash before cleanup | verify that the live marker is schema-compatible and that all participating roots are generation-compatible and available; clean `<root>.prev/` if so; if the live root is unavailable, remove its invalid tree with `rmtree(<root>/)`, fsync the parent, then restore the available `<root>.prev/` with `os.rename(<root>.prev/, <root>/)` and fsync again |
+| absent | absent | present | rename A completed but the staged generation was lost | verify that `<root>.prev/` is schema-compatible and available, then restore it with `os.rename(<root>.prev/, <root>/)` and fsync the parent; refuse if the previous generation is unavailable |
 | present | present | present | reserved illegal combination (would require concurrent installs; the exclusive lock forbids it) | refuse; require operator cleanup |
-| absent | present | absent | first-install crash before rename B, or rename A completed but `<root>.prev/` was lost | verify `<root>.next/` and complete forward with `os.rename(<root>.next/, <root>/)`; refuse if it does not verify |
+| absent | present | absent | first-install crash before rename B, or rename A completed but `<root>.prev/` was lost | verify that `<root>.next/` contains schema-compatible metadata and available participating roots, then complete forward with `os.rename(<root>.next/, <root>/)`; refuse if it is unavailable |
 | absent | absent | absent | fresh checkout, no install ever ran | none — install proceeds |
 
-Recovery completes **forward** only when the staged generation verifies against
-its marker and root digests. A present but invalid staged generation is an
-integrity failure and is refused; it is never silently replaced by `.prev`.
-Rollback is reachable only in the explicit R7 cases: an invalid live root in
-the post-swap row, after removing that root, or a missing staged generation in
-the `absent/absent/present` row. In both cases `.prev` must verify first. The
-rollback removal and rename are each followed by a parent-directory fsync; a
-crash between them re-enters the `absent/absent/present` row and retries the
-verified restore. This satisfies FR-011 without a journal and never publishes
-a torn state.
+Recovery completes **forward** only when the staged generation has
+schema-compatible metadata, its `generation_id` agrees with the lock
+cross-reference, and every participating root is available with a matching
+generation. A present but unavailable or schema-invalid staged generation is
+refused; it is never silently replaced by `.prev`. Rollback is reachable only
+in the explicit R7 cases: an unavailable live root in the post-swap row, after
+removing that root, or a missing staged generation in the
+`absent/absent/present` row. In both cases `.prev` must be schema-compatible and
+available first. The rollback removal and rename are each followed by a
+parent-directory fsync; a crash between them re-enters the
+`absent/absent/present` row and retries the restore. This satisfies FR-011
+without a journal and never publishes a torn state.
 
 **Rationale**:
 - **The filesystem IS the durable state**. The three directory names cover all
-  2³ combinations; recovery verifies the candidate generation before choosing
-  forward completion or restoration from `.prev`. No journal file, chain, or
-  sidecar must be synchronised.
+  2³ combinations; recovery validates the candidate generation's metadata and
+  availability before choosing forward completion or restoration from `.prev`.
+  No journal file, chain, or sidecar must be synchronised.
 - **Renames are the only durable state transitions**. Because both step 3 and step 4 of R1 are atomic single syscalls, every intermediate observable state is one of the eight rows above.
 - **No parallel state to keep in sync**. The previous JSONL-plus-sidecar design had two files (`install.journal` and `install.journal.meta`) whose atomic update relative to each other required its own recovery logic. That whole layer disappears.
 
@@ -223,25 +225,26 @@ a torn state.
 - **Retain the JSONL journal for extensibility** (Spec 009 hooks, Spec 010 adapters). Rejected in this rewrite: Spec 009 hooks run before rename A, so their outputs are staged into `<root>.next/` and covered by the same state machine; Spec 010 mixed-ownership overlays get their own symlink-swap contract per R3.
 
 **Residual risk**:
-- **Integrity failures** (an illegal combination or a candidate generation that
-  fails verification) require operator action. In practice these arise only
-  from filesystem corruption, out-of-band tampering, or an implementation bug;
-  the operator diagnostic tells them exactly which directories to clean.
+- **Unavailable states** (an illegal combination or a candidate generation with
+  invalid metadata or missing roots) require operator action. In practice these
+  arise only from filesystem corruption, out-of-band tampering, or an
+  implementation bug; the operator diagnostic tells them exactly which
+  directories to clean.
 - **Parent-directory listing cost**: recovery reads `os.listdir(parent_of_root)`. For `.haex-hive/` the parent is the repo root, which may contain many entries; the check is bounded to matching `<root>{,.next,.prev}` and is O(entries) with tiny constants. Not a concern at realistic repo sizes.
 
 ---
 
 ## R8. Time-based generation ID
 
-**Decision**: `g_<UTC-ISO8601-basic-format>_<content-hash-prefix>` — e.g. `g_20260831T142011Z_a4c2` — where `<content-hash-prefix>` is the first 4 hex chars of `SHA-256(plan-snapshot-digest)`. The timestamp is the UTC allocation time, not a deterministic input. The allocator advances the timestamp if the candidate equals an existing generation ID, making IDs unique and lexicographically time-ordered under the exclusive install lock.
+**Decision**: `g_<UTC-ISO8601-basic-format>_<content-hash-prefix>` — e.g. `g_20260831T142011Z_a4c2` — where `<content-hash-prefix>` is the first 4 hex chars of `SHA-256(constitution.md bytes)`. The timestamp is the UTC allocation time, not a deterministic input. The allocator advances the timestamp if the candidate equals an existing generation ID, making IDs unique and lexicographically time-ordered under the exclusive install lock. The suffix is an identifier hint only; it is not an integrity check.
 
 **Rationale**:
-- **Stable plan identity** — the hash suffix is derived from the sealed plan snapshot, while the timestamp identifies allocation order. Recovery uses the generation ID recorded in the staged marker rather than recomputing the full ID from inputs.
+- **Stable content hint** — the hash suffix is derived from the assembled constitution bytes, while the timestamp identifies allocation order. Recovery uses the generation ID recorded in the staged marker rather than recomputing it or using the suffix as an integrity check.
 - **Human-inspectable** — the timestamp lets the operator eyeball the install order in `.haex-hive/visibility.json.previous/` (if we ever add generation history — future revision).
 - **UTC ISO 8601 basic** — no locale-specific format issues, sortable as ASCII.
 
 **Alternatives considered**:
-- **UUID4**: not deterministic; recovery cannot verify.
+- **UUID4**: provides no human-inspectable content hint; the timestamp plus short content-derived suffix is more useful for diagnostics.
 - **Sequential integer**: needs a persisted counter, adds state.
 - **Full content-hash**: opaque to operators; the 4-char prefix + timestamp balance readability with disambiguation.
 
@@ -252,8 +255,8 @@ a torn state.
 ## R9. Constitution assemble integration
 
 **Decision**: The existing `haex constitution assemble` transaction (Spec 007) becomes a single-participant special case of `haex install`'s transaction. Concretely:
-- `haex install` runs constitution assembly as one plan step among many when the plan's atoms include `contributes.constitution`.
-- The existing `.haex-hive/install.lock` schema is EXTENDED with `atoms`, `overlay_paths` per participating root, a `visibility_marker` block, `participating_roots`, and a versioned `ownership` set. Digest fields move to base64url no-pad. **Under the project's pre-user policy** (no external adopters, breaking changes fine — see `haex_hive_pre_user.md` in agent memory), this is a hard cut: a Spec 007-vintage `install.lock` fails Spec 008 schema validation with `InstallLockSchemaInvalidError` and there is no in-tool migration. Operator recovery is to remove the stale file and re-run `haex constitution assemble`.
+- `haex install` composes constitution assembly with the other fixed-shape outputs when the manifest includes `contributes.constitution`.
+- The existing `.haex-hive/install.lock` schema is extended with `atoms`, `participating_roots`, and a `visibility_marker` block. It carries no content-integrity or per-path ownership records; mixed-root ownership and overlay bookkeeping are deferred to Spec 010. **Under the project's pre-user policy** (no external adopters, breaking changes fine), a Spec 007-vintage `install.lock` fails Spec 008 schema validation with `InstallLockSchemaInvalidError` and there is no in-tool migration. Operator recovery is to remove the stale file and re-run `haex constitution assemble`.
 - `haex constitution assemble` (invoked directly) still works — it becomes a shortcut that runs the install transaction with a plan filtered to constitution-only steps. This preserves the current UX.
 - Multi-source LLM-merge (Spec 007's `--llm=file` two-phase flow) is preserved unchanged.
 - Shared path helpers derive `$HAEX_HIVE_STATE`, the canonical project identity, its SHA-256 `<repo-key>`, and the repository mutex. Both `constitution assemble` and `constitution show` use these helpers. The rename-swap contract (R1) plus in-flight recovery state (R7) replace the earlier durable-JSONL-journal design; no journal file is created inside the state root by either command.
@@ -266,53 +269,30 @@ a torn state.
 **Alternatives considered**:
 - **Keep the two paths separate, migrate later**: rejected — drift risk in a load-bearing invariant is unacceptable.
 - **Deprecate `haex constitution assemble` in favour of `haex install --scope=constitution`**: too disruptive for an existing landed CLI. The UX shortcut stays.
-- **Preserve backward compatibility for `install.lock` (`sriDigest` accepts both alphabets; atoms fields optional)**: rejected under pre-user policy — cost of the shim exceeds its value while no external adopters exist. If a first adopter ever appears this decision is revisited via a spec amendment.
+- **Preserve backward compatibility for `install.lock`**: rejected under pre-user policy — cost of the shim exceeds its value while no external adopters exist. If a first adopter ever appears this decision is revisited via a spec amendment.
 
 **Residual risk**: an operator with an in-flight Spec 007-vintage `install.lock` on their dev machine gets a schema refusal on the next `haex install`. Recovery is one `rm` and `haex constitution assemble`. This is acceptable under the pre-user policy because no external adopters need an in-place state migration.
 
 ---
 
-## R10. Adapter overlay path enumeration source
+## ~~R10. Adapter overlay path enumeration source~~ (deferred)
 
-**Decision**: The plan-build step (Spec 008 module `install/plan.py`) collects `overlay_paths` from two sources:
-1. **Static-per-atom declarations** — an atom's `manifest.json` may declare which paths its adapter emissions will occupy under a mixed-ownership root (extension to Spec 007's atom-manifest schema, coordinated with Spec 010 during that spec's design).
-2. **Adapter runtime declarations** — Spec 010 adapters register their emission paths with the install pipeline before staging; the pipeline records those paths in the plan snapshot.
-
-**Rationale**:
-- Static declaration is possible for stable, atom-scoped emissions (a fixed skill file, a fixed rule directory).
-- Dynamic registration accommodates adapters that compute their output set from the resolved atom set (e.g. a "one skill per adopted MCP server" adapter).
-- Both flow through the same `overlay_paths` allowlist so the "touch only what we own" enforcement is uniform.
-
-**Alternatives considered**:
-- **Only static**: too restrictive; blocks legitimate dynamic adapters.
-- **Only dynamic**: forfeits pre-plan validation (an adapter can register anything at runtime).
-- Both together lets the plan validate the static claims and record the dynamic ones under the same enforcement.
-
-**Residual risk**: An adapter that dynamically registers a path outside a mixed-ownership root (e.g. a path in `.git/hooks/` claimed by graphify-first-authoring) is out of scope for the overlay mechanism — those go through the hook boundary (Spec 009) instead. The install pipeline validates that dynamic registrations are within a declared participating output root; violations refuse.
+The earlier plan-build and `overlay_paths` enumeration design is deferred to
+Spec 010. Spec 008 records only the participating root names and the
+generation-compatibility requirement: an active adapter pointer MUST name the
+same generation as `.haex-hive/visibility.json` before a reader accepts the
+installation. Spec 010 owns the adapter contract and its path/ownership model.
 
 ---
 
-## R10a. Persisted per-path ownership and rollback pre-images
+## ~~R10a. Persisted per-path ownership and rollback pre-images~~ (deferred)
 
-**Decision**: Extend `install.lock` with `ownership: {"version": 1, "paths": [...]}`.
-Each `paths[]` record contains the root-relative POSIX path, an owner resource
-(`atom`, `adapter`, or `hook`), the current generation ID and file digest, and a
-`previous` record containing the prior generation ID, whether the path existed,
-and its prior digest (or `null`). The array is unique and bytewise sorted.
-
-The previous and current ownership sets are the only inputs to orphan planning.
-The ownership sets describe which paths belong to the current generation and
-which paths are removed by omission from the next generation. Actual rollback
-bytes are retained by the complete `<root>.prev/` tree for haex-owned roots or
-by the prior adapter overlay generation for mixed-ownership roots. Rollback
-restores that prior generation as a whole; no journal, per-path pre-image, or
-transaction-relative rollback reference is required, and unowned siblings are
-never inferred or touched.
-
-**Rationale**: Aggregate root digests prove what a generation contains but cannot
-answer who owns a path or whether a deletion is safe. A versioned ownership set
-provides that planning boundary, while retained prior generations provide the
-bytes needed for recovery.
+Persisted per-path ownership, orphan planning, and mixed-root rollback
+bookkeeping are deferred to Spec 010. Spec 008's haex-owned root is replaced
+as a complete staged directory, so removed files are absent from the next
+generation and disappear atomically with the swap. The retained `.prev`
+directory supplies whole-generation rollback; no per-path pre-image or
+ownership record is defined here.
 
 ---
 
@@ -320,12 +300,12 @@ bytes needed for recovery.
 
 Recorded for the plan phase; each has a mitigation baked into R1–R6.
 
-- **`os.replace()` on Windows with a held reader handle** — see R1 residual risk (retry-backoff-then-refuse).
-- **Windows directory-junction creation** — `mklink /J` is a command-line fallback for directory targets; a native `CreateJunction` helper uses the Windows reparse-point API. `CreateSymbolicLinkW(..., SYMBOLIC_LINK_FLAG_DIRECTORY)` is a directory symbolic-link API, not a junction primitive. All selected primitives refuse an existing matching entry. The prior overlay generation remains available until the new pointer and marker have been verified; on creation failure or a crash before marker publication, recovery restores the prior pointer, and after marker publication cleanup removes the obsolete generation only after the new pointer verifies. The rollback generation and ownership set are recorded in the install metadata.
+- **Directory rename on Windows with a held reader handle** — see R1 residual risk (retry-backoff-then-refuse).
+- **Windows directory-junction creation** — `mklink /J` is a command-line fallback for directory targets; a native `CreateJunction` helper uses the Windows reparse-point API. `CreateSymbolicLinkW(..., SYMBOLIC_LINK_FLAG_DIRECTORY)` is a directory symbolic-link API, not a junction primitive. All selected primitives refuse an existing matching entry. The prior overlay generation remains available until the new pointer and marker have been published consistently; on creation failure or a crash before marker publication, recovery restores the prior pointer, and after marker publication cleanup removes the obsolete generation only after the new pointer has the marker's generation ID.
 - **Windows without Developer Mode + file-scoped symlink** — refuse per R3.
 - **`fcntl.flock` unavailable on Windows** — use `LockFileEx` through `ctypes` (R6); the lock module's Windows tests cover two concurrent readers and a writer excluded until both readers release.
 - **Path separators** — every path stored on disk is POSIX-normalised (`/`); Windows-side code converts at the OS boundary only.
-- **Case-sensitivity** — NTFS is case-insensitive by default; the digest scheme (R5) uses the path exactly as recorded in `install.lock`, so a `Foo.md` vs `foo.md` mismatch is treated as a validation error at input time, not as two distinct files.
+- **Case-sensitivity** — NTFS is case-insensitive by default; path names are validated as canonical POSIX-relative strings, so a `Foo.md` vs `foo.md` collision is treated as a validation error at input time, not as two distinct files.
 
 ---
 
@@ -334,8 +314,8 @@ Recorded for the plan phase; each has a mitigation baked into R1–R6.
 **Decision**:
 - **Crash injection**: run the install in a child process and terminate it with `SIGKILL` or the platform-equivalent abrupt termination at chosen state boundaries. The pytest fixture parametrises across the in-flight directory-state matrix and mixed-root pointer exchange; exception-based exits are not used because `SystemExit` unwinds Python frames and executes `finally` blocks.
 - **Concurrent invocation**: `multiprocessing.Process` fires the second install; the primary asserts the second's exit code, stderr contains the winner's owner token, and no output file was touched by the second.
-- **Mid-install source mutation**: a background thread rewrites `.haex-hive.json` at the moment the plan snapshot completes; the assertion is `haex install` exits with the commit-time-mismatch diagnostic and no output was published.
-- **Unowned-file survival**: the fixture pre-populates `.claude/` and `.codex/` with files not in the overlay_paths allowlist; the assertion is those files are byte-identical after install and after recovery.
+- **Coordinated input writer**: a background thread attempts to rewrite `.haex-hive.json` while the install holds the exclusive lock; the assertion is that the writer waits or is refused and no concurrent mutation is incorporated into the transaction. Out-of-band mutation that ignores the lock is outside Spec 008's trusted-writer threat model.
+- **Unowned-file survival**: the fixture pre-populates `.claude/` and `.codex/` with files outside the adapter-owned path allowlist; the assertion is those files are byte-identical after install and after recovery.
 
 **Rationale**: keeps the conformance suite in pure Python using `pytest`, `multiprocessing`, and `tempfile.TemporaryDirectory`; no external test-orchestration tool. Runs on all three OSes.
 
