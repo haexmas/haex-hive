@@ -238,7 +238,8 @@ def test_recover_absent_prior_removes_targets(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="fcntl-based lock is POSIX-only")
 def test_concurrent_writer_refused(tmp_path: Path) -> None:
-    lock_path = tmp_path / "state" / "install.mutex"
+    state_root = _init_project(tmp_path)
+    lock_path = transaction_paths(tmp_path, state_root).mutex
     lock = writer_lock.ConstitutionWriterLock(lock_path)
     with lock:
         second = writer_lock.ConstitutionWriterLock(lock_path)
