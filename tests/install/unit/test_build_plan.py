@@ -17,9 +17,10 @@ from haex_hive.install.plan import (
     MultiSourceNotSupportedByBuildPlan,
     PlanBuildResult,
     PlanSnapshot,
+    _read_atom_manifest_bytes,
     build_plan,
 )
-from haex_hive.util.errors import NoSourcesDeclaredError
+from haex_hive.util.errors import MissingPublisherManifestError, NoSourcesDeclaredError
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git binary required")
 
@@ -121,3 +122,19 @@ def test_build_plan_multi_source_refuses(
 
     with pytest.raises(MultiSourceNotSupportedByBuildPlan):
         build_plan(consumer, state_root)
+
+
+def test_read_atom_manifest_invalid_publisher_manifest_is_typed_error() -> None:
+    """Malformed publisher manifests use the stable missing-manifest error."""
+    with pytest.raises(MissingPublisherManifestError) as exc_info:
+        _read_atom_manifest_bytes(
+            Path("."),
+            "a" * 40,
+            "com.example.publisher.atom",
+            b'{"haex_hive_version":"2",'
+            b'"publisher":"com.example.publisher",'
+            b'"atoms":{"com.other.publisher.atom":{"path":"atom",'
+            b'"version":"1.0.0"}}}',
+        )
+
+    assert isinstance(exc_info.value.__cause__, ValueError)
