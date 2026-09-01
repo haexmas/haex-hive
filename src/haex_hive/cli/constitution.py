@@ -9,6 +9,7 @@ from haex_hive.cli.main import INSTALLED_VERSION_STRING
 from haex_hive.constitution.assemble import assemble_multi_source, assemble_single_source
 from haex_hive.constitution.resolve import resolve_constitution_contributions
 from haex_hive.constitution.show import show as render_constitution
+from haex_hive.install import inflight
 from haex_hive.io import transaction
 from haex_hive.io.state import default_state_root, transaction_paths
 from haex_hive.io.writer_lock import ConstitutionWriterLock
@@ -67,7 +68,7 @@ def run_assemble(args: argparse.Namespace) -> int:
     try:
         paths = transaction_paths(repo_root, state_root)
         with ConstitutionWriterLock(paths.mutex):
-            transaction.recover_if_journaled(repo_root, state_root=state_root)
+            inflight.resolve(repo_root / transaction.HAEX_HIVE_DIR)
 
             manifest = _load_consumer_manifest(repo_root)
             contributions = resolve_constitution_contributions(manifest, state_root)

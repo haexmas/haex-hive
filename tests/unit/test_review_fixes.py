@@ -14,8 +14,7 @@ from haex_hive.constitution.safety import (
     validate_no_plaintext_secrets,
     validate_terminal_safe_display,
 )
-from haex_hive.io import json_deterministic, transaction
-from haex_hive.io.state import transaction_paths
+from haex_hive.io import json_deterministic
 from haex_hive.migrate import detect
 from haex_hive.migrate.transform import (
     _glob_matches,
@@ -172,75 +171,8 @@ def test_json_pointer_escapes_tokens() -> None:
     assert _json_pointer(["bad/key~name"]) == "/bad~1key~0name"
 
 
-def test_recovery_validates_all_paths_before_mutating(tmp_path: Path) -> None:
-    (tmp_path / ".haex-hive.json").write_text(
-        json.dumps({"identity": "com.example.consumer"})
-    )
-    state_root = tmp_path / "state"
-    hive = tmp_path / transaction.HAEX_HIVE_DIR
-    hive.mkdir()
-    constitution = hive / transaction.CONSTITUTION_NAME
-    outside = tmp_path / "outside.txt"
-    constitution.write_bytes(b"keep")
-    outside.write_bytes(b"do not touch")
-    journal = transaction_paths(tmp_path, state_root).journal
-    journal.parent.mkdir(parents=True)
-    journal.write_text(
-        json.dumps(
-            {
-                "targets": [
-                    {
-                        "logical": "constitution",
-                        "target": ".haex-hive/constitution.md",
-                        "staged": ".haex-hive/constitution.staged.tmp",
-                        "prior_state": "absent",
-                        "backup": None,
-                    },
-                    {
-                        "logical": "install_lock",
-                        "target": "../outside.txt",
-                        "staged": ".haex-hive/install_lock.staged.tmp",
-                        "prior_state": "absent",
-                        "backup": None,
-                    },
-                ]
-            }
-        )
-    )
-    with pytest.raises(ValueError):
-        transaction.recover_if_journaled(tmp_path, state_root=state_root)
-    assert constitution.read_bytes() == b"keep"
-    assert outside.read_bytes() == b"do not touch"
-    assert journal.exists()
-
-
-def test_recovery_rejects_incomplete_journal_before_mutating(tmp_path: Path) -> None:
-    (tmp_path / ".haex-hive.json").write_text(
-        json.dumps({"identity": "com.example.consumer"})
-    )
-    state_root = tmp_path / "state"
-    hive = tmp_path / transaction.HAEX_HIVE_DIR
-    hive.mkdir()
-    constitution = hive / transaction.CONSTITUTION_NAME
-    constitution.write_bytes(b"keep")
-    journal = transaction_paths(tmp_path, state_root).journal
-    journal.parent.mkdir(parents=True)
-    journal.write_text(
-        json.dumps(
-            {
-                "targets": [
-                    {
-                        "logical": "constitution",
-                        "target": ".haex-hive/constitution.md",
-                        "staged": ".haex-hive/constitution.staged.tmp",
-                        "prior_state": "absent",
-                        "backup": None,
-                    }
-                ]
-            }
-        )
-    )
-    with pytest.raises(ValueError):
-        transaction.recover_if_journaled(tmp_path, state_root=state_root)
-    assert constitution.read_bytes() == b"keep"
-    assert journal.exists()
+# NOTE: The two `test_recovery_*` tests were retired by the R1/R7 amendment
+# (2026-09-01). They exercised the bespoke JSON transaction journal's path
+# validation and completeness checks; both have no counterpart under the
+# rename-swap contract, which encodes state entirely in directory names.
+# See tests/unit/test_transaction.py for the replacement in-flight coverage.

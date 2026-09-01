@@ -11,8 +11,6 @@ from pathlib import Path
 
 import pytest
 
-from haex_hive.io.state import transaction_paths
-
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git binary required")
 
 
@@ -152,12 +150,13 @@ def test_integrity_mismatch_refuses(single_source_constitution_fixture: dict) ->
     assert proc.stdout == b""
 
 
-def test_live_journal_refuses(single_source_constitution_fixture: dict) -> None:
+def test_inflight_state_refuses(single_source_constitution_fixture: dict) -> None:
+    """Show refuses when an in-flight `.haex-hive.next/` or `.haex-hive.prev/` exists."""
     consumer = single_source_constitution_fixture["consumer"]
     state_root = single_source_constitution_fixture["state_root"]
     _assemble(consumer, state_root)
 
-    transaction_paths(consumer, state_root).journal.write_text("{}")
+    (consumer / ".haex-hive.prev").mkdir()
 
     proc = _show(consumer, state_root=state_root)
     assert proc.returncode == 7

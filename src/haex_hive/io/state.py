@@ -15,7 +15,15 @@ from haex_hive.util.errors import MissingRemoteOriginError
 
 @dataclass(frozen=True)
 class TransactionPaths:
-    """Resolved device-local paths for one project identity."""
+    """Resolved device-local paths for one project identity.
+
+    Under the R1/R7 amendment (see specs/008-install-transaction/research.md)
+    there is no durable journal file: the in-flight recovery state lives
+    entirely in the same-filesystem sibling directories `<root>.next/` and
+    `<root>.prev/` beside each participating output root. Only the exclusive
+    install mutex and the diagnostic identity record are shared through the
+    device-local state root.
+    """
 
     state_root: Path
     identity: str
@@ -23,7 +31,6 @@ class TransactionPaths:
     checkout_key: str
     lock_dir: Path
     mutex: Path
-    journal: Path
     identity_record: Path
 
 
@@ -86,7 +93,6 @@ def transaction_paths(repo_root: Path, state_root: Path | None = None) -> Transa
         checkout_key=checkout_key,
         lock_dir=lock_dir,
         mutex=lock_dir / "install.mutex",
-        journal=lock_dir / "checkouts" / checkout_key / "install.journal",
         identity_record=lock_dir / "repo-identity.v1.json",
     )
 

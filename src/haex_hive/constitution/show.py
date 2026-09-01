@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import BinaryIO
 
+from haex_hive.install import inflight
 from haex_hive.io import transaction
 from haex_hive.io.file_hash import d15_one_file_tree_digest
 from haex_hive.model.install_lock import InstallLock
@@ -32,12 +33,17 @@ def show(
     out: BinaryIO | None = None,
     state_root: Path | None = None,
 ) -> None:
-    if transaction.is_journaled(repo_root, state_root=state_root):
+    hive_dir = repo_root / transaction.HAEX_HIVE_DIR
+    del state_root  # recovery is a writer concern; show is read-only.
+    state = inflight.inspect(hive_dir)
+    if state not in (inflight.InflightState.STEADY, inflight.InflightState.UNINITIALIZED):
         raise IncompleteAssemblyTransactionError(
-            message="an install transaction journal is present",
+            message=(
+                "install transaction is in flight (state: "
+                f"{state.value}); run `haex constitution assemble` to resolve"
+            ),
         )
 
-    hive_dir = repo_root / transaction.HAEX_HIVE_DIR
     constitution_path = hive_dir / transaction.CONSTITUTION_NAME
     if not constitution_path.exists():
         raise ConstitutionNotAssembledError(
