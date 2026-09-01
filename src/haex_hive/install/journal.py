@@ -26,12 +26,18 @@ import hashlib
 import json
 import os
 import sys
+import tempfile
 import time
+from collections.abc import Mapping
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from haex_hive.model._immutable import freeze_json, thaw_json
+
 _IS_WINDOWS = sys.platform == "win32"
+_JOURNAL_STATE_SUFFIX = ".meta"
 
 EntryType = Literal[
     "plan_snapshot_sealed",
@@ -63,9 +69,14 @@ class JournalEntry:
     entry_type: EntryType
     tail_hash: str
     step_id: int | None = None
-    payload: dict[str, Any] = field(default_factory=dict)
+    payload: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Copy and recursively freeze the payload supplied by the caller."""
+        object.__setattr__(self, "payload", freeze_json(dict(self.payload)))
 
     def to_dict(self) -> dict[str, Any]:
+        """Return a detached, JSON-serializable representation of the entry."""
         obj: dict[str, Any] = {
             "entry_id": self.entry_id,
             "wrote_at_ns": self.wrote_at_ns,
@@ -75,7 +86,7 @@ class JournalEntry:
         if self.step_id is not None or self.entry_type in _LIFECYCLE_ENTRY_TYPES:
             obj["step_id"] = self.step_id
         if self.payload or self.entry_type in _PAYLOAD_ENTRY_TYPES:
-            obj["payload"] = self.payload
+            obj["payload"] = thaw_json(self.payload)
         return obj
 
 
@@ -130,7 +141,7 @@ def make_entry(
     entry_type: EntryType,
     prev_tail_hash: str,
     step_id: int | None = None,
-    payload: dict[str, Any] | None = None,
+    payload: Mapping[str, Any] | None = None,
     wrote_at_ns: int | None = None,
 ) -> JournalEntry:
     """Build a `JournalEntry` with its tail hash already computed.
@@ -139,7 +150,7 @@ def make_entry(
     for tests that need determinism.
     """
     actual_wrote_at_ns = time.monotonic_ns() if wrote_at_ns is None else wrote_at_ns
-    normalized_payload = payload if payload is not None else {}
+    normalized_payload = freeze_json(dict(payload)) if payload is not None else freeze_json({})
     body: dict[str, Any] = {
         "entry_id": entry_id,
         "wrote_at_ns": actual_wrote_at_ns,
@@ -148,7 +159,7 @@ def make_entry(
     if step_id is not None or entry_type in _LIFECYCLE_ENTRY_TYPES:
         body["step_id"] = step_id
     if normalized_payload or entry_type in _PAYLOAD_ENTRY_TYPES:
-        body["payload"] = normalized_payload
+        body["payload"] = thaw_json(normalized_payload)
     tail_hash = compute_tail_hash(body, prev_tail_hash)
     return JournalEntry(
         entry_id=entry_id,
@@ -161,7 +172,7 @@ def make_entry(
 
 
 def append_entry(journal_path: Path, entry: JournalEntry) -> None:
-    """Append one entry to `journal_path` per the R7 write discipline."""
+    """Append one entry and durably record the expected journal tail."""
     journal_path.parent.mkdir(parents=True, exist_ok=True)
     line = canonical_json(entry.to_dict()) + b"\n"
     with open(journal_path, "ab") as fh:
@@ -169,6 +180,11 @@ def append_entry(journal_path: Path, entry: JournalEntry) -> None:
         fh.flush()
         os.fsync(fh.fileno())
     _fsync_dir(journal_path.parent)
+    _write_journal_state(
+        journal_path,
+        entry_count=entry.entry_id + 1,
+        tail_hash=entry.tail_hash,
+    )
 
 
 def read_entries(journal_path: Path) -> list[JournalEntry]:
@@ -197,8 +213,21 @@ def read_entries(journal_path: Path) -> list[JournalEntry]:
     return entries
 
 
-def verify_chain(entries: list[JournalEntry]) -> None:
-    """Recompute each entry's expected `tail_hash` and raise on mismatch."""
+def verify_chain(
+    entries: list[JournalEntry],
+    *,
+    journal_path: Path | None = None,
+    expected_entry_count: int | None = None,
+    expected_tail_hash: str | None = None,
+) -> None:
+    """Verify the chain and optionally compare durable final-state metadata.
+
+    Passing `journal_path` makes this suitable for recovery: a valid prefix is
+    rejected when complete trailing records were removed from the JSONL file.
+    """
+    if journal_path is not None:
+        expected_entry_count, expected_tail_hash = _read_journal_state(journal_path)
+
     prev_tail = ""
     for expected_id, entry in enumerate(entries):
         if entry.entry_id != expected_id:
@@ -216,6 +245,76 @@ def verify_chain(entries: list[JournalEntry]) -> None:
                 f"expected {recomputed}, got {entry.tail_hash}"
             )
         prev_tail = entry.tail_hash
+
+    if expected_entry_count is not None and len(entries) != expected_entry_count:
+        raise ValueError(
+            f"journal entry count mismatch: expected {expected_entry_count}, "
+            f"got {len(entries)}"
+        )
+    if expected_tail_hash is not None:
+        actual_tail_hash = entries[-1].tail_hash if entries else ""
+        if actual_tail_hash != expected_tail_hash:
+            raise ValueError(
+                f"journal tail hash mismatch: expected {expected_tail_hash}, "
+                f"got {actual_tail_hash}"
+            )
+
+
+def read_verified_entries(journal_path: Path) -> list[JournalEntry]:
+    """Read and verify a journal including durable final-state metadata."""
+    entries = read_entries(journal_path)
+    verify_chain(entries, journal_path=journal_path)
+    return entries
+
+
+def _journal_state_path(journal_path: Path) -> Path:
+    """Return the sidecar path containing the durable journal final state."""
+    return journal_path.with_name(journal_path.name + _JOURNAL_STATE_SUFFIX)
+
+
+def _write_journal_state(
+    journal_path: Path,
+    *,
+    entry_count: int,
+    tail_hash: str,
+) -> None:
+    """Atomically write and fsync the expected journal count and tail hash."""
+    state_path = _journal_state_path(journal_path)
+    fd, tmp_path = tempfile.mkstemp(
+        prefix=state_path.name + ".",
+        dir=str(state_path.parent),
+    )
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(
+                canonical_json({"entry_count": entry_count, "tail_hash": tail_hash})
+            )
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, state_path)
+        _fsync_dir(state_path.parent)
+    except BaseException:
+        with suppress(FileNotFoundError):
+            os.unlink(tmp_path)
+        raise
+
+
+def _read_journal_state(journal_path: Path) -> tuple[int, str]:
+    """Read and validate the durable expected count and final tail hash."""
+    state_path = _journal_state_path(journal_path)
+    try:
+        record = json.loads(state_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ValueError(f"journal state metadata is missing: {state_path}") from exc
+    if (
+        not isinstance(record, dict)
+        or not isinstance(record.get("entry_count"), int)
+        or isinstance(record["entry_count"], bool)
+        or record["entry_count"] < 0
+        or not isinstance(record.get("tail_hash"), str)
+    ):
+        raise ValueError(f"journal state metadata is invalid: {state_path}")
+    return record["entry_count"], record["tail_hash"]
 
 
 def _fsync_dir(path: Path) -> None:

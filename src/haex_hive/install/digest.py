@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 HAEX_HIVE_ROOT = ".haex-hive/"
 _HAEX_HIVE_EXCLUDED_NAMES = frozenset({"visibility.json", "install.lock"})
@@ -83,4 +83,15 @@ def _read_bytes_under(root_dir: Path, root_name: str, repo_relative_path: str) -
             f"path {repo_relative_path!r} does not belong to root {root_name!r}"
         )
     under_root = repo_relative_path[len(root_name):]
-    return (root_dir / under_root).read_bytes()
+    if PurePosixPath(under_root).is_absolute() or PureWindowsPath(under_root).is_absolute():
+        raise ValueError(f"path {repo_relative_path!r} must be relative to its root")
+
+    root_resolved = root_dir.resolve()
+    candidate = (root_dir / under_root).resolve()
+    try:
+        candidate.relative_to(root_resolved)
+    except ValueError as exc:
+        raise ValueError(
+            f"path {repo_relative_path!r} escapes root {root_dir!s}"
+        ) from exc
+    return candidate.read_bytes()
