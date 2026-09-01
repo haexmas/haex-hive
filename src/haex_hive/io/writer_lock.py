@@ -1,37 +1,93 @@
-"""Exclusive constitution-writer lock (R6, FR-035).
+"""Exclusive install-transaction writer lock (Spec 008 T019, research §R4).
+
+Combines an OS-level non-blocking advisory lock with an on-disk mutex file
+that carries owner metadata (`install.mutex`, layout in data-model.md
+§InstallMutexFile). One lock handle protects both concerns: the OS lock
+enforces mutual exclusion, and the same locked handle is used for in-place
+heartbeat updates so the pathname and inode remain stable while the lease
+is held.
 
 POSIX: `fcntl.flock(LOCK_EX | LOCK_NB)`.
 Windows: `LockFileEx(LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY)`.
 
-On contention, `ConstitutionWriterBusyError` is raised without ever touching
-the journal or its targets. POSIX contention indicator is
-`OSError.errno == errno.EWOULDBLOCK` (aliased to `EAGAIN` on some platforms);
-the Windows indicator is `GetLastError() == ERROR_LOCK_VIOLATION` (33). Any
-other error is re-raised untouched.
+On contention, `ConstitutionWriterBusyError` is raised. The background
+heartbeat thread + revalidation-before-reclaim protocol land in T034 on
+top of the `heartbeat()` primitive this module exposes.
 """
 
 from __future__ import annotations
 
 import errno
+import json
 import os
 import sys
+import time
 from pathlib import Path
 from types import TracebackType
 
+from haex_hive.install.lock import OwnerToken
 from haex_hive.util.errors import ConstitutionWriterBusyError
 
 _IS_WINDOWS = sys.platform == "win32"
-
 _ERROR_LOCK_VIOLATION = 33
+
+HEARTBEAT_INTERVAL_NS = 5_000_000_000        # 5 seconds
+TTL_NS = 60_000_000_000                      # 60 seconds
+SAFETY_MARGIN_NS = 5_000_000_000             # 5 seconds
+
+
+def _isoformat_ns(wallclock_ns: int) -> str:
+    """Return an ISO 8601 UTC string for `time.time_ns()` nanoseconds."""
+    seconds, ns_remainder = divmod(wallclock_ns, 1_000_000_000)
+    micros = ns_remainder // 1000
+    from datetime import datetime, timezone
+    ts = datetime.fromtimestamp(seconds, tz=timezone.utc)
+    return f"{ts.strftime('%Y-%m-%dT%H:%M:%S')}.{micros:06d}Z"
+
+
+def _mutex_payload(
+    owner_token: OwnerToken,
+    *,
+    acquired_at_ns: int,
+    heartbeat_at_ns: int,
+) -> bytes:
+    """Serialise the `install.mutex` JSON payload per data-model.md."""
+    obj = {
+        "owner_token": owner_token.serialize(),
+        "acquired_at": _isoformat_ns(acquired_at_ns),
+        "heartbeat_at": _isoformat_ns(heartbeat_at_ns),
+        "heartbeat_at_ns_wallclock": heartbeat_at_ns,
+        "heartbeat_interval_ns": HEARTBEAT_INTERVAL_NS,
+        "ttl_ns": TTL_NS,
+        "safety_margin_ns": SAFETY_MARGIN_NS,
+    }
+    return json.dumps(obj, sort_keys=True, indent=2).encode("utf-8") + b"\n"
 
 
 class ConstitutionWriterLock:
-    """Non-blocking exclusive-writer lock over a file handle."""
+    """Non-blocking exclusive writer lock with in-place owner metadata.
 
-    def __init__(self, lock_path: Path) -> None:
+    Accepts an optional `OwnerToken`. When present, the lock file (`install.mutex`)
+    is populated with the R4 owner-metadata JSON immediately after the OS
+    lock is acquired; when absent, the existing pre-Spec-008 no-metadata
+    behaviour is preserved so pre-T034 callsites keep working.
+
+    `heartbeat()` updates `heartbeat_at` and `heartbeat_at_ns_wallclock`
+    in place through the already-locked handle and fsyncs the result. The
+    pathname and inode remain stable — the heartbeat MUST NOT be
+    implemented via `os.replace()`.
+    """
+
+    def __init__(
+        self,
+        lock_path: Path,
+        owner_token: OwnerToken | None = None,
+    ) -> None:
         self._lock_path = lock_path
+        self._owner_token = owner_token
         self._fd: int | None = None
         self._handle = None
+        self._acquired_at_ns: int | None = None
 
     def __enter__(self) -> ConstitutionWriterLock:
         self._lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -39,6 +95,8 @@ class ConstitutionWriterLock:
             self._acquire_windows()
         else:
             self._acquire_posix()
+        if self._owner_token is not None:
+            self._write_initial_payload()
         return self
 
     def __exit__(
@@ -51,6 +109,75 @@ class ConstitutionWriterLock:
             self._release_windows()
         else:
             self._release_posix()
+
+    def heartbeat(self) -> None:
+        """Update the heartbeat timestamps in place through the locked handle."""
+        if self._owner_token is None:
+            raise RuntimeError("heartbeat requires an OwnerToken at acquisition")
+        now_ns = time.time_ns()
+        payload = _mutex_payload(
+            self._owner_token,
+            acquired_at_ns=self._acquired_at_ns or now_ns,
+            heartbeat_at_ns=now_ns,
+        )
+        self._rewrite_locked_bytes(payload)
+
+    def _write_initial_payload(self) -> None:
+        now_ns = time.time_ns()
+        self._acquired_at_ns = now_ns
+        assert self._owner_token is not None
+        payload = _mutex_payload(
+            self._owner_token,
+            acquired_at_ns=now_ns,
+            heartbeat_at_ns=now_ns,
+        )
+        self._rewrite_locked_bytes(payload)
+
+    def _rewrite_locked_bytes(self, payload: bytes) -> None:
+        """Truncate + write the payload through the locked handle and fsync."""
+        if _IS_WINDOWS:
+            self._rewrite_windows(payload)
+        else:
+            self._rewrite_posix(payload)
+
+    def _rewrite_posix(self, payload: bytes) -> None:
+        assert self._fd is not None
+        os.lseek(self._fd, 0, os.SEEK_SET)
+        os.ftruncate(self._fd, 0)
+        remaining = memoryview(payload)
+        while remaining:
+            written = os.write(self._fd, remaining)
+            remaining = remaining[written:]
+        os.fsync(self._fd)
+
+    def _rewrite_windows(self, payload: bytes) -> None:
+        import ctypes
+        from ctypes import wintypes
+
+        assert self._handle is not None
+        kernel32 = ctypes.windll.kernel32
+        FILE_BEGIN = 0
+        if not kernel32.SetFilePointerEx(
+            wintypes.HANDLE(self._handle),
+            ctypes.c_longlong(0),
+            None,
+            wintypes.DWORD(FILE_BEGIN),
+        ):
+            raise ctypes.WinError()
+        if not kernel32.SetEndOfFile(wintypes.HANDLE(self._handle)):
+            raise ctypes.WinError()
+        written = wintypes.DWORD(0)
+        buf = (ctypes.c_char * len(payload)).from_buffer_copy(payload)
+        if not kernel32.WriteFile(
+            wintypes.HANDLE(self._handle),
+            buf,
+            wintypes.DWORD(len(payload)),
+            ctypes.byref(written),
+            None,
+        ):
+            raise ctypes.WinError()
+        if not kernel32.FlushFileBuffers(wintypes.HANDLE(self._handle)):
+            raise ctypes.WinError()
 
     def _acquire_posix(self) -> None:
         import fcntl

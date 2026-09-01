@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from haex_hive.install import inflight
+from haex_hive.install.lock import OwnerToken
 from haex_hive.io import transaction, writer_lock
 from haex_hive.io.state import transaction_paths
 from haex_hive.util.errors import (
@@ -289,3 +290,68 @@ def test_concurrent_writer_refused(tmp_path: Path) -> None:
         second = writer_lock.ConstitutionWriterLock(lock_path)
         with pytest.raises(ConstitutionWriterBusyError):
             second.__enter__()
+
+
+def _sample_token() -> OwnerToken:
+    return OwnerToken(
+        pid=12345,
+        hostname="test-host",
+        start_ns=1_000_000_000_000_000_000,
+        uuid4_hex="0" * 32,
+    )
+
+
+def test_writer_lock_writes_mutex_metadata_when_owner_token_supplied(
+    tmp_path: Path,
+) -> None:
+    """Acquiring with an OwnerToken populates install.mutex per data-model.md."""
+    lock_path = tmp_path / "install.mutex"
+    token = _sample_token()
+
+    with writer_lock.ConstitutionWriterLock(lock_path, token):
+        record = json.loads(lock_path.read_bytes())
+
+    assert record["owner_token"] == token.serialize()
+    assert record["heartbeat_interval_ns"] == writer_lock.HEARTBEAT_INTERVAL_NS
+    assert record["ttl_ns"] == writer_lock.TTL_NS
+    assert record["safety_margin_ns"] == writer_lock.SAFETY_MARGIN_NS
+    assert record["acquired_at"] == record["heartbeat_at"]
+    assert isinstance(record["heartbeat_at_ns_wallclock"], int)
+
+
+def test_writer_lock_heartbeat_updates_in_place_without_changing_inode(
+    tmp_path: Path,
+) -> None:
+    """heartbeat() rewrites the mutex file through the locked handle; inode stable."""
+    lock_path = tmp_path / "install.mutex"
+    with writer_lock.ConstitutionWriterLock(lock_path, _sample_token()) as lock:
+        inode_before = lock_path.stat().st_ino
+        initial = json.loads(lock_path.read_bytes())
+        # Ensure the wall clock advances beyond nanosecond granularity.
+        import time as _time
+        _time.sleep(0.001)
+        lock.heartbeat()
+        after = json.loads(lock_path.read_bytes())
+        inode_after = lock_path.stat().st_ino
+
+    assert inode_before == inode_after
+    assert after["heartbeat_at_ns_wallclock"] > initial["heartbeat_at_ns_wallclock"]
+    assert after["acquired_at"] == initial["acquired_at"]
+    assert after["owner_token"] == initial["owner_token"]
+
+
+def test_writer_lock_heartbeat_without_token_raises(tmp_path: Path) -> None:
+    """heartbeat() is only available when a token was supplied at acquisition."""
+    lock_path = tmp_path / "install.mutex"
+    with (
+        writer_lock.ConstitutionWriterLock(lock_path) as lock,
+        pytest.raises(RuntimeError, match="heartbeat requires an OwnerToken"),
+    ):
+        lock.heartbeat()
+
+
+def test_writer_lock_pre_spec_008_callers_still_work(tmp_path: Path) -> None:
+    """No OwnerToken → the mutex file stays empty, backward-compatible behaviour."""
+    lock_path = tmp_path / "install.mutex"
+    with writer_lock.ConstitutionWriterLock(lock_path):
+        assert lock_path.read_bytes() == b""
