@@ -1,9 +1,17 @@
 """Plan-build phase (FR-006 plan snapshot).
 
-Provides the sealed `PlanSnapshot` / `CommitSnapshot` value objects and the
-ordered `PlanStep` list per data-model.md. The plan-build entry point
-(reading `.haex-hive.json`, resolving atoms, emitting the step list) lands
-in T024 on top of these types.
+Provides the sealed `PlanSnapshot` / `CommitSnapshot` value objects, the
+ordered `PlanStep` list per data-model.md, and the plan-build entry point
+`build_plan` (T024) that reads `.haex-hive.json`, resolves adopted atoms
+against publisher clones, and emits an MVP three-step plan for the
+constitution-only case.
+
+**MVP scope note**: `build_plan` handles the single-source constitution
+case only. Multi-source LLM-merge stays on the existing
+`assemble_multi_source` path until T031 folds them together; multi-source
+manifests are refused here with a typed error. Delete-orphans (T049),
+hook invocation (Spec 009), and overlay pointers (Spec 010) are not
+emitted by this MVP plan.
 """
 
 from __future__ import annotations
@@ -13,10 +21,25 @@ import hashlib
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 
+from haex_hive.constitution.resolve import (
+    ResolvedConstitutionContribution,
+    resolve_constitution_contributions,
+)
+from haex_hive.git import show as git_show
 from haex_hive.io.json_deterministic import compact_json
+from haex_hive.migrate.transform import clone_dir
 from haex_hive.model._immutable import freeze_json, thaw_json
+from haex_hive.model.consumer_manifest import ConsumerManifest
+from haex_hive.model.source_url import CanonicalSourceUrl
+from haex_hive.util.errors import (
+    HaexError,
+    MissingAtomManifestError,
+    MissingPublisherManifestError,
+    NoSourcesDeclaredError,
+)
 
 StepType = Literal[
     "stage_file",
@@ -291,3 +314,149 @@ def _expect_same_keys(
             f"{field_name} digests and bytes maps disagree; "
             f"missing bytes for {sorted(missing)}, extra bytes for {sorted(extra)}"
         )
+
+
+HAEX_HIVE_ROOT = ".haex-hive/"
+
+
+@dataclass(frozen=True)
+class PlanBuildResult:
+    """Output of `build_plan`: the sealed snapshot plus the resolved contribution.
+
+    The MVP plan carries the single-source constitution body through so the
+    pipeline can stage it under `<root>.next/` at commit time without
+    re-resolving. `contribution` records the source metadata the caller needs
+    to compose the InstallLock v2 record.
+    """
+
+    snapshot: PlanSnapshot
+    constitution: ResolvedConstitutionContribution
+
+
+class MultiSourceNotSupportedByBuildPlan(HaexError):
+    """Multi-source manifests still flow through the assemble_multi_source path."""
+
+    diagnostic_key: str = "plan-build-multi-source-unsupported"
+    exit_code: int = 2  # INPUT_REFUSE — the caller picks the right path
+    hint: str = (
+        "Multi-source constitutions use `haex constitution assemble` "
+        "(single-source install pipeline via T031 not yet landed)."
+    )
+
+
+def build_plan(
+    repo_root: Path,
+    state_root: Path,
+) -> PlanBuildResult:
+    """Read `.haex-hive.json`, resolve one constitution atom, seal a plan.
+
+    Emits three MVP steps under the `.haex-hive/` participating root:
+    `stage_file` (constitution.md), `seal_install_lock` (install.lock),
+    `publish_marker` (visibility.json). Delete-orphans, hook invocation, and
+    overlay pointers are intentionally not emitted here (see module docstring).
+
+    Raises:
+        NoSourcesDeclaredError: `.haex-hive.json.atoms` is empty.
+        MultiSourceNotSupportedByBuildPlan: More than one atom resolves to a
+            constitution contribution; use `assemble_multi_source` for that
+            path until T031 lands.
+    """
+    manifest_path = repo_root / ".haex-hive.json"
+    haex_hive_json_bytes = manifest_path.read_bytes()
+    haex_hive_json_digest = _content_digest(haex_hive_json_bytes)
+
+    manifest = ConsumerManifest.from_json(haex_hive_json_bytes)
+    if not manifest.atoms:
+        raise NoSourcesDeclaredError(
+            message=".haex-hive.json.atoms is empty; nothing to install",
+        )
+
+    publisher_manifest_digests: dict[str, str] = {}
+    atom_manifest_digests: dict[str, str] = {}
+    for atom_entry in manifest.atoms:
+        canonical_source = CanonicalSourceUrl.validate(atom_entry.source)
+        repo_dir = clone_dir(state_root, canonical_source)
+        publisher_bytes = git_show.show_bytes(
+            repo_dir,
+            atom_entry.revision,
+            "manifest.json",
+            not_found_error=MissingPublisherManifestError,
+        )
+        publisher_key = f"{canonical_source}@{atom_entry.revision}"
+        publisher_manifest_digests[publisher_key] = _content_digest(publisher_bytes)
+
+        for atom_id in atom_entry.includes:
+            atom_manifest_digests[atom_id] = _content_digest(
+                _read_atom_manifest_bytes(repo_dir, atom_entry.revision, atom_id, publisher_bytes),
+            )
+
+    contributions = resolve_constitution_contributions(manifest, state_root)
+    if not contributions:
+        raise NoSourcesDeclaredError(
+            message="no atom in .haex-hive.json contributes a constitution",
+        )
+    if len(contributions) > 1:
+        raise MultiSourceNotSupportedByBuildPlan(
+            message=(
+                f"build_plan MVP handles single-source only; "
+                f"{len(contributions)} contributions resolved"
+            ),
+        )
+
+    contribution = contributions[0]
+    constitution_body = contribution.body
+    body_digest = _content_digest(constitution_body)
+
+    steps = (
+        PlanStep(
+            step_id=0,
+            step_type="stage_file",
+            participating_root=HAEX_HIVE_ROOT,
+            payload={
+                "path": "constitution.md",
+                "content_integrity": body_digest,
+            },
+        ),
+        PlanStep(
+            step_id=1,
+            step_type="seal_install_lock",
+            participating_root=HAEX_HIVE_ROOT,
+            payload={"path": "install.lock"},
+        ),
+        PlanStep(
+            step_id=2,
+            step_type="publish_marker",
+            participating_root=HAEX_HIVE_ROOT,
+            payload={"path": "visibility.json"},
+        ),
+    )
+    snapshot = PlanSnapshot.seal(
+        haex_hive_json_digest=haex_hive_json_digest,
+        publisher_manifest_digests=publisher_manifest_digests,
+        atom_manifest_digests=atom_manifest_digests,
+        steps=steps,
+    )
+    return PlanBuildResult(snapshot=snapshot, constitution=contribution)
+
+
+def _read_atom_manifest_bytes(
+    repo_dir: Path,
+    revision: str,
+    atom_id: str,
+    publisher_bytes: bytes,
+) -> bytes:
+    """Fetch an atom's `manifest.json` bytes via the publisher's atoms map."""
+    from haex_hive.model.publisher_manifest import PublisherManifest
+
+    publisher = PublisherManifest.from_json(publisher_bytes)
+    entry = publisher.atoms.get(atom_id)
+    if entry is None:
+        raise MissingAtomManifestError(
+            message=f"publisher manifest does not declare atom {atom_id!r}",
+        )
+    return git_show.show_bytes(
+        repo_dir,
+        revision,
+        f"{entry.path}/manifest.json",
+        not_found_error=MissingAtomManifestError,
+    )
