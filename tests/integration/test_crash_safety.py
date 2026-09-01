@@ -12,7 +12,6 @@ against the write.
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -102,9 +101,6 @@ def test_crash_at_boundary_converges_on_retry(
 
     constitution = (consumer / ".haex-hive" / "constitution.md").read_bytes()
     lock_bytes = (consumer / ".haex-hive" / "install.lock").read_bytes()
-    lock_data = json.loads(lock_bytes)
-    assert lock_data["constitution"]["content_integrity"].startswith("sha256-")
-
     again = _run(consumer, state_root)
     assert again.returncode == 0, again.stderr.decode()
     assert (consumer / ".haex-hive" / "constitution.md").read_bytes() == constitution

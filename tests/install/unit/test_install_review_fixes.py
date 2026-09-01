@@ -17,7 +17,7 @@ import pytest
 
 from haex_hive.install.digest import compute_root_digest
 from haex_hive.install.plan import CommitSnapshot, PlanSnapshot, PlanStep
-from haex_hive.install.visibility import RootDigest, VisibilityMarker
+from haex_hive.install.visibility import VisibilityMarker
 
 
 def _sri(content: bytes) -> str:
@@ -98,20 +98,11 @@ def test_commit_snapshot_validates_and_freezes_captured_bytes() -> None:
 
 def test_visibility_collections_are_normalized_before_storage() -> None:
     """Visibility serialization is stable after caller-owned lists mutate."""
-    paths = [".claude/settings.json"]
-    roots = [RootDigest(".claude/", "sha256-" + "A" * 43, paths)]
+    roots = [".claude/"]
     marker = VisibilityMarker(
         generation_id="g_20260901T120000Z_abcd",
-        install_lock_content_integrity="sha256-" + "B" * 43,
         participating_roots=roots,
     )
-    paths.append(".claude/other.json")
-    roots.append(RootDigest(".codex/", "sha256-" + "C" * 43))
+    roots.append(".codex/")
 
-    assert marker.to_dict()["participating_roots"] == [
-        {
-            "root": ".claude/",
-            "content_integrity": "sha256-" + "A" * 43,
-            "overlay_paths": [".claude/settings.json"],
-        }
-    ]
+    assert marker.to_dict()["participating_roots"] == [".claude/"]

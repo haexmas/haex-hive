@@ -8,10 +8,8 @@ from typing import BinaryIO
 
 from haex_hive.install import inflight
 from haex_hive.io import transaction
-from haex_hive.io.file_hash import d15_one_file_tree_digest
 from haex_hive.model.install_lock import InstallLock
 from haex_hive.util.errors import (
-    ConstitutionIntegrityMismatchError,
     ConstitutionNotAssembledError,
     IncompleteAssemblyTransactionError,
     InstallLockMissingError,
@@ -68,11 +66,6 @@ def show(
         )
 
     body = constitution_path.read_bytes()
-    actual = d15_one_file_tree_digest(body)
-    if actual != lock.constitution.content_integrity:
-        raise ConstitutionIntegrityMismatchError(
-            message="constitution.md does not match install.lock constitution.content_integrity",
-        )
 
     stream = out if out is not None else sys.stdout.buffer
     if not no_preface:
