@@ -78,8 +78,8 @@ def _publish_constitution(
     """Publish the effective constitution and install.lock atomically.
 
     Computes content integrity, preserves unknown top-level lock fields from
-    any existing lock, and publishes both files under the durable-journal
-    protocol with post-write verification of both outputs.
+    any existing lock, and publishes all output files as one rename-swap
+    generation with post-write verification of the published outputs.
 
     Args:
         sources: Constitution sources represented in the generated lock.

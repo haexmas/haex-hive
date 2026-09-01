@@ -36,7 +36,12 @@ def show(
     hive_dir = repo_root / transaction.HAEX_HIVE_DIR
     del state_root  # recovery is a writer concern; show is read-only.
     state = inflight.inspect(hive_dir)
-    if state not in (inflight.InflightState.STEADY, inflight.InflightState.UNINITIALIZED):
+    if state not in (
+        inflight.InflightState.STEADY,
+        inflight.InflightState.UNINITIALIZED,
+        inflight.InflightState.PRE_SWAP,
+        inflight.InflightState.POST_SWAP,
+    ):
         raise IncompleteAssemblyTransactionError(
             message=(
                 "install transaction is in flight (state: "

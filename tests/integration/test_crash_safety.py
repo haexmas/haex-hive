@@ -1,11 +1,13 @@
-"""T067 — SC-008 crash-safety sweep: real process termination at every FR-035
-durability boundary, then verify a subsequent `haex constitution assemble`
-converges to the fully-successful state.
+"""T067 — SC-008 crash-safety sweep across rename-swap boundaries.
+
+Each child is terminated at a real in-flight boundary, then a subsequent
+`haex constitution assemble` resolves the directory-name state and converges
+to a fully-successful generation.
 
 Uses the `HAEX_HIVE_CRASH_AFTER` test seam in `haex_hive.io.transaction` to
 terminate the child process (SIGKILL on POSIX, TerminateProcess-equivalent on
-Windows via `Popen`) immediately after each named durability boundary, rather
-than racing an external timer against the write.
+Windows) at each rename-swap boundary rather than racing an external timer
+against the write.
 """
 
 from __future__ import annotations
@@ -19,14 +21,17 @@ from pathlib import Path
 
 import pytest
 
-from haex_hive.io.state import transaction_paths
-
 pytestmark = [
     pytest.mark.slow,
     pytest.mark.skipif(shutil.which("git") is None, reason="git binary required"),
 ]
 
-_CRASH_POINTS = ["journal", "constitution", "install_lock"]
+_CRASH_CASES = [
+    ("pre_swap", True),
+    ("rename_a", True),
+    ("rename_b", False),
+    ("rename_b", True),
+]
 
 
 def _run(
@@ -36,6 +41,8 @@ def _run(
     env["HAEX_HIVE_STATE"] = str(state_root)
     if crash_after is not None:
         env["HAEX_HIVE_CRASH_AFTER"] = crash_after
+    else:
+        env.pop("HAEX_HIVE_CRASH_AFTER", None)
     return subprocess.run(
         [
             sys.executable,
@@ -51,8 +58,11 @@ def _run(
     )
 
 
-@pytest.mark.parametrize("crash_point", _CRASH_POINTS)
-@pytest.mark.parametrize("preexisting", [False, True], ids=["absent", "existing"])
+@pytest.mark.parametrize(
+    "crash_point,preexisting",
+    _CRASH_CASES,
+    ids=[f"{point}-{'existing' if existing else 'absent'}" for point, existing in _CRASH_CASES],
+)
 def test_crash_at_boundary_converges_on_retry(
     single_source_constitution_fixture: dict, crash_point: str, preexisting: bool
 ) -> None:
@@ -66,12 +76,29 @@ def test_crash_at_boundary_converges_on_retry(
     crashed = _run(consumer, state_root, crash_after=crash_point)
     assert crashed.returncode != 0, "the child process must not exit cleanly when killed"
 
-    journal = transaction_paths(consumer, state_root).journal
-    assert journal.exists(), f"journal must survive an abrupt crash at {crash_point!r}"
+    live = consumer / ".haex-hive"
+    next_dir = consumer / ".haex-hive.next"
+    prev_dir = consumer / ".haex-hive.prev"
+    if crash_point == "pre_swap":
+        assert live.exists()
+        assert next_dir.exists()
+        assert not prev_dir.exists()
+    elif crash_point == "rename_a":
+        assert next_dir.exists()
+        assert not live.exists()
+        assert prev_dir.exists()
+    else:
+        assert live.exists()
+        if preexisting:
+            assert prev_dir.exists()
+        else:
+            assert not prev_dir.exists()
+        assert not next_dir.exists()
 
     recovered = _run(consumer, state_root)
     assert recovered.returncode == 0, recovered.stderr.decode()
-    assert not journal.exists()
+    assert not next_dir.exists()
+    assert not prev_dir.exists()
 
     constitution = (consumer / ".haex-hive" / "constitution.md").read_bytes()
     lock_bytes = (consumer / ".haex-hive" / "install.lock").read_bytes()
