@@ -81,7 +81,7 @@ through their R3 pointer contract.
 ## R3. Mixed-ownership root overlay mechanism
 
 **Decision**: Per-platform overlay primitives selected from a small allowlist:
-- **Directory-scoped overlay** (e.g. `.claude/skills/`, `.claude/agents/`): POSIX → `os.symlink()`; Windows → directory junction via `mklink /J` or the `CreateSymbolicLinkW` API with `SYMBOLIC_LINK_FLAG_DIRECTORY`. Junctions work on Windows without Developer Mode.
+- **Directory-scoped overlay** (e.g. `.claude/skills/`, `.claude/agents/`): POSIX → `os.symlink()`; Windows → a true directory junction via `mklink /J` or a native `CreateJunction` helper implemented with the Windows reparse-point API. `CreateSymbolicLinkW(..., SYMBOLIC_LINK_FLAG_DIRECTORY)` creates a directory symbolic link, not a junction, and is not used as the junction fallback. Junctions work on Windows without Developer Mode.
 - **File-scoped overlay** (e.g. `.claude/settings.json`): POSIX → `os.symlink()`; Windows without Developer Mode → **refused per FR-003**, install exits with a diagnostic naming the unsupported path. Launcher-indirection for file-scoped overlays is a future refinement (Spec 010 or later); not in Spec 008 scope.
 - Every overlay is recorded in `install.lock`'s per-root `overlay_paths` array; publication touches ONLY the paths in that array; sibling entries in the mixed-ownership root are never enumerated, copied, or replaced (FR-003).
 
@@ -197,19 +197,23 @@ Every haex-owned install transitions through these three names in the R1 rename-
 |---|---|---|---|---|
 | present | absent | absent | steady state — nothing in flight | none |
 | present | present | absent | pre-swap crash (staging existed but rename A did not run) | `rmtree(<root>.next/)`; rerun of install proceeds normally |
-| absent | present | present | mid-swap crash between rename A and rename B | verify `<root>.next/`; if valid, complete forward with `os.rename(<root>.next/, <root>/)` and then `rmtree(<root>.prev/)`; otherwise restore a verified `<root>.prev/` |
-| present | absent | present | post-swap crash before cleanup | verify the live marker; clean `<root>.prev/` if valid, otherwise restore the verified `<root>.prev/` with `os.rename(<root>.prev/, <root>/)` |
-| absent | absent | present | rename A completed but the staged generation was lost or invalid | restore a verified `<root>.prev/` with `os.rename(<root>.prev/, <root>/)`; refuse if it does not verify |
+| absent | present | present | mid-swap crash between rename A and rename B | verify `<root>.next/`; if valid, complete forward with `os.rename(<root>.next/, <root>/)` and then `rmtree(<root>.prev/)`; if the present candidate fails verification, refuse without publishing |
+| present | absent | present | post-swap crash before cleanup | verify the live marker; clean `<root>.prev/` if valid; if the live root fails verification, remove its invalid tree with `rmtree(<root>/)`, fsync the parent, then restore the verified `<root>.prev/` with `os.rename(<root>.prev/, <root>/)` and fsync again |
+| absent | absent | present | rename A completed but the staged generation was lost | verify `<root>.prev/`, then restore it with `os.rename(<root>.prev/, <root>/)` and fsync the parent; refuse if the previous generation does not verify |
 | present | present | present | reserved illegal combination (would require concurrent installs; the exclusive lock forbids it) | refuse; require operator cleanup |
 | absent | present | absent | first-install crash before rename B, or rename A completed but `<root>.prev/` was lost | verify `<root>.next/` and complete forward with `os.rename(<root>.next/, <root>/)`; refuse if it does not verify |
 | absent | absent | absent | fresh checkout, no install ever ran | none — install proceeds |
 
 Recovery completes **forward** only when the staged generation verifies against
-its marker and root digests. If the staged generation is absent or fails
-verification while a verified `<root>.prev/` exists, recovery restores that
-previous generation with one rename and fsyncs the parent. This makes rollback
-reachable without a journal and satisfies FR-011: recovery produces either a
-valid new generation or the intact previous generation, never a torn state.
+its marker and root digests. A present but invalid staged generation is an
+integrity failure and is refused; it is never silently replaced by `.prev`.
+Rollback is reachable only in the explicit R7 cases: an invalid live root in
+the post-swap row, after removing that root, or a missing staged generation in
+the `absent/absent/present` row. In both cases `.prev` must verify first. The
+rollback removal and rename are each followed by a parent-directory fsync; a
+crash between them re-enters the `absent/absent/present` row and retries the
+verified restore. This satisfies FR-011 without a journal and never publishes
+a torn state.
 
 **Rationale**:
 - **The filesystem IS the durable state**. The three directory names cover all
@@ -323,7 +327,7 @@ bytes needed for recovery.
 Recorded for the plan phase; each has a mitigation baked into R1–R6.
 
 - **`os.replace()` on Windows with a held reader handle** — see R1 residual risk (retry-backoff-then-refuse).
-- **Windows directory-junction creation** — `mklink /J` is a command-line fallback for directory targets; `CreateSymbolicLinkW(..., SYMBOLIC_LINK_FLAG_DIRECTORY)` is the native API path. Both refuse an existing matching entry. The prior overlay generation remains available until the new pointer and marker have been verified; on creation failure or a crash before marker publication, recovery restores the prior pointer, and after marker publication cleanup removes the obsolete generation only after the new pointer verifies. The rollback generation and ownership set are recorded in the install metadata.
+- **Windows directory-junction creation** — `mklink /J` is a command-line fallback for directory targets; a native `CreateJunction` helper uses the Windows reparse-point API. `CreateSymbolicLinkW(..., SYMBOLIC_LINK_FLAG_DIRECTORY)` is a directory symbolic-link API, not a junction primitive. All selected primitives refuse an existing matching entry. The prior overlay generation remains available until the new pointer and marker have been verified; on creation failure or a crash before marker publication, recovery restores the prior pointer, and after marker publication cleanup removes the obsolete generation only after the new pointer verifies. The rollback generation and ownership set are recorded in the install metadata.
 - **Windows without Developer Mode + file-scoped symlink** — refuse per R3.
 - **`fcntl.flock` unavailable on Windows** — use `LockFileEx` through `ctypes` (R6); the lock module's Windows tests cover two concurrent readers and a writer excluded until both readers release.
 - **Path separators** — every path stored on disk is POSIX-normalised (`/`); Windows-side code converts at the OS boundary only.
@@ -334,7 +338,7 @@ Recorded for the plan phase; each has a mitigation baked into R1–R6.
 ## R12. Test infrastructure for the conformance suite
 
 **Decision**:
-- **Crash injection**: monkey-patch a controlled subset of `install/` module entrypoints to raise `SystemExit(137)` at chosen states. The pytest fixture parametrises across the in-flight directory-state matrix and mixed-root pointer exchange.
+- **Crash injection**: run the install in a child process and terminate it with `SIGKILL` or the platform-equivalent abrupt termination at chosen state boundaries. The pytest fixture parametrises across the in-flight directory-state matrix and mixed-root pointer exchange; exception-based exits are not used because `SystemExit` unwinds Python frames and executes `finally` blocks.
 - **Concurrent invocation**: `multiprocessing.Process` fires the second install; the primary asserts the second's exit code, stderr contains the winner's owner token, and no output file was touched by the second.
 - **Mid-install source mutation**: a background thread rewrites `.haex-hive.json` at the moment the plan snapshot completes; the assertion is `haex install` exits with the commit-time-mismatch diagnostic and no output was published.
 - **Unowned-file survival**: the fixture pre-populates `.claude/` and `.codex/` with files not in the overlay_paths allowlist; the assertion is those files are byte-identical after install and after recovery.
