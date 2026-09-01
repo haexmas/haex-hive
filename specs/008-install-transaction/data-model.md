@@ -55,7 +55,7 @@ rename-swap contract (R1) commits the entire step list atomically when
 | Field | Type | Notes |
 |---|---|---|
 | `step_id` | `int` | Monotonically increasing within one plan (0, 1, 2 …). |
-| `step_type` | `Literal[...]` | `"stage_file"`, `"overlay_pointer"`, `"hook_invoke"` (Spec 009 extension), `"seal_install_lock"`, `"publish_marker"`. |
+| `step_type` | `Literal[...]` | Five values: `"stage_file"`, `"overlay_pointer"`, `"hook_invoke"` (Spec 009 extension), `"seal_install_lock"`, `"publish_marker"`. |
 | `participating_root` | `str` | Repo-relative path of the root this step touches (e.g. `.haex-hive/`, `.claude/`). |
 | `payload` | `dict` | Step-type-specific payload; opaque here. |
 
@@ -238,7 +238,10 @@ START
 [resolve_and_hydrate_from_commit_snapshot]
   │
   ▼
-[materialise_root_next]  (write every file into <root>.next/, fsync)
+[materialise_haex_root_next]  (write haex-owned files into <root>.next/, fsync)
+  │
+  ▼
+[materialise_overlay_generations]  (write only adapter-owned paths for mixed roots)
   │
   ▼
 [invoke_hooks]  (Spec 009 extension point; MAY be no-op in Spec 008)
@@ -251,6 +254,9 @@ START
   │
   ▼
 [verify_next_digests]  (recompute per-root digest vs staged visibility.json)
+  │
+  ▼
+[publish_overlay_pointers]  (swap mixed-root pointers; preserve unowned siblings)
   │
   ▼
 [rename_A]  os.rename(<root>, <root>.prev)  ◄── first atomic commit boundary
@@ -289,7 +295,7 @@ At any state above ↓
 - One `PlanSnapshot` ⇌ many `PlanStep`s (composition).
 - One `PlanSnapshot` ⇌ one `CommitSnapshot` (compared for equality on published-digest fields).
 - One install ⇌ one `install.mutex` file ⇌ one live `OwnerToken`.
-- One in-flight install ⇌ at most one `<root>.next/` and one `<root>.prev/` beside each participating root (see §In-flight recovery state).
+- One in-flight install ⇌ at most one `<root>.next/` and one `<root>.prev/` beside each haex-owned root; mixed-ownership roots use the retained overlay generations and pointers defined by R3 (see §In-flight recovery state).
 - One successful install ⇌ one `VisibilityMarker` ⇌ one `InstallLock` (their digests cross-reference).
 - One `InstallLock` ⇌ many `AtomInstallRecord`s ⇌ many `RootRecord`s.
 - One `InstallLock` ⇌ one `OwnershipSet` ⇌ many `PathOwnershipRecord`s.
