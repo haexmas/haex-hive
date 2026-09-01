@@ -12,7 +12,6 @@ _KNOWN_SCHEMAS = frozenset(
         "publisher-manifest.v2.schema.json",
         "atom-manifest.v2.schema.json",
         "install-lock.v2.schema.json",
-        "install-journal.v1.schema.json",
         "visibility-marker.v1.schema.json",
     }
 )
