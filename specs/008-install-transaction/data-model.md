@@ -279,7 +279,7 @@ At any state above ↓
   │
   ├── row 3 of §R7 (mid-swap, <root>/ absent) → verify and complete forward, or refuse
   ├── row 4 of §R7 (post-swap, <root>.prev/ still present) → cleanup, or verified rollback
-  ├── row 2 of §R7 (staged but pre-swap) → delete <root>.next/, plan afresh
+  ├── row 2 of §R7 (staged but pre-swap) → restore mixed-root pointers, delete <root>.next/, plan afresh
   ├── row 5 of §R7 (both live and staged absent) → verified rollback
   ├── row 7 of §R7 (first install, <root>/ and <root>.prev/ absent) → verify and complete forward, or refuse
   └── other rows → per §R7 state table
