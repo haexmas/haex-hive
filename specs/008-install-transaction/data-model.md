@@ -109,6 +109,7 @@ Slimmed shape of `.haex-hive/install.lock`. See [contracts/install-lock.v2.schem
 | `generated_by` | `str` | e.g. `"haex 2.1.0"`. |
 | `constitution` | `ConstitutionBlock` | Spec 007 shape without `content_integrity`; the constitution's `sources` + `assembled_by` are recorded, byte-identity comes from git. |
 | `atoms` | `list[AtomInstallRecord]` | Per-atom install detail. |
+| `generation_inputs` | `list[GenerationInputIdentity]` | Immutable adapter and tool-configuration identities used for generated payloads, sorted by `(kind, id)` and validated before publication. |
 | `participating_roots` | `list[str]` | Output-root names, e.g. `[".haex-hive/"]`. Matches `VisibilityMarker.participating_roots` byte-identically. |
 | `visibility_marker` | `VisibilityMarkerRef` | `{ "generation_id": "..." }` — cross-reference by id only. |
 
@@ -124,6 +125,26 @@ Slimmed shape of `.haex-hive/install.lock`. See [contracts/install-lock.v2.schem
 No `content_integrity` per the trust-git amendment; the `revision` git SHA is
 the input-byte anchor, and the adapter/tool configuration plus serialization
 must be deterministic.
+
+### GenerationInputIdentity
+
+Every generated payload has a sealed input identity in addition to the atom
+records above. This identity is recorded in the generation input envelope
+used by `install.lock` whenever adapter output participates in the
+publication; it is not an output `content_integrity` field.
+
+| Field | Type | Notes |
+|---|---|---|
+| `kind` | `Literal["adapter", "tool-config"]` | Which generator input is being pinned. |
+| `id` | `str` | Stable reverse-DNS adapter id or canonical tool-config id. |
+| `revision` | `str` | Immutable identity: `git:<40 lowercase hex SHA>` for adapter code, or `sha256:<64 lowercase hex>` of canonical tool-config bytes. |
+
+The `generation_inputs` record is sorted by `(kind, id)` and validated before
+generation. The adapter revision, tool-config revision, atom revisions, and
+their canonical serialization settings used for a candidate MUST equal the
+identities recorded in the sealed envelope; a mismatch refuses generation.
+No wall-clock value, random value, environment value, or filesystem ordering
+may be used to derive these identities.
 
 ---
 
@@ -141,6 +162,9 @@ START
   │                                roll back, or refuse)
   ▼
 [resolve_and_hydrate]
+  │
+  ▼
+[validate_generation_inputs]
   │
   ▼
 [materialise_haex_root_next]  (write haex-owned files into <root>.next/, fsync)
@@ -193,6 +217,7 @@ At any state above ↓
 **Invariants at every transition**:
 - The exclusive lock is held from `[acquire_lock]` through `[cleanup_prev]`.
 - Every rename that transitions between the three directory names is followed by a parent-directory fsync before the next state is entered.
+- `[validate_generation_inputs]` rejects any adapter revision, tool-configuration revision, atom revision, or canonical serialization identity that differs from the sealed `generation_inputs` envelope.
 - The `[rename_B]` step (`os.rename(<root>.next, <root>)`) is the sole publication event; `[cleanup_prev]` follows but cannot change the published generation and is idempotent under recovery.
 
 ---

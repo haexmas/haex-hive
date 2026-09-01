@@ -21,6 +21,12 @@
       "items": { "$ref": "#/$defs/atomInstallRecord" },
       "description": "One entry per adopted atom whose contribution is recorded in this install."
     },
+    "generation_inputs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/generationInputIdentity" },
+      "uniqueItems": true,
+      "description": "Immutable adapter and tool-configuration identities used to generate this publication; order MUST be `(kind, id)`-sorted."
+    },
     "participating_roots": {
       "type": "array",
       "minItems": 1,
@@ -73,6 +79,24 @@
             "pattern": "^(?!.*(?:^|/)\\.\\.?/)(?!.*\\\\)\\.[A-Za-z0-9._-]+/[^\\u0000-\\u001F\\u007F\\\\]+$"
           },
           "description": "Repo-relative POSIX paths this atom contributed under participating roots."
+        }
+      }
+    },
+    "generationInputIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["adapter", "tool-config"] },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "revision": {
+          "oneOf": [
+            { "type": "string", "pattern": "^git:[0-9a-f]{40}$" },
+            { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+          ]
         }
       }
     },
