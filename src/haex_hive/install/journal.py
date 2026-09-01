@@ -261,10 +261,44 @@ def verify_chain(
 
 
 def read_verified_entries(journal_path: Path) -> list[JournalEntry]:
-    """Read and verify a journal including durable final-state metadata."""
-    entries = read_entries(journal_path)
-    verify_chain(entries, journal_path=journal_path)
-    return entries
+    """Recover, read, and verify a journal against its committed final state.
+
+    The JSONL file is written before its metadata sidecar. If the process is
+    interrupted in that interval, entries beyond the sidecar's committed
+    count are uncommitted and are truncated. A sidecar that claims entries
+    missing from the journal is treated as an integrity failure.
+    """
+    state_path = _journal_state_path(journal_path)
+    if not journal_path.exists():
+        if state_path.exists():
+            raise ValueError("journal is missing but journal state metadata exists")
+        return []
+
+    if not state_path.exists():
+        _truncate_journal(journal_path, 0)
+        return []
+    expected_count, expected_tail_hash = _read_journal_state(journal_path)
+
+    entries, entry_end_offsets = _read_recovery_entries(journal_path)
+    if len(entries) < expected_count:
+        raise ValueError(
+            f"journal entry count mismatch: expected at least {expected_count}, "
+            f"got {len(entries)}"
+        )
+
+    committed_entries = entries[:expected_count]
+    verify_chain(committed_entries)
+    actual_tail_hash = committed_entries[-1].tail_hash if committed_entries else ""
+    if actual_tail_hash != expected_tail_hash:
+        raise ValueError(
+            f"journal tail hash mismatch: expected {expected_tail_hash}, "
+            f"got {actual_tail_hash}"
+        )
+
+    committed_end = entry_end_offsets[expected_count - 1] if expected_count else 0
+    if len(entries) > expected_count or journal_path.stat().st_size != committed_end:
+        _truncate_journal(journal_path, committed_end)
+    return committed_entries
 
 
 def _journal_state_path(journal_path: Path) -> Path:
@@ -315,6 +349,49 @@ def _read_journal_state(journal_path: Path) -> tuple[int, str]:
     ):
         raise ValueError(f"journal state metadata is invalid: {state_path}")
     return record["entry_count"], record["tail_hash"]
+
+
+def _read_recovery_entries(journal_path: Path) -> tuple[list[JournalEntry], list[int]]:
+    """Read complete JSONL records and stop at an interrupted final record."""
+    raw_bytes = journal_path.read_bytes()
+    entries: list[JournalEntry] = []
+    entry_end_offsets: list[int] = []
+    offset = 0
+    for raw_line in raw_bytes.splitlines(keepends=True):
+        end_offset = offset + len(raw_line)
+        if not raw_line.strip():
+            offset = end_offset
+            continue
+        if not raw_line.endswith(b"\n"):
+            break
+        try:
+            record = json.loads(raw_line.decode("utf-8"))
+            entries.append(
+                JournalEntry(
+                    entry_id=record["entry_id"],
+                    wrote_at_ns=record["wrote_at_ns"],
+                    entry_type=record["entry_type"],
+                    tail_hash=record["tail_hash"],
+                    step_id=record.get("step_id"),
+                    payload=record.get("payload", {}),
+                )
+            )
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            if end_offset == len(raw_bytes):
+                break
+            raise ValueError(f"invalid journal record before final line: {exc}") from exc
+        entry_end_offsets.append(end_offset)
+        offset = end_offset
+    return entries, entry_end_offsets
+
+
+def _truncate_journal(journal_path: Path, size: int) -> None:
+    """Truncate an uncommitted journal suffix and durably persist the result."""
+    with open(journal_path, "r+b") as fh:
+        fh.truncate(size)
+        fh.flush()
+        os.fsync(fh.fileno())
+    _fsync_dir(journal_path.parent)
 
 
 def _fsync_dir(path: Path) -> None:

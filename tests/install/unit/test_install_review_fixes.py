@@ -66,6 +66,41 @@ def test_journal_rejects_removed_complete_trailing_entries(tmp_path: Path) -> No
         read_verified_entries(journal)
 
 
+def test_journal_recovers_entry_written_before_sidecar_update(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Discard a journal entry whose sidecar commit was interrupted."""
+    journal = tmp_path / "install.journal"
+    first = make_entry(
+        entry_id=0,
+        entry_type="plan_snapshot_sealed",
+        prev_tail_hash="",
+        wrote_at_ns=1,
+    )
+    second = make_entry(
+        entry_id=1,
+        entry_type="commit_snapshot_verified",
+        prev_tail_hash=first.tail_hash,
+        wrote_at_ns=2,
+    )
+    append_entry(journal, first)
+
+    def interrupted_sidecar_update(*args: object, **kwargs: object) -> None:
+        """Simulate a process stop before the sidecar commit."""
+        raise OSError("interrupted sidecar update")
+
+    monkeypatch.setattr(
+        "haex_hive.install.journal._write_journal_state",
+        interrupted_sidecar_update,
+    )
+    with pytest.raises(OSError, match="interrupted"):
+        append_entry(journal, second)
+
+    monkeypatch.undo()
+    assert read_verified_entries(journal) == [first]
+    assert len(journal.read_bytes().splitlines(keepends=True)) == 1
+
+
 def test_journal_payload_is_frozen_and_to_dict_is_detached() -> None:
     """Caller mutations cannot change a hashed journal entry."""
     payload = {"nested": {"items": [1]}}
