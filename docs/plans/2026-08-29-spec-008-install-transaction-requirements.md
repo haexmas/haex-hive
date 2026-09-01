@@ -109,9 +109,11 @@ interruption and are non-negotiable for the Spec 008 landing:
   Spec 008. Mixed-root ownership and deletion rules are deferred to Spec 010;
   unowned mixed-root entries remain outside the adapter overlay.
 - **`install.lock` computed last**. The lockfile records the resolved atom set,
-  `participating_roots`, and its `visibility_marker.generation_id`
-  cross-reference over the final staged outputs. It has no per-file or per-root
-  content-integrity fields and no persisted mixed-root ownership inventory.
+  immutable `generation_inputs` identities, `participating_roots`, and its
+  `visibility_marker.generation_id` cross-reference over the final staged
+  outputs. It has no per-file or per-root content-integrity fields and no
+  persisted mixed-root ownership inventory. The generation-input identities
+  are validated against the adapter/tool configuration actually used.
   Its own fsync precedes construction of `visibility.json`; the final atomic
   directory rename is the sole publication step. Any output that could still
   mutate (native-tool outputs when they return — see Spec 007's Non-Goals

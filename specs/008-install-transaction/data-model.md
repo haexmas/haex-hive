@@ -107,7 +107,7 @@ Slimmed shape of `.haex-hive/install.lock`. See [contracts/install-lock.v2.schem
 |---|---|---|
 | `haex_hive_version` | `Literal["2"]` | Unchanged from Spec 007. |
 | `generated_by` | `str` | e.g. `"haex 2.1.0"`. |
-| `constitution` | `ConstitutionBlock` | Spec 007 shape without `content_integrity`; the constitution's `sources` + `assembled_by` are recorded, byte-identity comes from git. |
+| `constitution` | `ConstitutionBlock` | Spec 007 shape without `content_integrity`; the constitution's `sources` + `assembled_by` are recorded, and its committed/pinned candidate is serialized deterministically. |
 | `atoms` | `list[AtomInstallRecord]` | Per-atom install detail. |
 | `generation_inputs` | `list[GenerationInputIdentity]` | Immutable adapter and tool-configuration identities used for generated payloads, sorted by `(kind, id)` and validated before publication. |
 | `participating_roots` | `list[str]` | Output-root names, e.g. `[".haex-hive/"]`. Matches `VisibilityMarker.participating_roots` byte-identically. |
