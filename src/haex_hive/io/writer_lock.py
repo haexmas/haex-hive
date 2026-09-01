@@ -269,7 +269,7 @@ class ConstitutionWriterLock:
         result = kernel32.LockFileEx(
             wintypes.HANDLE(handle),
             wintypes.DWORD(LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY),
-            wintypes.DWORD(_WINDOWS_LOCK_OFFSET),
+            wintypes.DWORD(0),
             wintypes.DWORD(_WINDOWS_LOCK_LENGTH),
             wintypes.DWORD(0),
             ctypes.byref(overlapped),
