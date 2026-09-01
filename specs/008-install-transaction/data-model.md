@@ -46,60 +46,52 @@ for each keyed input. Recorded verbatim; on any mismatch, install aborts.
 
 ### PlanStep
 
-One participant in the transaction. The plan is a linear list of steps; each
-filesystem mutation corresponds to exactly one mutation journal entry during
-execution. A `hook_invoke` step has one lifecycle pair around its work, and
-each filesystem output it produces is represented by its own `stage_file`
-mutation entry.
+One participant in the transaction. The plan is a linear list of steps that
+determines what gets written into `<root>.next/`. The list is consumed by
+plan-build and does not require a durable journal entry per step — the
+rename-swap contract (R1) commits the entire step list atomically when
+`<root>.next/` becomes `<root>/`.
 
 | Field | Type | Notes |
 |---|---|---|
 | `step_id` | `int` | Monotonically increasing within one plan (0, 1, 2 …). |
-| `step_type` | `Literal[...]` | `"stage_file"`, `"delete_orphan"`, `"overlay_pointer"`, `"hook_invoke"` (Spec 009 extension), `"seal_install_lock"`, `"publish_marker"`. |
+| `step_type` | `Literal[...]` | `"stage_file"`, `"overlay_pointer"`, `"hook_invoke"` (Spec 009 extension), `"seal_install_lock"`, `"publish_marker"`. |
 | `participating_root` | `str` | Repo-relative path of the root this step touches (e.g. `.haex-hive/`, `.claude/`). |
-| `payload` | `dict` | Step-type-specific payload; see JSON schema for exact shapes per type. |
+| `payload` | `dict` | Step-type-specific payload; opaque here. |
 
-### JournalEntry
+The old `delete_orphan` step type no longer exists as a first-class step:
+under R1 the fresh `<root>.next/` is materialised from scratch, so removed
+resources' files simply do not appear in the new generation. Orphan tracking
+still lives in `install.lock`'s `ownership.paths` set for downstream tooling
+that needs to reason about what was removed, but the filesystem-level delete
+is a byproduct of the rename-swap, not a discrete step.
 
-One line of `install.journal`. See [contracts/install-journal.v1.schema.json](./contracts/install-journal.v1.schema.json).
+### In-flight recovery state
 
-| Field | Type | Notes |
-|---|---|---|
-| `entry_id` | `int` | Monotonically increasing from 0. |
-| `wrote_at_ns` | `int` | Monotonic nanoseconds at write. |
-| `step_id` | `int \| null` | Corresponding `PlanStep.step_id`; null for lifecycle entries (start, commit, rollback). |
-| `entry_type` | `Literal[...]` | The journal entry mapped from the corresponding `PlanStep.step_type`; lifecycle entries are explicitly separate. |
-| `payload` | `dict` | Type-specific. |
-| `tail_hash` | `str` | `sha256-<b64u>` of canonical entry JSON without `tail_hash`, encoded as UTF-8, followed by LF and the previous tail hash as ASCII. |
+Replaces the earlier `JournalEntry` + `PlanStep-to-JournalEntry mapping`
+sections. There is no durable JSONL journal, no tail-hash chain, and no
+sidecar file. The in-flight state of one participating output root is the
+combination of three directory names beside that root:
 
-**Validation**:
-- `entry_id` MUST equal the number of preceding entries (0-indexed).
-- The first entry's `<prev-tail-hash>` component is the empty string. Canonical
-  entry JSON uses deterministic lexicographic key ordering, no insignificant
-  whitespace, and UTF-8 encoding; the JSONL record has a separate trailing LF.
-  The hash preimage is exactly
-  `canonical_json(entry_without_tail_hash).encode("utf-8") + b"\\n" + prev_tail_hash.encode("ascii")`.
-- A journal whose `tail_hash` chain is broken MUST fail recovery with a diagnostic — no partial replay.
+| Directory | Meaning |
+|---|---|
+| `<root>/` | The currently-live generation. Its `visibility.json` names the published `generation_id`. |
+| `<root>.next/` | A staged, fully-written, digest-verified fresh generation awaiting rename-in. |
+| `<root>.prev/` | The previous generation, retained during the swap so it can be restored on a mid-swap crash. |
 
-### PlanStep-to-JournalEntry mapping
+Every legal combination of presence/absence and its recovery action is
+enumerated in research §R7's state table. Recovery reads
+`os.listdir(parent_of_root)`, filters for the three names, and dispatches on
+the combination. No other durable state is consulted or required.
 
-The following mapping is normative. Every filesystem mutation has exactly one
-corresponding mutation entry written before it is executed. Lifecycle entries
-(`plan_snapshot_sealed`, `commit_snapshot_verified`, `cleanup_started`,
-`cleanup_completed`, and `install_aborted`) do not represent a `PlanStep`.
+The rename-swap performs at most two atomic transitions per root:
 
-| `PlanStep.step_type` | Mutation journal entry | Requirement |
-|---|---|---|
-| `stage_file` | `stage_file` | One entry per staged replacement. |
-| `delete_orphan` | `delete_orphan` | One entry per orphan deletion, including its pre-image. |
-| `overlay_pointer` | `overlay_pointer_swapped` | One entry per pointer replacement. |
-| `hook_invoke` | `hook_step_started` + `hook_step_ended` | One lifecycle pair brackets the hook; each hook-produced filesystem output also has its own `stage_file` entry with a rollback pre-image. |
-| `seal_install_lock` | `install_lock_sealed` | One entry for sealing the lock. |
-| `publish_marker` | `commit_marker_published` | One entry for publishing the marker. |
+1. `os.rename(<root>, <root>.prev)` (skipped when `<root>/` does not exist).
+2. `os.rename(<root>.next, <root>)`.
 
-Recovery dispatches only on these canonical journal names; aliases such as
-`overlay_pointer_replaced`, `install_lock_sealed` variants, or
-`commit_marker_published` variants are not accepted.
+Both are single `rename(2)` (POSIX) or `MoveFileExW` (Windows) syscalls;
+neither leaves a partially-updated intermediate visible to readers. The
+parent directory is fsynced after each rename.
 
 ### OwnerToken
 
@@ -196,11 +188,14 @@ unowned siblings in a mixed-ownership root.
 | `owner` | `OwnerResource` | Atom, adapter, or hook that owns the path. |
 | `generation_id` | `str` | Generation that sealed the current bytes. |
 | `content_integrity` | `str` | Digest of the current sealed bytes. |
-| `previous` | `PreviousPathState \| null` | Prior generation, existence, and digest; actual rollback bytes are retained by the journal pre-image record. |
+| `previous` | `PreviousPathState \| null` | Prior generation, existence, and digest; actual rollback bytes live inside the retained `<root>.prev/` directory during the swap. |
 
 The plan computes orphan deletion from the previous lock's `ownership.paths`
-set. A delete step carries the removed record and its pre-image in the journal;
-an unowned path is never inferred by enumerating a mixed-ownership root.
+set, but under R1's rename-swap the actual removal is a byproduct of
+materialising `<root>.next/` from scratch: removed paths simply do not appear
+in the new generation. `ownership.paths` still records the delta for
+downstream tooling; unowned paths are never inferred by enumerating a
+mixed-ownership root.
 
 ### AtomInstallRecord
 
@@ -227,13 +222,14 @@ START
 [acquire_lock]  ──── on stale lease → [reclaim_lease] ──┐
   │                                                     │
   ▼                                                     ▼
-[verify_or_recover_journal]  ◄────────── incomplete journal from prior run
-  │
+[resolve_in_flight_state]  ◄──── inspect <root>/, <root>.next/, <root>.prev/
+  │                                per §R7 state table (complete forward,
+  │                                roll back, or refuse)
   ▼
 [build_plan_snapshot]
   │
   ▼
-[commit_snapshot_verify]  ──── mismatch → [abort + rollback]
+[commit_snapshot_verify]  ──── mismatch → [abort + delete <root>.next/]
   │
   ▼
 [seal_commit_inputs]
@@ -242,19 +238,28 @@ START
 [resolve_and_hydrate_from_commit_snapshot]
   │
   ▼
-[stage_all_outputs]  (per-step journal entry BEFORE each replace)
+[materialise_root_next]  (write every file into <root>.next/, fsync)
   │
   ▼
 [invoke_hooks]  (Spec 009 extension point; MAY be no-op in Spec 008)
   │
   ▼
-[seal_install_lock]
+[seal_install_lock_inside_next]  (write .haex-hive.next/install.lock)
   │
   ▼
-[publish_visibility_marker]  ◄── the SOLE publication event
+[write_visibility_marker_inside_next]  (write .haex-hive.next/visibility.json)
   │
   ▼
-[cleanup_staging]
+[verify_next_digests]  (recompute per-root digest vs staged visibility.json)
+  │
+  ▼
+[rename_A]  os.rename(<root>, <root>.prev)  ◄── first atomic commit boundary
+  │
+  ▼
+[rename_B]  os.rename(<root>.next, <root>)  ◄── SOLE publication event
+  │
+  ▼
+[cleanup_prev]  rmtree(<root>.prev/), fsync parent
   │
   ▼
 END (success)
@@ -264,17 +269,18 @@ At any state above ↓
 [crash] → next `haex install` or `haex verify --recover`
   │
   ▼
-[replay_journal]  → determine last consistent state
+[resolve_in_flight_state]  → read <root>{,.next,.prev} presence
   │
-  ├── after publish_visibility_marker + marker present → retain generation, cleanup only
-  ├── after seal_install_lock but no marker → publish marker (idempotent)
-  └── earlier → roll back per-file replaces, restore prior gen, cleanup
+  ├── row 3 of §R7 (mid-swap, <root>/ absent) → complete forward
+  ├── row 4 of §R7 (post-swap, <root>.prev/ still present) → cleanup only
+  ├── row 2 of §R7 (staged but pre-swap) → delete <root>.next/, plan afresh
+  └── other rows → per §R7 state table
 ```
 
 **Invariants at every transition**:
-- The exclusive lock is held from `[acquire_lock]` through `[cleanup_staging]`.
-- Every filesystem mutation is preceded by its journal entry, fsynced.
-- The visibility marker is the last publication step and the only publication event; journaled cleanup may follow but cannot change the published generation.
+- The exclusive lock is held from `[acquire_lock]` through `[cleanup_prev]`.
+- Every rename that transitions between the three directory names is followed by a parent-directory fsync before the next state is entered.
+- The `[rename_B]` step (`os.rename(<root>.next, <root>)`) is the sole publication event; `[cleanup_prev]` follows but cannot change the published generation and is idempotent under recovery.
 
 ---
 
@@ -283,7 +289,7 @@ At any state above ↓
 - One `PlanSnapshot` ⇌ many `PlanStep`s (composition).
 - One `PlanSnapshot` ⇌ one `CommitSnapshot` (compared for equality on published-digest fields).
 - One install ⇌ one `install.mutex` file ⇌ one live `OwnerToken`.
-- Many `JournalEntry`s ⇌ zero-or-one `PlanStep` (lifecycle entries carry no step reference).
+- One in-flight install ⇌ at most one `<root>.next/` and one `<root>.prev/` beside each participating root (see §In-flight recovery state).
 - One successful install ⇌ one `VisibilityMarker` ⇌ one `InstallLock` (their digests cross-reference).
 - One `InstallLock` ⇌ many `AtomInstallRecord`s ⇌ many `RootRecord`s.
 - One `InstallLock` ⇌ one `OwnershipSet` ⇌ many `PathOwnershipRecord`s.
@@ -292,6 +298,6 @@ At any state above ↓
 
 ## Boundaries and non-goals
 
-- **Publisher-hook payloads** (Spec 009 territory): `PlanStep.step_type = "hook_invoke"` reserves the slot; the payload shape is Spec 009's design decision. Spec 008 records the step type so recovery can identify hook-boundary journal entries but does not itself execute hooks.
+- **Publisher-hook payloads** (Spec 009 territory): `PlanStep.step_type = "hook_invoke"` reserves the slot; the payload shape is Spec 009's design decision. Spec 008 records the step type so Spec 009 can hang hook execution off it, but hook execution happens while `<root>.next/` is being materialised — the rename-swap contract covers whatever the hooks produced.
 - **Adapter output payloads** (Spec 010 territory): the plan step's `payload` for adapter-emitted files is opaque to Spec 008; the pipeline stages, digests, and publishes them per the transaction contract without introspecting content.
 - **Cross-version migration** of `install.lock` and transaction state: **out of scope for Spec 008 under the project's pre-user policy.** A Spec 007-vintage `install.lock` fails Spec 008 schema validation (padded base64 digests, missing atoms shape) and the transaction refuses with `InstallLockSchemaInvalidError`. If a future adopter requires an in-place migration path, it lands under an explicit `haex migrate` verb per Principle VI v1.3.0, not as an implicit tool-side rewrite.
