@@ -106,6 +106,22 @@ def test_generation_input_requires_serialization_profile() -> None:
         validate(data, SCHEMA_NAME)
 
 
+def test_retired_content_integrity_is_rejected_in_constitution() -> None:
+    """Reject retired output-integrity fields in the constitution block."""
+    data = _minimal_spec_008_shape()
+    data["constitution"]["content_integrity"] = "sha256-" + "A" * 43
+    with pytest.raises(SchemaValidationError):
+        validate(data, SCHEMA_NAME)
+
+
+def test_retired_content_integrity_is_rejected_in_atom() -> None:
+    """Reject retired output-integrity fields in atom records."""
+    data = _spec_008_shape()
+    data["atoms"][0]["content_integrity"] = "sha256-" + "A" * 43
+    with pytest.raises(SchemaValidationError):
+        validate(data, SCHEMA_NAME)
+
+
 def test_duplicate_participating_roots_are_rejected() -> None:
     """Reject repeated participating-root identities."""
     data = _spec_008_shape()
