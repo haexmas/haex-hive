@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from haex_hive.io.writer_lock import ConstitutionWriterLock
+
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git binary required")
 
 
@@ -27,6 +29,7 @@ def _run_haex(repo_root: Path, *args: str, state_root: Path) -> subprocess.Compl
 
 
 def test_successful_straight_copy(single_source_constitution_fixture: dict) -> None:
+    """Publish a constitution using the new journal and legacy exclusion lock."""
     consumer = single_source_constitution_fixture["consumer"]
     state_root = single_source_constitution_fixture["state_root"]
 
@@ -52,12 +55,28 @@ def test_successful_straight_copy(single_source_constitution_fixture: dict) -> N
     assert marker_data["install_lock_content_integrity"].startswith("sha256-")
     assert marker_data["participating_roots"][0]["root"] == ".haex-hive/"
     assert lock_data["visibility_marker"]["generation_id"] == marker_data["generation_id"]
-    assert not (consumer / ".haex-hive" / "constitution-transaction.lock").exists()
+    assert (consumer / ".haex-hive" / "constitution-transaction.lock").exists()
+
+
+def test_active_legacy_writer_is_excluded(
+    single_source_constitution_fixture: dict,
+) -> None:
+    """Refuse assembly while a pre-Spec-008 writer holds the legacy lock."""
+    consumer = single_source_constitution_fixture["consumer"]
+    state_root = single_source_constitution_fixture["state_root"]
+    legacy_lock = consumer / ".haex-hive" / "constitution-transaction.lock"
+
+    with ConstitutionWriterLock(legacy_lock):
+        proc = _run_haex(consumer, state_root=state_root)
+
+    assert proc.returncode == 9
+    assert "key=constitution-writer-busy" in proc.stderr
 
 
 def test_legacy_journal_is_left_for_operator_cleanup(
     single_source_constitution_fixture: dict,
 ) -> None:
+    """Leave stale legacy journal contents untouched during assembly."""
     consumer = single_source_constitution_fixture["consumer"]
     state_root = single_source_constitution_fixture["state_root"]
     legacy_journal = consumer / ".haex-hive" / "constitution-transaction.json"
