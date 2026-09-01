@@ -91,7 +91,7 @@
     "generationInputIdentity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "id", "revision"],
+      "required": ["kind", "id", "revision", "serialization"],
       "properties": {
         "kind": { "type": "string", "enum": ["adapter", "tool-config"] },
         "id": {
@@ -103,7 +103,26 @@
             { "type": "string", "pattern": "^git:[0-9a-f]{40}$" },
             { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
           ]
-        }
+        },
+        "serialization": { "$ref": "#/$defs/serializationProfile" }
+      }
+    },
+    "serializationProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "encoding", "newline", "key_order", "indent", "ensure_ascii"],
+      "properties": {
+        "format": { "type": "string", "enum": ["json", "text", "toml"] },
+        "encoding": { "const": "UTF-8" },
+        "newline": { "const": "LF" },
+        "key_order": { "type": "string", "enum": ["lexicographic-utf8", "not-applicable"] },
+        "indent": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "null" }
+          ]
+        },
+        "ensure_ascii": { "type": "boolean" }
       }
     },
     "rootRecord": {
