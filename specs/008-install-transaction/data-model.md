@@ -138,13 +138,36 @@ publication; it is not an output `content_integrity` field.
 | `kind` | `Literal["adapter", "tool-config"]` | Which generator input is being pinned. |
 | `id` | `str` | Stable reverse-DNS adapter id or canonical tool-config id. |
 | `revision` | `str` | Immutable identity: `git:<40 lowercase hex SHA>` for adapter code, or `sha256:<64 lowercase hex>` of canonical tool-config bytes. |
+| `serialization` | `SerializationProfile` | Exact deterministic serialization settings used by the generator before its bytes are sealed. |
 
 The `generation_inputs` record is sorted by `(kind, id)` and validated before
 generation. The adapter revision, tool-config revision, atom revisions, and
 their canonical serialization settings used for a candidate MUST equal the
-identities recorded in the sealed envelope; a mismatch refuses generation.
+identities recorded in the envelope; a mismatch refuses generation. The
+envelope, including these settings, MUST be constructed before
+`seal_install_lock_inside_next` and the exact validated envelope MUST be passed
+to T029; the seal step MUST NOT infer or rewrite it.
 No wall-clock value, random value, environment value, or filesystem ordering
 may be used to derive these identities.
+
+### SerializationProfile
+
+The canonical profile is explicit rather than an implicit tool default:
+
+| Field | Type | Notes |
+|---|---|---|
+| `format` | `Literal["json", "text", "toml"]` | Payload serialization format. |
+| `encoding` | `Literal["UTF-8"]` | No platform-default encoding. |
+| `newline` | `Literal["LF"]` | Line endings are normalized before bytes are sealed. |
+| `key_order` | `Literal["lexicographic-utf8", "not-applicable"]` | JSON/TOML keys use bytewise UTF-8 order; text has no keys. |
+| `indent` | `int \| None` | JSON/TOML indentation width, or `null` for compact/text output. |
+| `ensure_ascii` | `bool` | Explicit Unicode escaping policy. |
+
+For the shared JSON serializer used by `install.lock` and `visibility.json`,
+the profile is `{format: "json", encoding: "UTF-8", newline: "LF",
+key_order: "lexicographic-utf8", indent: 2, ensure_ascii: false}`. Any
+different profile is a different generation input and must be rejected unless
+the resulting profile is explicitly pinned in the envelope.
 
 ---
 
@@ -164,7 +187,7 @@ START
 [resolve_and_hydrate]
   │
   ▼
-[validate_generation_inputs]
+[validate_generation_inputs]  (construct and validate the complete envelope, including serialization profiles)
   │
   ▼
 [materialise_haex_root_next]  (write haex-owned files into <root>.next/, fsync)
@@ -217,7 +240,7 @@ At any state above ↓
 **Invariants at every transition**:
 - The exclusive lock is held from `[acquire_lock]` through `[cleanup_prev]`.
 - Every rename that transitions between the three directory names is followed by a parent-directory fsync before the next state is entered.
-- `[validate_generation_inputs]` rejects any adapter revision, tool-configuration revision, atom revision, or canonical serialization identity that differs from the sealed `generation_inputs` envelope.
+- `[validate_generation_inputs]` constructs the complete envelope before any lock seal and rejects any adapter revision, tool-configuration revision, atom revision, or canonical serialization profile that differs from it; T029 serializes the exact validated envelope.
 - The `[rename_B]` step (`os.rename(<root>.next, <root>)`) is the sole publication event; `[cleanup_prev]` follows but cannot change the published generation and is idempotent under recovery.
 
 ---
