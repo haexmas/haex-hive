@@ -213,7 +213,7 @@ recovery; no per-path ownership inventory is persisted by Spec 008.
 | present | absent | absent | steady state — nothing in flight | none |
 | present | present | absent | pre-swap crash (staging existed but rename A did not run) | restore each mixed-root pointer to its retained prior overlay generation per R3, fsync the pointer parent, then `rmtree(<root>.next/)`; rerun of install proceeds normally |
 | absent | present | present | mid-swap crash between rename A and rename B | verify that `<root>.next/` contains schema-compatible metadata and that all participating roots are generation-compatible and available; if so, complete forward with `os.rename(<root>.next/, <root>/)` and then `rmtree(<root>.prev/)`; otherwise refuse without publishing |
-| present | absent | present | post-swap crash before cleanup | verify that the live marker is schema-compatible and that all participating roots are generation-compatible and available; clean `<root>.prev/` if so; if the live root is unavailable, remove its invalid tree with `rmtree(<root>/)`, fsync the parent, then restore the available `<root>.prev/` with `os.rename(<root>.prev/, <root>/)` and fsync again |
+| present | absent | present | post-swap crash before cleanup | verify the live marker and all participating roots; if the live generation is unavailable, first validate `<root>.prev/` and its participating roots, restore every candidate-named mixed-root pointer to the previous generation, then remove the invalid live tree and restore `<root>.prev/` with `os.rename(<root>.prev/, <root>/)`, fsyncing after each transition; refuse and preserve evidence if any pointer cannot be classified |
 | absent | absent | present | rename A completed but the staged generation was lost | verify that `<root>.prev/` is schema-compatible and available, then restore it with `os.rename(<root>.prev/, <root>/)` and fsync the parent; refuse if the previous generation is unavailable |
 | present | present | present | reserved illegal combination (would require concurrent installs; the exclusive lock forbids it) | refuse; require operator cleanup |
 | absent | present | absent | first-install crash before rename B, or rename A completed but `<root>.prev/` was lost | verify that `<root>.next/` contains schema-compatible metadata and available participating roots, then complete forward with `os.rename(<root>.next/, <root>/)`; refuse if it is unavailable |
@@ -225,7 +225,8 @@ cross-reference, and every participating root is available with a matching
 generation. A present but unavailable or schema-invalid staged generation is
 refused; it is never silently replaced by `.prev`. Rollback is reachable only
 in the explicit R7 cases: an unavailable live root in the post-swap row, after
-removing that root, or a missing staged generation in the
+restoring all mixed-root pointers to the validated previous generation and
+before removing that root, or a missing staged generation in the
 `absent/absent/present` row. In both cases `.prev` must be schema-compatible and
 available first. The rollback removal and rename are each followed by a
 parent-directory fsync; a crash between them re-enters the
