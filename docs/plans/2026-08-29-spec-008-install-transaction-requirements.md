@@ -141,11 +141,7 @@ The fenced-lease contract is fixed: owner token
 `<pid>:<hostname>:<start_ns>:<uuid4_hex>`, 5-second heartbeat, 60-second TTL,
 5-second safety margin, reboot-safe `heartbeat_at_ns_wallclock` expiry values,
 the same non-blocking exclusive OS lock for recovery, unchanged-token
-revalidation, and in-place fencing before replay. Existing
-`.haex-hive/constitution-transaction.lock` and
-`.haex-hive/constitution-transaction.json` files are legacy inputs only; the
-first new shared-lock operation recovers a valid legacy journal before planning.
-During migration it MAY create the legacy lock to coordinate with an older
-writer. Once created, the compatibility lock pathname MUST remain stable while
-legacy writers are supported; it is inert when unused. No new journal is
-written there.
+revalidation, and in-place fencing before replay.
+No in-repository transaction lock or journal is used. All transaction state is
+device-local under the shared lock and checkout-scoped journal paths defined by
+the new contract.

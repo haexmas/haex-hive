@@ -25,9 +25,6 @@ class TransactionPaths:
     mutex: Path
     journal: Path
     identity_record: Path
-    legacy_shared_journal: Path
-    legacy_mutex: Path
-    legacy_journal: Path
 
 
 def default_state_root() -> Path:
@@ -71,8 +68,9 @@ def project_identity(repo_root: Path) -> str:
 def transaction_paths(repo_root: Path, state_root: Path | None = None) -> TransactionPaths:
     """Return shared transaction paths for ``repo_root``.
 
-    The full identity is never used as a path segment. Legacy paths are exposed
-    only so callers can discover and migrate pre-Spec-008 transaction state.
+    The full identity is never used as a path segment. Transaction state is
+    device-local and checkout-scoped; no in-repository compatibility paths are
+    exposed.
     """
     identity = project_identity(repo_root)
     repo_key = hashlib.sha256(identity.encode("utf-8")).hexdigest()
@@ -90,9 +88,6 @@ def transaction_paths(repo_root: Path, state_root: Path | None = None) -> Transa
         mutex=lock_dir / "install.mutex",
         journal=lock_dir / "checkouts" / checkout_key / "install.journal",
         identity_record=lock_dir / "repo-identity.v1.json",
-        legacy_shared_journal=lock_dir / "install.journal",
-        legacy_mutex=repo_root / ".haex-hive" / "constitution-transaction.lock",
-        legacy_journal=repo_root / ".haex-hive" / "constitution-transaction.json",
     )
 
 

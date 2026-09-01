@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from haex_hive.io.state import transaction_paths
 from haex_hive.io.writer_lock import ConstitutionWriterLock
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git binary required")
@@ -29,7 +30,7 @@ def _run_haex(repo_root: Path, *args: str, state_root: Path) -> subprocess.Compl
 
 
 def test_successful_straight_copy(single_source_constitution_fixture: dict) -> None:
-    """Publish a constitution using the new journal and legacy exclusion lock."""
+    """Publish a constitution using the device-local transaction journal."""
     consumer = single_source_constitution_fixture["consumer"]
     state_root = single_source_constitution_fixture["state_root"]
 
@@ -55,38 +56,19 @@ def test_successful_straight_copy(single_source_constitution_fixture: dict) -> N
     assert marker_data["install_lock_content_integrity"].startswith("sha256-")
     assert marker_data["participating_roots"][0]["root"] == ".haex-hive/"
     assert lock_data["visibility_marker"]["generation_id"] == marker_data["generation_id"]
-    assert (consumer / ".haex-hive" / "constitution-transaction.lock").exists()
-
-
-def test_active_legacy_writer_is_excluded(
+def test_active_writer_is_excluded(
     single_source_constitution_fixture: dict,
 ) -> None:
-    """Refuse assembly while a pre-Spec-008 writer holds the legacy lock."""
+    """Refuse assembly while another writer holds the device-local mutex."""
     consumer = single_source_constitution_fixture["consumer"]
     state_root = single_source_constitution_fixture["state_root"]
-    legacy_lock = consumer / ".haex-hive" / "constitution-transaction.lock"
+    mutex = transaction_paths(consumer, state_root).mutex
 
-    with ConstitutionWriterLock(legacy_lock):
+    with ConstitutionWriterLock(mutex):
         proc = _run_haex(consumer, state_root=state_root)
 
     assert proc.returncode == 9
     assert "key=constitution-writer-busy" in proc.stderr
-
-
-def test_legacy_journal_is_left_for_operator_cleanup(
-    single_source_constitution_fixture: dict,
-) -> None:
-    """Leave stale legacy journal contents untouched during assembly."""
-    consumer = single_source_constitution_fixture["consumer"]
-    state_root = single_source_constitution_fixture["state_root"]
-    legacy_journal = consumer / ".haex-hive" / "constitution-transaction.json"
-    legacy_journal.parent.mkdir(parents=True)
-    legacy_journal.write_text("stale legacy journal")
-
-    proc = _run_haex(consumer, state_root=state_root)
-
-    assert proc.returncode == 0, proc.stderr
-    assert legacy_journal.read_text() == "stale legacy journal"
 
 
 def test_determinism_across_two_runs(single_source_constitution_fixture: dict) -> None:
