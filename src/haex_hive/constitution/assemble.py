@@ -9,7 +9,6 @@ import hashlib
 import json
 import os
 import sys
-from collections.abc import Mapping
 from contextlib import suppress
 from pathlib import Path
 
@@ -37,6 +36,8 @@ from haex_hive.model.install_lock import (
     ConstitutionLockSection,
     ConstitutionSource,
     InstallLock,
+    RootRecord,
+    VisibilityMarkerRef,
 )
 from haex_hive.util import exit_codes
 from haex_hive.util.errors import MergeNotConfirmedError, PostWriteValidationError, UsageError
@@ -104,11 +105,9 @@ def _publish_constitution(
     root_digest = "sha256-" + base64.urlsafe_b64encode(
         hashlib.sha256(root_preimage).digest()
     ).decode("ascii").rstrip("=")
-    existing_marker = unknown_top_level.get("visibility_marker")
-    if isinstance(existing_marker, Mapping) and isinstance(
-        existing_marker.get("generation_id"), str
-    ):
-        generation_id = existing_marker["generation_id"]
+    existing_marker = existing_lock.visibility_marker if existing_lock is not None else None
+    if existing_marker is not None:
+        generation_id = existing_marker.generation_id
     else:
         timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
             "%Y%m%dT%H%M%SZ"
@@ -122,14 +121,9 @@ def _publish_constitution(
             {"root": ".haex-hive/", "content_integrity": root_digest}
         ],
     }
-    marker_ref = {
-        "generation_id": generation_id,
-        "content_integrity": "sha256-"
-        + base64.urlsafe_b64encode(
-            hashlib.sha256(json_deterministic.dumps(marker_identity)).digest()
-        ).decode("ascii").rstrip("="),
-    }
-    unknown_top_level["visibility_marker"] = marker_ref
+    marker_content_integrity = "sha256-" + base64.urlsafe_b64encode(
+        hashlib.sha256(json_deterministic.dumps(marker_identity)).digest()
+    ).decode("ascii").rstrip("=")
 
     lock = InstallLock(
         haex_hive_version="2",
@@ -138,6 +132,13 @@ def _publish_constitution(
             sources=sources,
             assembled_by=AssembledBy(tool=TOOL_NAME, version=tool_version),
             content_integrity=content_integrity,
+        ),
+        participating_roots=(
+            RootRecord(root=".haex-hive/", content_integrity=root_digest),
+        ),
+        visibility_marker=VisibilityMarkerRef(
+            generation_id=generation_id,
+            content_integrity=marker_content_integrity,
         ),
         unknown_top_level=unknown_top_level,
     )
