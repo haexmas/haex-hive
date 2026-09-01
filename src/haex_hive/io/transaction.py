@@ -1,11 +1,12 @@
 """Directory rename-swap publication for `.haex-hive/` (Spec 008 R1).
 
 `publish_generation` writes a caller-supplied set of `(relative_path, bytes)`
-files into `<root>.next/`, invokes an optional pre-swap verify callback,
-then performs the two atomic renames — `<root>` → `<root>.prev` (skipped
+files into `<root>.next/`, then performs the two atomic renames — `<root>` →
+`<root>.prev` (skipped
 when `<root>/` does not exist), then `<root>.next` → `<root>` — with a
-parent-directory fsync after each rename. `<root>.prev/` is removed as the
-transaction's final step.
+parent-directory fsync after each rename. An optional `post_write_verify`
+callback runs after the swap. `<root>.prev/` is removed as the transaction's
+final step.
 
 Recovery of a mid-swap crash lives in `haex_hive.install.inflight`; callers
 must invoke `install.inflight.resolve(live_dir)` under the exclusive install
@@ -105,14 +106,14 @@ def _rollback_swap(
     next_dir: Path,
     prev_dir: Path,
     *,
-    prev_existed_before: bool,
+    live_existed_before: bool,
 ) -> None:
     """Best-effort rollback: undo rename B (and rename A if it ran)."""
     parent = live.parent
     if live.exists():
         os.rename(str(live), str(next_dir))
         _fsync_dir(parent)
-    if prev_existed_before and prev_dir.exists():
+    if live_existed_before and prev_dir.exists():
         os.rename(str(prev_dir), str(live))
         _fsync_dir(parent)
 
@@ -150,7 +151,8 @@ def publish_generation(
     next_dir.mkdir(parents=True, exist_ok=False)
     _fsync_dir(parent)
 
-    prev_existed_before = live.exists()
+    live_existed_before = live.exists()
+    rename_a_done = False
 
     try:
         _write_staging(next_dir, files_list)
@@ -162,12 +164,23 @@ def publish_generation(
             )
             write_identity_record(paths)
 
-        if prev_existed_before:
+        _crash_after("pre_swap")
+        if live_existed_before:
             os.rename(str(live), str(prev_dir))
             _fsync_dir(parent)
+            rename_a_done = True
         _crash_after("rename_a")
 
-        os.rename(str(next_dir), str(live))
+        try:
+            os.rename(str(next_dir), str(live))
+        except BaseException:
+            if rename_a_done:
+                os.rename(str(prev_dir), str(live))
+                _fsync_dir(parent)
+                rename_a_done = False
+                _rmtree(next_dir)
+                _fsync_dir(parent)
+            raise
         _fsync_dir(parent)
         _crash_after("rename_b")
 
@@ -175,16 +188,24 @@ def publish_generation(
             try:
                 post_write_verify()
             except BaseException:
-                _rollback_swap(live, next_dir, prev_dir, prev_existed_before=prev_existed_before)
+                _rollback_swap(
+                    live,
+                    next_dir,
+                    prev_dir,
+                    live_existed_before=live_existed_before,
+                )
+                rename_a_done = False
                 raise
 
-        if prev_existed_before:
+        if live_existed_before:
             _rmtree(prev_dir)
             _fsync_dir(parent)
     except BaseException:
         # Pre-swap failure: staging is transient; if the swap did not run,
         # remove staging so a rerun starts clean. Post-swap failure branches
         # already ran rollback_swap; leave prev_dir alone in that case.
-        if not live.exists() or (next_dir.exists() and not prev_dir.exists()):
+        if not rename_a_done and (
+            not live.exists() or (next_dir.exists() and not prev_dir.exists())
+        ):
             _rmtree(next_dir)
         raise

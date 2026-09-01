@@ -54,7 +54,8 @@ def run_assemble(args: argparse.Namespace) -> int:
     """Execute the `haex constitution assemble` command.
 
     Resolves constitution contributions from the consumer manifest and assembles
-    a single-source constitution under writer lock with durable-journal protocol.
+    a single-source constitution under the writer lock with rename-swap
+    in-flight recovery.
 
     Returns:
         exit_codes.SUCCESS on successful assembly.

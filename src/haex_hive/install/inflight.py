@@ -19,6 +19,9 @@ import sys
 from contextlib import suppress
 from pathlib import Path
 
+from haex_hive.util import exit_codes
+from haex_hive.util.errors import HaexError
+
 _IS_WINDOWS = sys.platform == "win32"
 
 
@@ -35,14 +38,29 @@ class InflightState(enum.Enum):
     ORPHAN_NEXT = "orphan_next"      # only <root>.next/ — integrity failure
 
 
-class InflightIntegrityError(RuntimeError):
+class InflightIntegrityError(HaexError):
     """Raised when the R7 state table yields an integrity-failure row."""
 
     def __init__(self, state: InflightState, live: Path) -> None:
         self.state = state
         self.live = live
+        siblings = {
+            InflightState.ORPHAN_PREV: f"{live}.prev",
+            InflightState.ORPHAN_NEXT: f"{live}.next",
+            InflightState.ILLEGAL_ALL: f"{live}.next and {live}.prev",
+        }
         super().__init__(
-            f"install in-flight recovery integrity failure at {live!s}: {state.value}"
+            message=(
+                "install in-flight recovery integrity failure at "
+                f"{live!s}: {state.value}"
+            ),
+            context={"state": state.value, "live": str(live)},
+            diagnostic_key="constitution-transaction-incomplete",
+            exit_code=exit_codes.INCOMPLETE_TRANSACTION,
+            hint=(
+                "Inspect and clean the unexpected in-flight directory "
+                f"{siblings[state]} before retrying."
+            ),
         )
 
 

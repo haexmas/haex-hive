@@ -13,6 +13,7 @@ from haex_hive.io import transaction, writer_lock
 from haex_hive.io.state import transaction_paths
 from haex_hive.util.errors import (
     ConstitutionWriterBusyError,
+    HaexError,
     PostWriteValidationError,
 )
 
@@ -118,6 +119,39 @@ def test_post_write_verify_rollback_restores_previous(tmp_path: Path) -> None:
 
     assert (live / transaction.CONSTITUTION_NAME).read_bytes() == b"good\n"
     assert (live / transaction.INSTALL_LOCK_NAME).read_bytes() == b"{}\n"
+    assert not (tmp_path / f"{transaction.HAEX_HIVE_DIR}.next").exists()
+    assert not (tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev").exists()
+
+
+def test_rename_b_failure_restores_previous_generation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state_root = _init_project(tmp_path)
+    live = tmp_path / transaction.HAEX_HIVE_DIR
+    transaction.publish_generation(
+        live,
+        _staged(b"old\n", b"{}\n", b"{}\n"),
+        state_root=state_root,
+        repo_root=tmp_path,
+    )
+
+    real_rename = transaction.os.rename
+
+    def fail_rename_b(source: str, destination: str) -> None:
+        if Path(source) == tmp_path / f"{transaction.HAEX_HIVE_DIR}.next":
+            raise OSError("rename B failed")
+        real_rename(source, destination)
+
+    monkeypatch.setattr(transaction.os, "rename", fail_rename_b)
+    with pytest.raises(OSError, match="rename B failed"):
+        transaction.publish_generation(
+            live,
+            _staged(b"new\n", b"{}\n", b"{}\n"),
+            state_root=state_root,
+            repo_root=tmp_path,
+        )
+
+    assert (live / transaction.CONSTITUTION_NAME).read_bytes() == b"old\n"
     assert not (tmp_path / f"{transaction.HAEX_HIVE_DIR}.next").exists()
     assert not (tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev").exists()
 
@@ -239,8 +273,11 @@ def test_inflight_resolve_raises_on_integrity_failures(
     live = tmp_path / transaction.HAEX_HIVE_DIR
     make_state(tmp_path, live)
 
-    with pytest.raises(inflight.InflightIntegrityError):
+    with pytest.raises(inflight.InflightIntegrityError) as raised:
         inflight.resolve(live)
+    assert isinstance(raised.value, HaexError)
+    assert raised.value.diagnostic_key == "constitution-transaction-incomplete"
+    assert raised.value.exit_code == 7
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="fcntl-based lock is POSIX-only")
