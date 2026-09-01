@@ -1,14 +1,14 @@
-"""FR-035 durable-journal recovery + concurrent-writer refusal."""
+"""FR-035 rename-swap publication + concurrent-writer refusal (R1/R7 amendment)."""
 
 from __future__ import annotations
 
 import json
-import shutil
 import sys
 from pathlib import Path
 
 import pytest
 
+from haex_hive.install import inflight
 from haex_hive.io import transaction, writer_lock
 from haex_hive.io.state import transaction_paths
 from haex_hive.util.errors import (
@@ -17,11 +17,8 @@ from haex_hive.util.errors import (
 )
 
 
-def _hive(repo_root: Path) -> Path:
-    return repo_root / transaction.HAEX_HIVE_DIR
-
-
 def _init_project(repo_root: Path) -> Path:
+    """Prepare a project fixture with an identity and return its state root."""
     state_root = repo_root / "state"
     (repo_root / ".haex-hive.json").write_text(
         json.dumps({"identity": "com.example.consumer"})
@@ -29,211 +26,221 @@ def _init_project(repo_root: Path) -> Path:
     return state_root
 
 
-def _paths(repo_root: Path, state_root: Path) -> tuple[Path, Path, Path]:
-    hive = _hive(repo_root)
-    return hive / "constitution.md", hive / "install.lock", transaction_paths(
-        repo_root, state_root
-    ).journal
+def _staged(
+    constitution: bytes, install_lock: bytes, visibility: bytes
+) -> list[transaction.StagedFile]:
+    return [
+        transaction.StagedFile(transaction.CONSTITUTION_NAME, constitution),
+        transaction.StagedFile(transaction.INSTALL_LOCK_NAME, install_lock),
+        transaction.StagedFile(transaction.VISIBILITY_NAME, visibility),
+    ]
 
 
-def test_publish_creates_targets_when_absent(tmp_path: Path) -> None:
+def test_publish_creates_live_on_first_generation(tmp_path: Path) -> None:
     state_root = _init_project(tmp_path)
-    transaction.publish_pair(tmp_path, b"body\n", b"{}\n", state_root=state_root)
-    constitution, lock, journal = _paths(tmp_path, state_root)
-    assert constitution.read_bytes() == b"body\n"
-    assert lock.read_bytes() == b"{}\n"
-    assert not journal.exists()
+    live = tmp_path / transaction.HAEX_HIVE_DIR
+
+    transaction.publish_generation(
+        live,
+        _staged(b"body\n", b"{}\n", b"{}\n"),
+        state_root=state_root,
+        repo_root=tmp_path,
+    )
+
+    assert (live / transaction.CONSTITUTION_NAME).read_bytes() == b"body\n"
+    assert (live / transaction.INSTALL_LOCK_NAME).read_bytes() == b"{}\n"
+    assert (live / transaction.VISIBILITY_NAME).read_bytes() == b"{}\n"
+    assert not (tmp_path / f"{transaction.HAEX_HIVE_DIR}.next").exists()
+    assert not (tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev").exists()
 
 
-def test_publish_with_state_root_uses_shared_paths(tmp_path: Path) -> None:
+def test_publish_replaces_previous_generation_via_rename_swap(tmp_path: Path) -> None:
     state_root = _init_project(tmp_path)
+    live = tmp_path / transaction.HAEX_HIVE_DIR
 
-    transaction.publish_pair(tmp_path, b"body\n", b"{}\n", state_root=state_root)
+    transaction.publish_generation(
+        live,
+        _staged(b"old\n", b"{}\n", b"{}\n"),
+        state_root=state_root,
+        repo_root=tmp_path,
+    )
+    transaction.publish_generation(
+        live,
+        _staged(b"new\n", b'{"generated_by": "haex 2.0.0"}\n', b"{}\n"),
+        state_root=state_root,
+        repo_root=tmp_path,
+    )
+
+    assert (live / transaction.CONSTITUTION_NAME).read_bytes() == b"new\n"
+    assert not (tmp_path / f"{transaction.HAEX_HIVE_DIR}.next").exists()
+    assert not (tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev").exists()
+
+
+def test_publish_writes_identity_record_under_state_root(tmp_path: Path) -> None:
+    state_root = _init_project(tmp_path)
+    live = tmp_path / transaction.HAEX_HIVE_DIR
+
+    transaction.publish_generation(
+        live,
+        _staged(b"body\n", b"{}\n", b"{}\n"),
+        state_root=state_root,
+        repo_root=tmp_path,
+    )
 
     paths = transaction_paths(tmp_path, state_root)
-    assert paths.journal == (
-        state_root
-        / "locks"
-        / paths.repo_key
-        / "checkouts"
-        / paths.checkout_key
-        / "install.journal"
-    )
-    assert "com.example.consumer" in paths.identity_record.read_text()
-    assert paths.mutex.name == "install.mutex"
-
-
-def test_publish_cleans_backups_when_identity_write_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    (tmp_path / ".haex-hive.json").write_text(
-        json.dumps({"identity": "com.example.consumer"})
-    )
-    hive = _hive(tmp_path)
-    hive.mkdir()
-    constitution = hive / transaction.CONSTITUTION_NAME
-    lock = hive / transaction.INSTALL_LOCK_NAME
-    constitution.write_bytes(b"old body")
-    lock.write_bytes(b"old lock")
-
-    def fail_identity_write(paths: object) -> None:
-        raise OSError("identity record unavailable")
-
-    monkeypatch.setattr(transaction, "write_identity_record", fail_identity_write)
-
-    with pytest.raises(OSError, match="identity record unavailable"):
-        transaction.publish_pair(
-            tmp_path,
-            b"new body",
-            b"new lock",
-            state_root=tmp_path / "state",
-        )
-
-    assert constitution.read_bytes() == b"old body"
-    assert lock.read_bytes() == b"old lock"
-    assert not list(hive.glob("*.backup.*.tmp"))
-
-
-def test_publish_replaces_existing_and_removes_journal(tmp_path: Path) -> None:
-    state_root = _init_project(tmp_path)
-    transaction.publish_pair(tmp_path, b"old body", b"{}", state_root=state_root)
-    transaction.publish_pair(
-        tmp_path, b"new body", b"{\"generated_by\": \"haex 2.0.0\"}", state_root=state_root
-    )
-    constitution, lock, journal = _paths(tmp_path, state_root)
-    assert constitution.read_bytes() == b"new body"
-    assert lock.read_bytes() == b"{\"generated_by\": \"haex 2.0.0\"}"
-    assert not journal.exists()
+    assert paths.identity_record.exists()
+    record = json.loads(paths.identity_record.read_text())
+    assert record["identity"] == "com.example.consumer"
 
 
 def test_post_write_verify_rollback_restores_previous(tmp_path: Path) -> None:
     state_root = _init_project(tmp_path)
-    transaction.publish_pair(tmp_path, b"good", b"{}", state_root=state_root)
+    live = tmp_path / transaction.HAEX_HIVE_DIR
+
+    transaction.publish_generation(
+        live,
+        _staged(b"good\n", b"{}\n", b"{}\n"),
+        state_root=state_root,
+        repo_root=tmp_path,
+    )
 
     def failing_verify() -> None:
         raise PostWriteValidationError(message="mismatch")
 
     with pytest.raises(PostWriteValidationError):
-        transaction.publish_pair(
-            tmp_path,
-            b"bad",
-            b"{\"bad\": true}",
+        transaction.publish_generation(
+            live,
+            _staged(b"bad\n", b'{"bad": true}\n', b"{}\n"),
             post_write_verify=failing_verify,
             state_root=state_root,
+            repo_root=tmp_path,
         )
 
-    constitution, lock, journal = _paths(tmp_path, state_root)
-    assert constitution.read_bytes() == b"good"
-    assert lock.read_bytes() == b"{}"
-    assert not journal.exists()
+    assert (live / transaction.CONSTITUTION_NAME).read_bytes() == b"good\n"
+    assert (live / transaction.INSTALL_LOCK_NAME).read_bytes() == b"{}\n"
+    assert not (tmp_path / f"{transaction.HAEX_HIVE_DIR}.next").exists()
+    assert not (tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev").exists()
 
 
-def test_post_write_verify_rollback_removes_previously_absent(tmp_path: Path) -> None:
+def test_post_write_verify_rollback_removes_first_generation(tmp_path: Path) -> None:
     state_root = _init_project(tmp_path)
+    live = tmp_path / transaction.HAEX_HIVE_DIR
+
     def failing_verify() -> None:
         raise PostWriteValidationError(message="mismatch")
 
     with pytest.raises(PostWriteValidationError):
-        transaction.publish_pair(
-            tmp_path, b"new", b"{}", post_write_verify=failing_verify, state_root=state_root
+        transaction.publish_generation(
+            live,
+            _staged(b"new\n", b"{}\n", b"{}\n"),
+            post_write_verify=failing_verify,
+            state_root=state_root,
+            repo_root=tmp_path,
         )
 
-    constitution, lock, journal = _paths(tmp_path, state_root)
-    assert not constitution.exists()
-    assert not lock.exists()
-    assert not journal.exists()
+    assert not live.exists()
+    assert not (tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev").exists()
 
 
-def test_recover_after_journal_present_restores_backups(tmp_path: Path) -> None:
-    """Simulate crash after journal write + target replacement."""
-    state_root = _init_project(tmp_path)
-    hive = _hive(tmp_path)
-    hive.mkdir(parents=True)
-    constitution, lock, journal = _paths(tmp_path, state_root)
+def test_inflight_resolve_completes_forward_after_mid_swap_crash(tmp_path: Path) -> None:
+    live = tmp_path / transaction.HAEX_HIVE_DIR
+    next_dir = tmp_path / f"{transaction.HAEX_HIVE_DIR}.next"
+    prev_dir = tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev"
 
-    constitution.write_bytes(b"original constitution")
-    lock.write_bytes(b"original lock")
+    next_dir.mkdir()
+    (next_dir / "constitution.md").write_bytes(b"new gen\n")
+    prev_dir.mkdir()
+    (prev_dir / "constitution.md").write_bytes(b"prev gen\n")
 
-    backup_c = hive / "constitution.backup.tmp"
-    backup_l = hive / "install_lock.backup.tmp"
-    shutil.copy2(constitution, backup_c)
-    shutil.copy2(lock, backup_l)
+    state = inflight.resolve(live)
 
-    constitution.write_bytes(b"HALF-WRITTEN")
-    lock.write_bytes(b"HALF-WRITTEN")
-    journal.parent.mkdir(parents=True)
-
-    journal.write_text(
-        json.dumps(
-            {
-                "repo_key": transaction_paths(tmp_path, state_root).repo_key,
-                "checkout_key": transaction_paths(tmp_path, state_root).checkout_key,
-                "targets": [
-                    {
-                        "logical": "constitution",
-                        "target": f"{transaction.HAEX_HIVE_DIR}/constitution.md",
-                        "staged": f"{transaction.HAEX_HIVE_DIR}/constitution.staged.tmp",
-                        "prior_state": "existed",
-                        "backup": f"{transaction.HAEX_HIVE_DIR}/constitution.backup.tmp",
-                    },
-                    {
-                        "logical": "install_lock",
-                        "target": f"{transaction.HAEX_HIVE_DIR}/install.lock",
-                        "staged": f"{transaction.HAEX_HIVE_DIR}/install_lock.staged.tmp",
-                        "prior_state": "existed",
-                        "backup": f"{transaction.HAEX_HIVE_DIR}/install_lock.backup.tmp",
-                    },
-                ]
-            }
-        )
-    )
-
-    recovered = transaction.recover_if_journaled(tmp_path, state_root=state_root)
-    assert recovered
-    assert constitution.read_bytes() == b"original constitution"
-    assert lock.read_bytes() == b"original lock"
-    assert not journal.exists()
+    assert state is inflight.InflightState.MID_SWAP
+    assert live.exists()
+    assert (live / "constitution.md").read_bytes() == b"new gen\n"
+    assert not next_dir.exists()
+    assert not prev_dir.exists()
 
 
-def test_recover_absent_prior_removes_targets(tmp_path: Path) -> None:
-    state_root = _init_project(tmp_path)
-    hive = _hive(tmp_path)
-    hive.mkdir(parents=True)
-    constitution, lock, journal = _paths(tmp_path, state_root)
+def test_inflight_resolve_cleans_up_post_swap(tmp_path: Path) -> None:
+    live = tmp_path / transaction.HAEX_HIVE_DIR
+    prev_dir = tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev"
 
-    constitution.write_bytes(b"HALF-WRITTEN")
-    lock.write_bytes(b"HALF-WRITTEN")
-    journal.parent.mkdir(parents=True)
+    live.mkdir()
+    (live / "constitution.md").write_bytes(b"live\n")
+    prev_dir.mkdir()
+    (prev_dir / "constitution.md").write_bytes(b"prev\n")
 
-    journal.write_text(
-        json.dumps(
-            {
-                "repo_key": transaction_paths(tmp_path, state_root).repo_key,
-                "checkout_key": transaction_paths(tmp_path, state_root).checkout_key,
-                "targets": [
-                    {
-                        "logical": "constitution",
-                        "target": f"{transaction.HAEX_HIVE_DIR}/constitution.md",
-                        "staged": f"{transaction.HAEX_HIVE_DIR}/constitution.staged.tmp",
-                        "prior_state": "absent",
-                        "backup": None,
-                    },
-                    {
-                        "logical": "install_lock",
-                        "target": f"{transaction.HAEX_HIVE_DIR}/install.lock",
-                        "staged": f"{transaction.HAEX_HIVE_DIR}/install_lock.staged.tmp",
-                        "prior_state": "absent",
-                        "backup": None,
-                    },
-                ]
-            }
-        )
-    )
+    state = inflight.resolve(live)
 
-    assert transaction.recover_if_journaled(tmp_path, state_root=state_root)
-    assert not constitution.exists()
-    assert not lock.exists()
-    assert not journal.exists()
+    assert state is inflight.InflightState.POST_SWAP
+    assert (live / "constitution.md").read_bytes() == b"live\n"
+    assert not prev_dir.exists()
+
+
+def test_inflight_resolve_deletes_stale_next_pre_swap(tmp_path: Path) -> None:
+    live = tmp_path / transaction.HAEX_HIVE_DIR
+    next_dir = tmp_path / f"{transaction.HAEX_HIVE_DIR}.next"
+
+    live.mkdir()
+    (live / "constitution.md").write_bytes(b"live\n")
+    next_dir.mkdir()
+    (next_dir / "constitution.md").write_bytes(b"aborted\n")
+
+    state = inflight.resolve(live)
+
+    assert state is inflight.InflightState.PRE_SWAP
+    assert live.exists()
+    assert not next_dir.exists()
+
+
+def test_inflight_resolve_is_noop_on_steady_state(tmp_path: Path) -> None:
+    live = tmp_path / transaction.HAEX_HIVE_DIR
+    live.mkdir()
+    (live / "constitution.md").write_bytes(b"live\n")
+
+    assert inflight.resolve(live) is inflight.InflightState.STEADY
+    assert live.exists()
+
+
+def test_inflight_resolve_is_noop_on_uninitialized_state(tmp_path: Path) -> None:
+    live = tmp_path / transaction.HAEX_HIVE_DIR
+
+    assert inflight.resolve(live) is inflight.InflightState.UNINITIALIZED
+    assert not live.exists()
+
+
+@pytest.mark.parametrize(
+    "row_name,make_state",
+    [
+        (
+            "orphan_prev",
+            lambda tmp_path, live: (tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev").mkdir(),
+        ),
+        (
+            "orphan_next",
+            lambda tmp_path, live: (tmp_path / f"{transaction.HAEX_HIVE_DIR}.next").mkdir(),
+        ),
+        (
+            "illegal_all",
+            lambda tmp_path, live: [
+                live.mkdir(),
+                (tmp_path / f"{transaction.HAEX_HIVE_DIR}.next").mkdir(),
+                (tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev").mkdir(),
+            ],
+        ),
+    ],
+)
+def test_inflight_resolve_raises_on_integrity_failures(
+    tmp_path: Path,
+    row_name: str,
+    make_state,
+) -> None:
+    del row_name
+    live = tmp_path / transaction.HAEX_HIVE_DIR
+    make_state(tmp_path, live)
+
+    with pytest.raises(inflight.InflightIntegrityError):
+        inflight.resolve(live)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="fcntl-based lock is POSIX-only")
@@ -243,5 +250,5 @@ def test_concurrent_writer_refused(tmp_path: Path) -> None:
     lock = writer_lock.ConstitutionWriterLock(lock_path)
     with lock:
         second = writer_lock.ConstitutionWriterLock(lock_path)
-        with pytest.raises(ConstitutionWriterBusyError), second:
-            pass
+        with pytest.raises(ConstitutionWriterBusyError):
+            second.__enter__()

@@ -188,13 +188,17 @@ def _publish_constitution(
                 message="visibility.json does not match the published install.lock",
             )
 
-    transaction.publish_pair(
-        repo_root,
-        body,
-        lock_bytes,
+    live_dir = repo_root / transaction.HAEX_HIVE_DIR
+    transaction.publish_generation(
+        live_dir,
+        [
+            transaction.StagedFile(transaction.CONSTITUTION_NAME, body),
+            transaction.StagedFile(transaction.INSTALL_LOCK_NAME, lock_bytes),
+            transaction.StagedFile(transaction.VISIBILITY_NAME, visibility_bytes),
+        ],
         post_write_verify=post_write_verify,
         state_root=state_root,
-        visibility_body=visibility_bytes,
+        repo_root=repo_root,
     )
 
 

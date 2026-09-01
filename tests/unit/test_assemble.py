@@ -28,24 +28,26 @@ def test_publish_rejects_mismatched_published_lock(
     )
 
     def corrupting_publish(
-        repo_root: Path,
-        constitution_body: bytes,
-        install_lock_bytes: bytes,
+        live: Path,
+        files,
         *,
-        post_write_verify: object,
-        state_root: Path | None,
-        visibility_body: bytes,
+        post_write_verify,
+        state_root=None,
+        repo_root=None,
     ) -> None:
-        hive_dir = repo_root / transaction.HAEX_HIVE_DIR
-        hive_dir.mkdir()
-        (hive_dir / transaction.CONSTITUTION_NAME).write_bytes(constitution_body)
-        lock_data = json.loads(install_lock_bytes)
-        lock_data["constitution"]["content_integrity"] = "sha256-" + "A" * 43
-        (hive_dir / transaction.INSTALL_LOCK_NAME).write_text(json.dumps(lock_data))
+        del state_root, repo_root
+        live.mkdir(parents=True, exist_ok=True)
+        for staged in files:
+            if staged.relative_path == transaction.INSTALL_LOCK_NAME:
+                data = json.loads(staged.data)
+                data["constitution"]["content_integrity"] = "sha256-" + "A" * 43
+                (live / staged.relative_path).write_text(json.dumps(data))
+            else:
+                (live / staged.relative_path).write_bytes(staged.data)
         assert callable(post_write_verify)
         post_write_verify()
 
-    monkeypatch.setattr(transaction, "publish_pair", corrupting_publish)
+    monkeypatch.setattr(transaction, "publish_generation", corrupting_publish)
 
     with pytest.raises(PostWriteValidationError):
         _publish_constitution((source,), body, tmp_path, tool_version="2.0.0")
