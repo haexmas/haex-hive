@@ -196,7 +196,7 @@ Every haex-owned install transitions through these three names in the R1 rename-
 | `<root>/` | `<root>.next/` | `<root>.prev/` | Interpretation | Recovery action |
 |---|---|---|---|---|
 | present | absent | absent | steady state — nothing in flight | none |
-| present | present | absent | pre-swap crash (staging existed but rename A did not run) | `rmtree(<root>.next/)`; rerun of install proceeds normally |
+| present | present | absent | pre-swap crash (staging existed but rename A did not run) | restore each mixed-root pointer to its retained prior overlay generation per R3, fsync the pointer parent, then `rmtree(<root>.next/)`; rerun of install proceeds normally |
 | absent | present | present | mid-swap crash between rename A and rename B | verify `<root>.next/`; if valid, complete forward with `os.rename(<root>.next/, <root>/)` and then `rmtree(<root>.prev/)`; if the present candidate fails verification, refuse without publishing |
 | present | absent | present | post-swap crash before cleanup | verify the live marker; clean `<root>.prev/` if valid; if the live root fails verification, remove its invalid tree with `rmtree(<root>/)`, fsync the parent, then restore the verified `<root>.prev/` with `os.rename(<root>.prev/, <root>/)` and fsync again |
 | absent | absent | present | rename A completed but the staged generation was lost | verify `<root>.prev/`, then restore it with `os.rename(<root>.prev/, <root>/)` and fsync the parent; refuse if the previous generation does not verify |
