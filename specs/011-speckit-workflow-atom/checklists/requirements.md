@@ -1,7 +1,7 @@
-# Specification Quality Checklist: Speckit Workflow Atom
+# Specification Quality Checklist: Speckit Workflow Atom (simplified re-specification)
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
-**Created**: 2026-09-02
+**Created**: 2026-09-02 (simplification amendment)
 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality
@@ -29,9 +29,20 @@
 - [x] Feature meets measurable outcomes defined in Success Criteria
 - [x] No implementation details leak into specification
 
+## Simplification-amendment audit
+
+- [x] `workflow-registry.json` and `active_workflow` field explicitly retired
+- [x] `extension_contributions` provenance cache explicitly retired
+- [x] `installed-extension-metadata-mismatch` diagnostic key explicitly retired
+- [x] `.registry` cross-check against `extension.yml` explicitly retired
+- [x] `workflow-atom-reset-to-default` diagnostic key retired
+- [x] US4 coexistence retired
+- [x] Bytewise UTF-8 atom-id ordering retired
+- [x] New FR-006 covers multi-workflow-atom refusal
+- [x] Retired items are named in the amendment preamble and the traceability is preserved
+
 ## Notes
 
-- The design doc (`docs/plans/2026-09-02-spec-011-speckit-workflow-atom-design.md`) supplied all six recommended defaults for the pre-known open questions; each is recorded in §Assumptions with the design-doc's Q1..Q6 identifier so `/speckit-plan` can trace them back. No [NEEDS CLARIFICATION] markers were needed.
-- SC-005's `key=required-workflow-extension-missing`, `key=required-workflow-extension-incompatible`, and `key=invalid-constraint` are new diagnostic-key slots; `/speckit-plan` should reserve exit codes in `haex_hive.util.exit_codes` for them. `key=optional-workflow-extension-conflict` is a non-fatal warning; `key=conflicting-extension-metadata`, `key=workflow-hook-mapping-invalid`, and `key=workflow-atom-extension-id-collision` are refusal diagnostics and must retain their stated stderr behaviour. Active-workflow reconciliation must retain the stable `workflow-atom-reset-to-default` diagnostic.
-- The spec intentionally names implementation-flavoured details that are required user-visible contracts: `.specify/workflows/<atom-id>/workflow.yml` and `.specify/extensions/workflow-atoms/<atom-id>/` paths, YAML/JSON payload shapes, `haex install`/`--verify-only`/`--accept-merged` flags, diagnostic keys, validator/helper names, and rename-swap behaviour. These details define interoperability and observable failure handling; they are not incidental language, framework, or internal API choices.
-- Items marked incomplete require spec updates before `/speckit.clarify` or `/speckit.plan`.
+- The simplified spec has 10 FRs (down from 10 with different content), 4 user stories (down from 4 with different priorities: US4 was coexistence; new US4 is multi-workflow refusal), 6 SCs (down from 6 with SC-006 replaced), 8 diagnostic keys (down from 9 with `installed-extension-metadata-mismatch` and `workflow-atom-reset-to-default` retired, `multiple-workflow-atoms-refused` added).
+- Design source doc (`docs/plans/2026-09-02-spec-011-speckit-workflow-atom-design.md`) remains valid for the preserved parts; the retired parts are enumerated in the amendment preamble.
+- Items marked incomplete require spec updates before `/speckit-plan`.
