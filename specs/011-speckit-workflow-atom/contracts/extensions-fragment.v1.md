@@ -41,6 +41,7 @@ hooks:
 - `required_extensions[]` and `optional_extensions[]`: list of extension declarations. `id` matches `^[A-Za-z0-9][A-Za-z0-9._-]*$`. `version_constraint` parses per Spec 007's `VersionConstraint` grammar. `homepage` optional.
 - `hooks.<stage>[]`: at most one entry per `(stage, extension, command, script)` identity within a single fragment (duplicate refuses with `key=workflow-hook-mapping-invalid`). `stage` is one of the enumerated stage names. `script` MUST resolve to a file under the atom's `speckit_hooks` directory.
 - Same `id` declared twice within `required_extensions[]` or twice within `optional_extensions[]` refuses with `key=workflow-atom-extension-id-collision`.
+- If the same `id` appears once in `required_extensions[]` and once in `optional_extensions[]`, it is not a collision: the required declaration wins. The merge emits exactly one entry in the generated `required_extensions[]` list, never a duplicate optional entry. When the constraints and metadata are compatible, `sources[]` records both declarations with their original `kind` values (`required` and `optional`); if the optional constraint conflicts, the required declaration remains and the optional declaration is dropped with the optional-conflict warning.
 - Unparseable `version_constraint` in any declaration (required or optional) refuses with `key=invalid-constraint`.
 - Conflicting non-constraint metadata (e.g. different `homepage` for the same id across required vs optional lists within the fragment) refuses with `key=conflicting-extension-metadata`.
 

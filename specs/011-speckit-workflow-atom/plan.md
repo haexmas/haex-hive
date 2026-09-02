@@ -75,7 +75,7 @@ src/haex_hive/
 │   ├── constraint.py                           # canonical constraint reduction (atom-vs-local)
 │   ├── publisher.py                            # publish_workflow_atom + delete-orphans hook
 │   └── errors.py                               # 9 diagnostic subclasses
-├── model/consumer_manifest.py                  # EXTENDED: recognises contributes.speckit_workflow, detects multi-workflow-atoms
+├── model/consumer_manifest.py                  # EXTENDED: parses the consumer manifest; workflow multiplicity is checked after atom resolution
 ├── constitution/assemble.py                    # EXTENDED: integrates workflow atom fragment into ## Workflow-Contributed Rules
 ├── install/errors.py                           # STILL empty (workflow errors live in workflow/errors.py)
 ├── util/exit_codes.py                          # EXTENDED: comment-only, reuses existing categories
@@ -114,7 +114,7 @@ Eight research decisions:
 
 1. **R1 registry-alternative**: no registry file needed under one-active-per-repo; adoption alone signals binding.
 2. **R2 extensions ownership boundary**: `.specify/extensions.local.yml` (consumer input) disjoint from `.specify/extensions.yml` (generated output).
-3. **R3 single-atom refusal placement**: `ConsumerManifest.from_json` detects multi-workflow-atom case at manifest-load time, before resolver runs.
+3. **R3 multi-workflow refusal placement**: after publisher and atom manifests are resolved and validated, the workflow pipeline counts `contributes.speckit_workflow` fields and refuses before fragments or publication; `ConsumerManifest.from_json` only validates consumer-owned data.
 4. **R4 constraint-merge algorithm**: simplified to atom-vs-local reduction (no cross-atom).
 5. **R5 reader resolution fallback**: typed `WorkflowResolution` with `source: atom|bundled` and diagnostics field.
 6. **R6 workflow.yml payload safety**: path containment + no-secrets + no-concealment on the payload body.
@@ -125,7 +125,7 @@ Eight research decisions:
 
 Prerequisites: research.md complete.
 
-**data-model.md**: nine dataclasses (`WorkflowAtomManifest`, `WorkflowFragment`, `ExtensionRequirement`, `HookEntry`, `LocalExtensionsSource`, `GeneratedExtensionsYml`, `WorkflowResolution`, `InstalledExtensionMetadata`, `MergedRequirement`).
+**data-model.md**: ten dataclasses (`WorkflowAtomManifest`, `WorkflowFragment`, `ExtensionRequirement`, `HookEntry`, `LocalExtensionsSource`, `GeneratedExtensionsYml`, `MergedRequirement`, `ExtensionRequirementSource`, `WorkflowResolution`, `InstalledExtensionMetadata`). The implementation and workflow tests cover `ExtensionRequirementSource` through `MergedRequirement.sources`.
 
 **contracts/**:
 - `atom-manifest.v2.speckit-workflow.md`: three new `contributes.*` fields + orphan-refusal cases.

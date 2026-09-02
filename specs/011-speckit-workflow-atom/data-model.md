@@ -35,7 +35,7 @@ Parsed representation of the atom's contributed `extensions.yml`.
 | `optional_extensions` | `tuple[ExtensionRequirement, ...]` | Sorted by `(id,)`. |
 | `hooks` | `dict[str, tuple[HookEntry, ...]]` | Keyed by stage; entries retain in-fragment declaration order. |
 
-Duplicate `(id,)` within `required_extensions` or `optional_extensions` raises `WorkflowAtomExtensionIdCollisionError`. Duplicate hook identity within a single stage raises `WorkflowHookMappingInvalidError`.
+Duplicate `(id,)` within `required_extensions` or `optional_extensions` raises `WorkflowAtomExtensionIdCollisionError`. The same id across the two lists is normalized as one required requirement: the generated output contains one `required_extensions[]` entry, and compatible required/optional declarations both appear in that entry's `sources[]` with their original kinds. An incompatible optional declaration is dropped with a warning while the required declaration remains. Duplicate hook identity within a single stage raises `WorkflowHookMappingInvalidError`.
 
 ### ExtensionRequirement
 
@@ -53,7 +53,7 @@ Duplicate `(id,)` within `required_extensions` or `optional_extensions` raises `
 | `stage` | `str` | Enum of legal stages (`before_specify` etc.). |
 | `extension` | `str \| None` | Extension id that owns the hook; nullable for local-only hooks. |
 | `command` | `str` | Dotted command name. |
-| `script_path` | `str` | Repo-relative under `.specify/extensions/workflow-atoms/<atom-id>/` for atom-contributed hooks, or under any location for local hooks. |
+| `script_path` | `str` | Repo-relative under `.specify/extensions/workflow-atoms/<atom-id>/` for atom-contributed hooks, or below the consumer-owned local hook base for local hooks. |
 | `enabled` | `bool` | Defaults true. |
 | `optional` | `bool` | Defaults true for atom-contributed hooks. |
 | `description` | `str` | Operator-facing description. |
@@ -153,12 +153,15 @@ START
 [clean_stale_siblings]            (Spec 008: detect+retry cleanup)
   │
   ▼
-[load_consumer_manifest]          (ConsumerManifest.from_json;
-                                   FR-006 refuses on 2+ workflow atoms
-                                   here, before anything else runs)
+[load_consumer_manifest]          (ConsumerManifest.from_json)
   │
   ▼
 [resolve_atoms]                   (workflow atom -> WorkflowAtomManifest)
+  │
+  ▼
+[refuse_multiple_workflow_atoms]  (count resolved, validated
+                                   contributes.speckit_workflow fields;
+                                   refuse before fragments or publication)
   │
   ▼
 [validate_workflow_paths]         (RepoRelativePath.validate + containment
@@ -190,10 +193,11 @@ START
 [compose_install_lock + visibility.json + extensions.yml + workflow files]
   │
   ▼
-[publish_generation]              (Spec 008 rename-swap; the whole
-                                   .haex-hive.next/ and .specify/**
-                                   deltas commit atomically. The consumer-
-                                   owned .specify/extensions.local.yml is
+[publish_generation]              (Spec 008 rename-swap for `.haex-hive/`
+                                   only. The cross-root publication and
+                                   recovery protocol for `.specify/**` is
+                                   outside this primitive. The consumer-
+                                   owned `.specify/extensions.local.yml` is
                                    NOT part of the publication set.)
   │
   ▼
@@ -204,7 +208,8 @@ END
 
 - No workflow-atom-derived file is written before `[validate_workflow_paths]`, `[load_workflow_fragment]`, `[merge_extensions]`, and `[validate_required_extensions]` all pass.
 - `.specify/extensions.local.yml` is NEVER read, written, or deleted outside `[load_local_source]`, which is read-only.
-- Every adopted `speckit-workflow` atom in `.haex-hive.json` results in exactly one directory under `.specify/workflows/`. Bundled `.specify/workflows/speckit/` is untouched by atom adoption.
+- After a successful install, every resolved adopted `speckit-workflow` atom results in exactly one directory under `.specify/workflows/`; bundled `.specify/workflows/speckit/` is untouched by atom adoption.
+- A refused install, including invalid paths, broken YAML, missing required extensions, or multiple workflow atoms, creates no new atom directory and preserves the previous published generation.
 
 ---
 
