@@ -137,6 +137,10 @@ def run(args: argparse.Namespace) -> int:
                     contribution.source.revision,
                     contribution.source.source,
                 ):
+                    inflight.clean_stale_siblings(
+                        repo_root / transaction.HAEX_HIVE_DIR,
+                        remove_prev=True,
+                    )
                     sys.stdout.write("no changes\n")
                     return exit_codes.SUCCESS
 

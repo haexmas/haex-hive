@@ -26,18 +26,24 @@ from pathlib import Path
 _IS_WINDOWS = sys.platform == "win32"
 
 
-def clean_stale_siblings(live: Path) -> tuple[bool, bool]:
-    """Remove any leftover `<live>.next/` and `<live>.prev/` siblings.
+def clean_stale_siblings(
+    live: Path, *, remove_prev: bool = False
+) -> tuple[bool, bool]:
+    """Remove a stale `<live>.next/` while retaining `<live>.prev/`.
 
-    Returns `(next_removed, prev_removed)` so callers may log whether a
-    prior invocation crashed mid-transaction. Safe to call unconditionally
-    under the exclusive install lock; a no-op when neither sibling exists.
+    Returns `(next_removed, prev_present)` so callers may log whether a prior
+    invocation crashed mid-transaction. The previous generation is retained
+    until the replacement has passed staging and post-write validation. Set
+    `remove_prev` only after the live generation has been validated as the
+    replacement. Safe to call unconditionally under the exclusive install
+    lock; a no-op when neither sibling exists.
     """
     next_dir = live.with_name(f"{live.name}.next")
     prev_dir = live.with_name(f"{live.name}.prev")
 
     next_removed = next_dir.exists()
-    prev_removed = prev_dir.exists()
+    prev_present = prev_dir.exists()
+    prev_removed = remove_prev and prev_present
 
     if next_removed:
         _rmtree(next_dir)
@@ -46,7 +52,7 @@ def clean_stale_siblings(live: Path) -> tuple[bool, bool]:
     if next_removed or prev_removed:
         _fsync_dir(live.parent)
 
-    return next_removed, prev_removed
+    return next_removed, prev_present
 
 
 def _rmtree(path: Path) -> None:

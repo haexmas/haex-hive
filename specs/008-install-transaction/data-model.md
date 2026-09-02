@@ -1,7 +1,7 @@
 # Data Model: Install Transaction Contract
 
 **Feature**: Spec 008 — Install Transaction Contract
-**Date**: 2026-08-31 (amended 2026-09-01)
+**Date**: 2026-08-31 (amended 2026-09-02)
 **Purpose**: dataclass-level shapes and relationships for the install pipeline. Every persisted format has a matching JSON Schema under [contracts/](./contracts/); this file records the in-memory shapes and the state transitions of a running install.
 
 ---
@@ -25,14 +25,15 @@ live directory:
 | Directory | Meaning |
 |---|---|
 | `<root>/` | The currently-live generation. Its `visibility.json` names the published `generation_id`. |
-| `<root>.next/` | Leftover staging directory from a crashed prior install; deleted on the next install. |
-| `<root>.prev/` | Leftover pre-image from a crashed prior install; deleted on the next install. |
+| `<root>.next/` | Leftover staging directory from a crashed prior install; deleted before the next install builds its candidate. |
+| `<root>.prev/` | Previous published generation retained after a mid-swap crash; kept until a replacement is successfully published. |
 
 The recovery primitive is `install.inflight.clean_stale_siblings(live)`. It
-removes either sibling if present, fsyncs the parent, and returns which
-were removed (for diagnostics). The subsequent regular install pipeline
-runs to completion and produces a valid generation deterministically from
-the pinned inputs — there is no "restore from `.prev/`" path.
+removes stale `<root>.next/`, fsyncs the parent, and returns whether the
+previous sibling was present (for diagnostics). The subsequent regular install
+pipeline runs to completion and produces a valid generation deterministically
+from the pinned inputs. If resolution or staging fails, `<root>.prev/` remains
+available; after successful publication, stale siblings are removed.
 
 The rename-swap performs at most two atomic transitions per root:
 
@@ -182,9 +183,7 @@ START
 [acquire_lock]  ──── on stale lease → [reclaim_lease] ──┐
   │                                                     │
   ▼                                                     ▼
-[resolve_in_flight_state]  ◄──── inspect <root>/, <root>.next/, <root>.prev/
-  │                                per §R7 state table (complete forward,
-  │                                roll back, or refuse)
+[clean_stale_siblings]  ◄──── remove <root>.next/; retain <root>.prev/
   ▼
 [resolve_and_hydrate]
   │
@@ -226,24 +225,26 @@ END (success)
 
 
 At any state above ↓
-[crash] → next `haex install` or `haex verify --recover`
+[crash] → next `haex install`
   │
   ▼
-[resolve_in_flight_state]  → read <root>{,.next,.prev} presence
+[clean_stale_siblings]  → remove <root>.next/, retain <root>.prev/
   │
-  ├── row 3 of §R7 (mid-swap, <root>/ absent) → validate availability and complete forward, or refuse
-  ├── row 4 of §R7 (post-swap, <root>.prev/ still present) → cleanup, or restore an available previous generation
-  ├── row 2 of §R7 (staged but pre-swap) → restore mixed-root pointers, delete <root>.next/, plan afresh
-  ├── row 5 of §R7 (both live and staged absent) → restore an available previous generation
-  ├── row 7 of §R7 (first install, <root>/ and <root>.prev/ absent) → validate availability and complete forward, or refuse
-  └── other rows → per §R7 state table
+  ▼
+[resolve_and_hydrate]  → on failure, refuse and preserve <root>.prev/
+  │
+  ▼
+[stage_and_validate]  → on failure, refuse and preserve <root>.prev/
+  │
+  ▼
+[rename_A] / [rename_B] / [cleanup_prev]  → publish and then remove stale siblings
 ```
 
 **Invariants at every transition**:
 - The exclusive lock is held from `[acquire_lock]` through `[cleanup_prev]`.
 - Every rename that transitions between the three directory names is followed by a parent-directory fsync before the next state is entered.
 - `[validate_generation_inputs]` constructs the complete envelope before any lock seal and rejects any adapter revision, tool-configuration revision, atom revision, or canonical serialization profile that differs from it; T029 serializes the exact validated envelope.
-- The `[rename_B]` step (`os.rename(<root>.next, <root>)`) is the sole publication event; `[cleanup_prev]` follows but cannot change the published generation and is idempotent under recovery.
+- The `[rename_B]` step (`os.rename(<root>.next, <root>)`) is the sole publication event; `[cleanup_prev]` follows but cannot change the published generation and is idempotent under retry.
 
 ---
 

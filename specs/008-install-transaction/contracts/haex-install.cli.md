@@ -23,13 +23,13 @@ The `--llm` and `--accept-merged` options apply to multi-source constitution
 installation. Single-source installations use the deterministic fast path when
 neither option is supplied.
 
-Recovery is implicit: any subsequent `haex install` acquires the exclusive lock, removes any leftover `<root>.next/` / `<root>.prev/` sibling, and reinstalls to a valid generation from the deterministic pinned inputs. There is no separate `haex verify --recover` verb (retired 2026-09-02 by the detect+retry amendment).
+Recovery is implicit: any subsequent `haex install` acquires the exclusive lock, removes a leftover `<root>.next/` sibling, retains `<root>.prev/` until the replacement is successfully published, and reinstalls from the deterministic pinned inputs. There is no separate `haex verify --recover` verb (retired 2026-09-02 by the detect+retry amendment).
 
 ## Behaviour matrix
 
 | Invocation | Lock class | On success | On failure |
 |---|---|---|---|
-| `haex install` | Exclusive | Prints "installed generation `<gen>`" or "no changes", exit 0. Cleans any leftover `<root>.next/`/`<root>.prev/` first. | Prints refusal reason + exit code per matrix below |
+| `haex install` | Exclusive | Prints "installed generation `<gen>`" or "no changes", exit 0. Cleans stale `<root>.next/`; removes `<root>.prev/` only after successful publication. | Prints refusal reason + exit code per matrix below |
 | `haex install --verify-only` | Shared | Prints "generation `<gen>` verified", exit 0 | Prints mismatch detail, exit per matrix |
 
 ## Exit codes
@@ -44,7 +44,6 @@ Uses the canonical set defined in [src/haex_hive/util/exit_codes.py](../../../sr
 | 4 | Validation refuse (FR-006) | `plan snapshot digest does not match commit snapshot; source mutated during install` |
 | 5 | System refuse (FR-003) | `platform does not support required overlay primitive for <path> (Windows requires Developer Mode for file-scoped symlinks)` |
 | 6 | Post-write validation (FR-005 / FR-009) | `sealed .haex-hive/constitution.md digest does not match install.lock` |
-| 7 | Incomplete transaction (FR-002) | `install.journal contains uncommitted entries; run with --recover` |
 | 8 | Constitution concealment (Principle VIII) | (from Spec 007's guard; unchanged) |
 | 9 | Writer busy (FR-001 / FR-010) | `lock held by <pid>@<hostname> since <acquired_at> (heartbeat <n>s ago, ttl <t>s)` |
 | 10 | Plaintext secret (Principle I) | (from Spec 007's guard; unchanged) |

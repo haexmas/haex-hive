@@ -29,9 +29,12 @@ For **mixed-ownership roots** (`.claude/`, `.codex/`, future Spec 010 adapters),
 
 1. Stage every file into `.haex-hive.next/` (same-filesystem sibling per R2), fsync each file and the staging directory. `.haex-hive.next/visibility.json` is written last inside the staging tree and names the generation and every participating root about to become live.
 2. Verify: re-read the staged metadata, validate the `install.lock` and `visibility.json` schemas, and confirm that the marker's `generation_id` matches the lock cross-reference and that every participating root is available for that generation. Any schema, generation, or root-availability mismatch aborts before any rename.
-3. **Rename A**: if `.haex-hive/` exists, `os.rename(".haex-hive", ".haex-hive.prev")`, then fsync the parent directory.
+3. **Rename A**: after staging and validation, remove any stale
+   `.haex-hive.prev/` left by an earlier crash, then if `.haex-hive/` exists,
+   `os.rename(".haex-hive", ".haex-hive.prev")`, and fsync the parent directory.
 4. **Rename B**: `os.rename(".haex-hive.next", ".haex-hive")`, then fsync the parent directory.
-5. Cleanup: `rmtree(".haex-hive.prev")`, fsync parent.
+5. Cleanup: after successful publication and post-write validation,
+   `rmtree(".haex-hive.prev")` if present, then fsync the parent.
 
 Renames A and B are each atomic on POSIX (`rename(2)`) and Windows (`MoveFileExW`). Between them the live `.haex-hive/` name briefly does not exist; a reader in that window sees no installation and is required to treat it as unavailable per FR-005. On single-syscall rename-swap primitives (`renameat2(RENAME_EXCHANGE)` on Linux ≥ 3.15, `renamex_np(RENAME_SWAP)` on macOS ≥ 10.13) an implementation MAY collapse steps 3+4 into one syscall when available, but the two-rename fallback is the reference contract.
 
@@ -205,76 +208,11 @@ lock (§R4 owner-token + writer-lock primitive); the deterministic
 generation contract (trust-git amendment); the idempotent single-source
 no-op path in `haex install`.
 
-**Original decision (retained for context)**: There is no durable JSONL journal, no tail-hash chain, and no per-entry sidecar. For each haex-owned output root, the transaction's in-flight state is encoded entirely in the presence or absence of three directory names beside the root:
-
-- `<root>/` — the live generation. Its `visibility.json` names the currently-published `generation_id`.
-- `<root>.next/` — a staged, verified fresh generation, ready to become live but not yet renamed in.
-- `<root>.prev/` — the previous live generation, retained during the swap so it can be restored on a mid-swap crash. Mixed-ownership roots use the retained overlay generations and stable pointers defined by R3 instead of these directory names.
-
-Every haex-owned install transitions through these three names in the R1 rename-swap order. Recovery reads the directory listing on every `haex install` startup (or `haex verify --recover`) and dispatches on the combination it observes. Mixed-root recovery uses the adapter's retained generation and pointer state. No separate journal is required.
-
-Mixed-root recovery is ordered around the haex-owned marker. The installer
-stages and validates every adapter generation first, then atomically exchanges
-each adapter pointer while the old marker remains live, and publishes the new
-marker only after every pointer names the candidate generation. A reader must
-therefore treat the interval between the first pointer exchange and marker
-publication as unavailable. Before cleanup or publication, recovery validates
-the marker and lock cross-reference, the availability of every participating
-root, and every active pointer. If the marker is still the prior generation,
-each pointer naming the candidate is restored to the prior generation; a
-pointer naming neither the prior nor candidate generation is unclassifiable
-and causes refusal. Once the new marker is live, it is authoritative and
-matching candidate pointers are retained. The adapter contract MUST make each
-pointer exchange atomic and expose the retained prior/candidate generations to
-recovery; no per-path ownership inventory is persisted by Spec 008.
-
-**Recovery state table** for one haex-owned root:
-
-| `<root>/` | `<root>.next/` | `<root>.prev/` | Interpretation | Recovery action |
-|---|---|---|---|---|
-| present | absent | absent | steady state — nothing in flight | none |
-| present | present | absent | pre-swap crash (staging existed but rename A did not run) | restore each mixed-root pointer to its retained prior overlay generation per R3, fsync the pointer parent, then `rmtree(<root>.next/)`; rerun of install proceeds normally |
-| absent | present | present | mid-swap crash between rename A and rename B | verify that `<root>.next/` contains schema-compatible metadata and that all participating roots are generation-compatible and available; if so, complete forward with `os.rename(<root>.next/, <root>/)` and then `rmtree(<root>.prev/)`; otherwise refuse without publishing |
-| present | absent | present | post-swap crash before cleanup | verify the live marker and all participating roots; if the live generation is unavailable, first validate `<root>.prev/` and its participating roots, restore every candidate-named mixed-root pointer to the previous generation, then remove the invalid live tree and restore `<root>.prev/` with `os.rename(<root>.prev/, <root>/)`, fsyncing after each transition; refuse and preserve evidence if any pointer cannot be classified |
-| absent | absent | present | rename A completed but the staged generation was lost | verify that `<root>.prev/` is schema-compatible and available, then restore it with `os.rename(<root>.prev/, <root>/)` and fsync the parent; refuse if the previous generation is unavailable |
-| present | present | present | reserved illegal combination (would require concurrent installs; the exclusive lock forbids it) | refuse; require operator cleanup |
-| absent | present | absent | first-install crash before rename B, or rename A completed but `<root>.prev/` was lost | verify that `<root>.next/` contains schema-compatible metadata and available participating roots, then complete forward with `os.rename(<root>.next/, <root>/)`; refuse if it is unavailable |
-| absent | absent | absent | fresh checkout, no install ever ran | none — install proceeds |
-
-Recovery completes **forward** only when the staged generation has
-schema-compatible metadata, its `generation_id` agrees with the lock
-cross-reference, and every participating root is available with a matching
-generation. A present but unavailable or schema-invalid staged generation is
-refused; it is never silently replaced by `.prev`. Rollback is reachable only
-in the explicit R7 cases: an unavailable live root in the post-swap row, after
-restoring all mixed-root pointers to the validated previous generation and
-before removing that root, or a missing staged generation in the
-`absent/absent/present` row. In both cases `.prev` must be schema-compatible and
-available first. The rollback removal and rename are each followed by a
-parent-directory fsync; a crash between them re-enters the
-`absent/absent/present` row and retries the restore. This satisfies FR-011
-without a journal and never publishes a torn state.
-
-**Rationale**:
-- **The filesystem IS the durable state**. The three directory names cover all
-  2³ combinations; recovery validates the candidate generation's metadata and
-  availability before choosing forward completion or restoration from `.prev`.
-  No journal file, chain, or sidecar must be synchronised.
-- **Renames are the only durable state transitions**. Because both step 3 and step 4 of R1 are atomic single syscalls, every intermediate observable state is one of the eight rows above.
-- **No parallel state to keep in sync**. The previous JSONL-plus-sidecar design had two files (`install.journal` and `install.journal.meta`) whose atomic update relative to each other required its own recovery logic. That whole layer disappears.
-
-**Alternatives considered**:
-- **Retain a lightweight in-flight marker file** with the current generation ID. Rejected: adds an artefact whose durability relative to the renames must itself be reasoned about, without adding any signal the directory names do not already convey. Under pre-user policy this level of belt-and-braces is not warranted.
-- **Encode the state in a single file inside `<root>.next/`** (e.g. `.state`). Rejected: reading it requires the not-yet-live `<root>.next/` to be traversable, which conflates recovery-state discovery with generation content.
-- **Retain the JSONL journal for extensibility** (Spec 009 hooks, Spec 010 adapters). Rejected in this rewrite: Spec 009 hooks run before rename A, so their outputs are staged into `<root>.next/` and covered by the same state machine; Spec 010 mixed-ownership overlays get their own symlink-swap contract per R3.
-
-**Residual risk**:
-- **Unavailable states** (an illegal combination or a candidate generation with
-  invalid metadata or missing roots) require operator action. In practice these
-  arise only from filesystem corruption, out-of-band tampering, or an
-  implementation bug; the operator diagnostic tells them exactly which
-  directories to clean.
-- **Parent-directory listing cost**: recovery reads `os.listdir(parent_of_root)`. For `.haex-hive/` the parent is the repo root, which may contain many entries; the check is bounded to matching `<root>{,.next,.prev}` and is O(entries) with tiny constants. Not a concern at realistic repo sizes.
+**Historical note (non-normative):** Before the 2026-09-02 amendment, this
+section described an eight-row recovery dispatcher over `<root>/`,
+`<root>.next/`, and `<root>.prev/`. That dispatcher, its recovery commands,
+state table, and rollback procedures are retired. The current contract above
+is authoritative; no procedure from the earlier design is active.
 
 ---
 
