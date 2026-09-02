@@ -6,7 +6,7 @@
 
 ## Content Quality
 
-- [x] No implementation details (languages, frameworks, APIs)
+- [x] No unnecessary implementation details; required contract-level names and interfaces are included only where needed for interoperability
 - [x] Focused on user value and business needs
 - [x] Written for non-technical stakeholders
 - [x] All mandatory sections completed
@@ -27,7 +27,7 @@
 - [x] All functional requirements have clear acceptance criteria
 - [x] User scenarios cover primary flows
 - [x] Feature meets measurable outcomes defined in Success Criteria
-- [x] No implementation details leak into specification
+- [x] No unnecessary implementation details leak into the specification; required contract-level names are explicitly scoped as normative interfaces
 
 ## Simplification-amendment audit
 
@@ -44,5 +44,5 @@
 ## Notes
 
 - The simplified spec has 10 FRs (down from 10 with different content), 4 user stories (down from 4 with different priorities: US4 was coexistence; new US4 is multi-workflow refusal), 6 SCs (down from 6 with SC-006 replaced), 8 diagnostic keys (down from 9 with `installed-extension-metadata-mismatch` and `workflow-atom-reset-to-default` retired, `multiple-workflow-atoms-refused` added).
-- Design source doc (`docs/plans/2026-09-02-spec-011-speckit-workflow-atom-design.md`) remains valid for the preserved parts; the retired parts are enumerated in the amendment preamble.
+- Design source doc (`docs/plans/2026-09-02-spec-011-speckit-workflow-atom-design.md`) remains valid for preserved requirements only; the amendment supersedes its registry, active-selection, provenance, coexistence, and local-extension-ownership passages.
 - Items marked incomplete require spec updates before `/speckit-plan`.
