@@ -72,6 +72,7 @@ Parsed `.specify/extensions.local.yml`. When the file is absent, an empty instan
 | `required_extensions` | `tuple[ExtensionRequirement, ...]` | Sorted by `(id,)`. |
 | `optional_extensions` | `tuple[ExtensionRequirement, ...]` | Sorted by `(id,)`. |
 | `hooks` | `dict[str, tuple[HookEntry, ...]]` | Local hook entries. Duplicate identity within one stage refuses at load. |
+| `source_bytes` | `bytes \| None` | Exact bytes loaded from `.specify/extensions.local.yml`; `None` when the file is absent. Used only to build and verify one immutable install snapshot. |
 
 ### GeneratedExtensionsYml
 
@@ -154,14 +155,17 @@ coordinator MUST hold the exclusive install lock and follow this protocol:
    view contains generated extensions output, workflow files, hook files, and a
    `.haex-hive-generation.json` record with `{ "generation_id": "...", "root": ".specify/" }`.
    The consumer-owned
-   `.specify/extensions.local.yml` is copied byte-for-byte when a complete
-   `.specify.next/` view is assembled, but is never generated, edited, or
-   deleted.
+   `.specify/extensions.local.yml` is copied from the `source_bytes` captured
+   by `[load_local_source]` when a complete `.specify.next/` view is assembled,
+   but is never generated, edited, or deleted.
 2. Validate both views, including schemas, path ownership, generated output,
    and the cross-root generation ID, before either live root is changed. The
    candidate view contains no removed atom-owned paths; unrelated consumer
    files are carried forward unchanged. A generated `.specify/extensions.yml`
-   is always rebuilt from the current local source and atom fragment.
+   is always rebuilt from the parsed local-source snapshot and atom fragment.
+   Immediately before the first swap, re-read the live local-source path and
+   compare its presence and bytes with `LocalExtensionsSource.source_bytes`;
+   if it differs, refuse or retry without publishing either root.
 3. Commit the `.specify/` view first by the Spec 008 sibling swap
    (`.specify/` -> `.specify.prev/`, then `.specify.next/` -> `.specify`, with
    parent-directory fsyncs). Commit `.haex-hive/` second through
@@ -170,33 +174,52 @@ coordinator MUST hold the exclusive install lock and follow this protocol:
    that marker is the sole repository-wide visibility event; until it is
    published, a candidate root paired with the previous marker is unavailable
    and must not be accepted by readers.
-4. After the marker swap, verify that both live roots carry the candidate
-   generation ID and that the marker names both roots. If this verification
-   fails, restore `.specify/` from `.specify.prev/` and let the
-   `publish_generation` rollback restore `.haex-hive/`; retain both `.prev/`
-   siblings and report the failure. After successful verification, remove both
-   `.haex-hive.prev/` and `.specify.prev/` and fsync their parent directories.
-   Cleanup is not part of the visibility event and is retry-safe.
+4. Pass the cross-root verification as `publish_generation`'s
+   `post_write_verify` callback. The callback runs after the `.haex-hive/`
+   swap but before that primitive removes `.haex-hive.prev/`; it verifies both
+   live-root generation records and the marker. If verification fails, it
+   restores `.specify/` from `.specify.prev/` and raises so
+   `publish_generation` restores `.haex-hive/` while its previous root is still
+   available. On success, `publish_generation` may remove `.haex-hive.prev/`,
+   after which the coordinator removes `.specify.prev/`; both parent
+   directories are fsynced. Cleanup is not part of the visibility event and is
+   retry-safe.
 
 Recovery runs under the same lock before a retry reads inputs. It removes stale
-`.next/` siblings, then compares the generation records in both live roots and
-the marker. If only one root was swapped, or the marker and roots name
+`.next/` siblings blindly: it first reads and validates each sibling's
+generation record and classifies it against the live marker, the matching
+`.prev/` record, and the other root's sibling. A sibling is deleted only when
+its well-formed generation is attributable as stale (for example, an
+unpublished candidate older than the live generation). A missing, malformed, or
+unattributable record causes recovery to refuse and preserve that sibling.
+After classification, recovery compares the generation records in both live
+roots and the marker. If only one root was swapped, or the marker and roots name
 different generations, it restores every swapped root from its matching
 `.prev/` sibling and fsyncs the parent directories. If both roots and the marker
-agree, recovery only removes stale `.prev/` siblings. Evidence that cannot be
-attributed to the previous generation or the current candidate causes a refusal
-without deleting evidence. A failed retry keeps the previous complete
-generation. Downgrade cleanup is therefore atomic at the repository visibility
-boundary: removed atom-owned workflow directories and generated entries become
-absent together with the new marker, while unrelated consumer files and
-`.specify/extensions.local.yml` survive verbatim.
+agree, recovery only removes attributable stale `.prev/` siblings. A failed
+retry keeps the previous complete generation. Downgrade cleanup is therefore
+atomic at the repository visibility boundary: removed atom-owned workflow
+directories and generated entries become absent together with the new marker,
+while unrelated consumer files and `.specify/extensions.local.yml` survive
+verbatim.
+
+Readers enforce the same visibility boundary. After loading
+`.haex-hive/visibility.json`, a reader MUST require its `generation_id` and
+`participating_roots` to match `.haex-hive/install.lock` and
+`.specify/.haex-hive-generation.json`; `visibility.json` is the `.haex-hive/`
+root's generation record. Any missing record or generation mismatch, including
+the interval after the `.specify/` swap and before the `.haex-hive/` marker
+swap, is unavailable; the reader rejects the view and retries after the install
+recovery path has run.
 
 The integration suite MUST inject process termination after staging, after the
 `.specify/` swap, after the `.haex-hive/` swap, after post-write verification,
-and during stale-sibling cleanup. Each retry MUST converge to either the old
+and during stale-sibling cleanup. It MUST also exercise a reader during the
+interval between the two swaps and mutate `.specify/extensions.local.yml`
+between parsing and staging. Each retry MUST converge to either the old
 generation or the fully published candidate, never a mixed generation; tests
 also assert that removed atom paths are absent, unrelated files are unchanged,
-and the local source is byte-identical.
+and the local source is byte-identical to the captured snapshot.
 
 ---
 
@@ -231,7 +254,8 @@ START
                                    refusals fire here)
   │
   ▼
-[load_local_source]               (LocalExtensionsSource; empty when absent)
+[load_local_source]               (LocalExtensionsSource + source_bytes;
+                                   empty when absent)
   │
   ▼
 [merge_extensions]                (GeneratedExtensionsYml + MergedRequirements
