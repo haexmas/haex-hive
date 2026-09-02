@@ -132,7 +132,7 @@ Return type of `resolve_active_workflow(repo_root)`.
 
 Before workflow resolution, flatten all adopted atom includes and reject a duplicate workflow atom id with Spec 007's existing `AtomIdCollisionError` (`key=atom-id-collision`). This applies even when the duplicate comes from two different source entries; no source or revision silently wins. The synthetic bundled `speckit` entry is not an adopted atom and remains unaffected.
 
-Registry parsing performs the JSON Schema validation first, then a post-schema identity check: every entry under `workflows[<key>]` with `source == "atom"` MUST have `atom_id == <key>`. A mismatch is refused before publication or reader-side path construction. `WorkflowEntry.unknown_extras` contains all unrecognised per-entry fields; `to_json_bytes()` writes those fields back unchanged, merges known fields deterministically, and never lets an extra overwrite a known field.
+Registry parsing performs the JSON Schema validation first, then a post-schema identity check: every entry under `workflows[<key>]` with `source == "atom"` MUST have `atom_id == <key>`, and an entry with `source == "bundled"` MUST use the fixed key `speckit`. A mismatch is refused before publication or reader-side path construction. `WorkflowEntry.unknown_extras` contains all unrecognised per-entry fields; `to_json_bytes()` writes those fields back unchanged, merges known fields deterministically, and never lets an extra overwrite a known field.
 
 ---
 
@@ -186,6 +186,7 @@ END
 - No workflow-atom-derived file (workflow.yml, hooks, fragments) is written before `[validate_workflow_paths]` and `[validate_required_extensions]` pass.
 - The `workflow-registry.json`'s `active_workflow` field is preserved across install runs unless (a) an operator edits it manually, or (b) the atom it names is removed (auto-reset to `null` with `key=workflow-atom-reset-to-default` diagnostic).
 - Every atom that appears in `.haex-hive.json`'s `atoms[]` and is a workflow atom appears exactly once in `WorkflowRegistry.workflows` after duplicate-id validation. The bundled `speckit` entry is unaffected by atom adoption.
+- Reconciliation is all-or-nothing for each participating live root: removals, constitution-fragment updates, and an `active_workflow` reset are published only after all validation succeeds. Any refusal preserves the prior generation and its active selection.
 
 ---
 
