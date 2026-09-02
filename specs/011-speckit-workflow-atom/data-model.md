@@ -220,9 +220,13 @@ recovery path has run.
 
 The integration suite MUST inject process termination after staging, after the
 first `.specify/` managed-path replacement, after the `.haex-hive/` swap, after
-post-write verification, and during stale-sibling cleanup. It MUST also
-exercise a reader during the interval between the managed-path replacements and
-the marker swap, and mutate `.specify/extensions.local.yml`
+post-write verification, and during stale-sibling cleanup. It MUST also run a
+deterministic failure case where `post_write_verify` raises after the managed
+path replacement; that case MUST assert restoration of the old generation in
+both roots, no mixed managed paths, byte-identical
+`.specify/extensions.local.yml`, and safe stale-sibling cleanup. The suite
+MUST exercise a reader during the interval between the managed-path
+replacements and the marker swap, and mutate `.specify/extensions.local.yml`
 between parsing and staging. Each retry MUST converge to either the old
 generation or the fully published candidate, never a mixed generation; tests
 also assert that removed atom paths are absent, unrelated files are unchanged,
