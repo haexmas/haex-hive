@@ -141,6 +141,60 @@ Return type of `resolve_active_workflow(repo_root)`.
 
 ---
 
+## Cross-root publication and recovery contract
+
+`publish_generation` remains the Spec 008 primitive for one haex-owned root.
+Workflow installation uses a repository-wide coordinator around that primitive
+because one install changes both `.haex-hive/**` and `.specify/**`. The
+coordinator MUST hold the exclusive install lock and follow this protocol:
+
+1. Materialise complete candidate views in same-filesystem siblings
+   `.haex-hive.next/` and `.specify.next/`. The `.haex-hive.next/` view contains
+   the candidate `install.lock` and `visibility.json`; the `.specify.next/`
+   view contains generated extensions output, workflow files, hook files, and a
+   generation record carrying the same generation ID. The consumer-owned
+   `.specify/extensions.local.yml` is copied byte-for-byte when a complete
+   `.specify.next/` view is assembled, but is never generated, edited, or
+   deleted.
+2. Validate both views, including schemas, path ownership, generated output,
+   and the cross-root generation ID, before either live root is changed. The
+   candidate view contains no removed atom-owned paths; unrelated consumer
+   files are carried forward unchanged. A generated `.specify/extensions.yml`
+   is always rebuilt from the current local source and atom fragment.
+3. Commit the `.specify/` view first by the Spec 008 sibling swap
+   (`.specify/` -> `.specify.prev/`, then `.specify.next/` -> `.specify`, with
+   parent-directory fsyncs). Commit `.haex-hive/` second through
+   `publish_generation`, with `visibility.json` naming both participating roots
+   and the candidate generation ID. Publishing that marker is the sole
+   repository-wide visibility event; until it is published, a candidate root
+   paired with the previous marker is unavailable and must not be accepted by
+   readers.
+4. After the marker swap and a cross-root post-write verification, remove both
+   `.haex-hive.prev/` and `.specify.prev/` and fsync their parent directories.
+   Cleanup is not part of the visibility event and is retry-safe.
+
+Recovery runs under the same lock before a retry reads inputs. It removes stale
+`.next/` siblings, then compares the generation records in both live roots and
+the marker. If only one root was swapped, or the marker and roots name
+different generations, it restores every swapped root from its matching
+`.prev/` sibling and fsyncs the parent directories. If both roots and the marker
+agree, recovery only removes stale `.prev/` siblings. Evidence that cannot be
+attributed to the previous generation or the current candidate causes a refusal
+without deleting evidence. A failed retry keeps the previous complete
+generation. Downgrade cleanup is therefore atomic at the repository visibility
+boundary: removed atom-owned workflow directories and generated entries become
+absent together with the new marker, while unrelated consumer files and
+`.specify/extensions.local.yml` survive verbatim.
+
+The integration suite MUST inject process termination after staging, after the
+`.specify/` swap, after the `.haex-hive/` swap, after post-write verification,
+and during stale-sibling cleanup. Each retry MUST converge to either the old
+generation or the fully published candidate, never a mixed generation; tests
+also assert that removed atom paths are absent, unrelated files are unchanged,
+and the local source is byte-identical.
+
+---
+
 ## State machine of an install with a workflow atom
 
 ```text
@@ -193,12 +247,12 @@ START
 [compose_install_lock + visibility.json + extensions.yml + workflow files]
   │
   ▼
-[publish_generation]              (Spec 008 rename-swap for `.haex-hive/`
-                                   only. The cross-root publication and
-                                   recovery protocol for `.specify/**` is
-                                   outside this primitive. The consumer-
-                                   owned `.specify/extensions.local.yml` is
-                                   NOT part of the publication set.)
+[publish_install_generation]      (repository-wide coordinator: stage both
+                                   roots, swap `.specify/`, then call the
+                                   Spec 008 `.haex-hive/` rename-swap; verify
+                                   the shared generation ID before cleanup.
+                                   `.specify/extensions.local.yml` is copied
+                                   byte-for-byte and never generated.)
   │
   ▼
 END
@@ -216,7 +270,7 @@ END
 ## Boundaries
 
 - **Spec 007** (atom-manifest schema, ConsumerManifest, VersionConstraint): reused. `WorkflowAtomManifest` specialises the base atom.
-- **Spec 008** (install transaction, rename-swap, multi-source constitution merge): reused. Workflow atom deltas participate in the same `publish_generation` call.
+- **Spec 008** (install transaction, rename-swap, multi-source constitution merge): reused. Workflow atom deltas participate in the repository-wide `publish_install_generation` coordinator, which calls the single-root `publish_generation` primitive for `.haex-hive/`.
 - **Constitution v1.4.0** (§ Development Workflow -> Declared speckit workflow adherence): `resolve_active_workflow` is what that clause resolves to at read-time.
 - **Spec 010** (compiler adapters): out of scope.
 - **specifyr extension-install** (external): out of scope. Workflow atoms declare which extensions they need; installation is delegated.

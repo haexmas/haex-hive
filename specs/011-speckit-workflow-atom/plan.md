@@ -12,7 +12,7 @@ Under the 2026-09-02 simplification amendment (PR #54 merged), Spec 011 delivers
 **Language/Version**: Python 3.12 (matches existing haex-hive baseline).
 **Primary Dependencies**: no new runtime dependencies. The workflow subpackage builds on `haex_hive.schema.validator` (JSON Schema), `haex_hive.model.consumer_manifest` (atom resolution), `haex_hive.model.version_constraint.VersionConstraint` (Spec 007 grammar), `haex_hive.constitution.assemble` (multi-source merge), `haex_hive.io.transaction` (rename-swap), and PyYAML (already vendored transitively for the bundled speckit workflow.yml).
 **Storage**: filesystem only. Committed content lands under `.specify/workflows/<atom-id>/` (atom-owned), `.specify/extensions/workflow-atoms/<atom-id>/` (reserved atom namespace), `.specify/extensions.yml` (generated output), and `.haex-hive/constitution.md` (via merge). The consumer-owned `.specify/extensions.local.yml` is the local source and is never touched by the runtime. Device-local state (publisher clones) lives under `$HAEX_HIVE_STATE/`.
-**Testing**: pytest (unit + contract + integration) and ruff (with `--select F401,F841` for dead-symbol prune). New tree `tests/workflow/` mirrors `tests/install/`.
+**Testing**: pytest (unit + contract + integration) and ruff (with `--select F401,F841` for dead-symbol prune). New tree `tests/workflow/` mirrors `tests/install/`; integration coverage includes cross-root crash/retry points and downgrade convergence.
 **Target Platform**: Linux, macOS, Windows CLI (single-project Python CLI baseline).
 **Project Type**: single-project Python CLI (Spec 007 baseline).
 **Performance Goals**: `haex install` latency unchanged. Workflow pipeline adds at most one YAML parse for the adopted atom's fragment (FR-006 forbids multiple) plus one parse for `.specify/extensions.local.yml` when present. Sub-100ms on typical adoption.
@@ -73,7 +73,7 @@ src/haex_hive/
 │   ├── local_source.py                         # LocalExtensionsSource + load_local_source
 │   ├── merge.py                                # merge_extensions -> GeneratedExtensionsYml
 │   ├── constraint.py                           # canonical constraint reduction (atom-vs-local)
-│   ├── publisher.py                            # publish_workflow_atom + delete-orphans hook
+│   ├── publisher.py                            # publish_workflow_atom + cross-root generation coordinator + delete-orphans hook
 │   └── errors.py                               # 9 diagnostic subclasses
 ├── model/consumer_manifest.py                  # EXTENDED: parses the consumer manifest; workflow multiplicity is checked after atom resolution
 ├── constitution/assemble.py                    # EXTENDED: integrates workflow atom fragment into ## Workflow-Contributed Rules
