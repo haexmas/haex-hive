@@ -9,10 +9,11 @@ crashed install converges to a valid generation on the next invocation.
 
 The only durable state we now inspect is: are there leftover
 `<root>.next/` or `<root>.prev/` siblings from a prior crashed install?
-If yes, delete them under the exclusive install lock, then let the
-regular install pipeline run to completion. This matches the pip/npm
-"detect + retry" model rather than the earlier journal-style
-recovery-forward design.
+Under the exclusive install lock, stale `.next/` is discarded. If the
+live root is absent, the retained `.prev/` is restored before the regular
+pipeline reads inputs or resolves contributions. This makes the prior
+generation available while a retry may fail and matches the pip/npm
+"detect + retry" model without a journal-style recovery-forward design.
 """
 
 from __future__ import annotations
@@ -53,6 +54,22 @@ def clean_stale_siblings(
         _fsync_dir(live.parent)
 
     return next_removed, prev_present
+
+
+def restore_previous_generation(live: Path) -> bool:
+    """Restore `<live>.prev/` when a mid-swap crash left `live` absent.
+
+    The restore happens before a retry reads inputs or resolves contributions,
+    so a failed retry leaves the last published generation available. The
+    rename is same-filesystem and is followed by a parent-directory fsync.
+    Returns ``True`` when a previous generation was restored.
+    """
+    prev_dir = live.with_name(f"{live.name}.prev")
+    if live.exists() or not prev_dir.exists():
+        return False
+    os.rename(str(prev_dir), str(live))
+    _fsync_dir(live.parent)
+    return True
 
 
 def _rmtree(path: Path) -> None:

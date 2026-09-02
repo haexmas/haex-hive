@@ -106,10 +106,11 @@ the old `.haex-hive/visibility.json` marker is still live; a reader that sees
 the new overlay with the old marker observes a generation mismatch and reports
 the installation as unavailable. If the process stops before the haex-owned
 rename-swap publishes the new marker, the next `haex install` reruns the
-regular pipeline and revalidates the complete candidate; no separate pointer-
-restoration step is defined by the detect-and-retry contract. Each pointer
-transition MUST be atomic and must retain enough information to identify the
-candidate generation. A pointer naming neither the prior nor candidate
+regular pipeline and revalidates the complete candidate. The retry MUST first
+restore the prior pointer when a pointer was switched from `P` to interrupted
+candidate `C1`; it may then allocate and publish a fresh candidate `C2`.
+Each pointer transition MUST be atomic and must retain enough information to
+identify both generations. A pointer naming neither the prior nor candidate
 generation is an explicit refusal without cleanup. After the marker is
 published, it is authoritative: the regular pipeline keeps matching candidate
 pointers and removes obsolete generations only after all pointers match it.
@@ -316,7 +317,7 @@ ownership record is defined here.
 Recorded for the plan phase; each has a mitigation baked into R1–R6.
 
 - **Directory rename on Windows with a held reader handle** — see R1 residual risk (retry-backoff-then-refuse).
-- **Windows directory-junction creation** — `mklink /J` is a command-line fallback for directory targets; a native `CreateJunction` helper uses the Windows reparse-point API. `CreateSymbolicLinkW(..., SYMBOLIC_LINK_FLAG_DIRECTORY)` is a directory symbolic-link API, not a junction primitive. All selected primitives refuse an existing matching entry. The prior overlay generation remains available until the new pointer and marker have been published consistently; on creation failure or a crash before marker publication, recovery restores the prior pointer, and after marker publication cleanup removes the obsolete generation only after the new pointer has the marker's generation ID.
+- **Windows directory-junction creation** — `mklink /J` is a command-line fallback for directory targets; a native `CreateJunction` helper uses the Windows reparse-point API. `CreateSymbolicLinkW(..., SYMBOLIC_LINK_FLAG_DIRECTORY)` is a directory symbolic-link API, not a junction primitive. All selected primitives refuse an existing matching entry. The prior overlay generation remains available until the new pointer and marker have been published consistently; on creation failure or a crash before marker publication, retry restores the prior pointer before resolving or publishing a fresh candidate, and after marker publication cleanup removes the obsolete generation only after the new pointer has the marker's generation ID.
 - **Windows without Developer Mode + file-scoped symlink** — refuse per R3.
 - **`fcntl.flock` unavailable on Windows** — use `LockFileEx` through `ctypes` (R6); the lock module's Windows tests cover two concurrent readers and a writer excluded until both readers release.
 - **Path separators** — every path stored on disk is POSIX-normalised (`/`); Windows-side code converts at the OS boundary only.

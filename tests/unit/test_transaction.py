@@ -217,6 +217,21 @@ def test_clean_stale_siblings_retains_prev_only(tmp_path: Path) -> None:
     assert prev_dir.exists()
 
 
+def test_restore_previous_generation_when_live_is_absent(tmp_path: Path) -> None:
+    """Restore the retained pre-image before a retry can read or resolve inputs."""
+    live = tmp_path / transaction.HAEX_HIVE_DIR
+    prev_dir = tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev"
+
+    prev_dir.mkdir()
+    (prev_dir / "visibility.json").write_bytes(b'{"generation_id":"P"}\n')
+
+    assert inflight.restore_previous_generation(live)
+    assert live.exists()
+    assert not prev_dir.exists()
+    assert (live / "visibility.json").read_bytes() == b'{"generation_id":"P"}\n'
+    assert not inflight.restore_previous_generation(live)
+
+
 def test_clean_stale_siblings_retains_prev_after_mid_swap_crash(tmp_path: Path) -> None:
     """A mid-swap crash loses `.next/` but retains `.prev/` for a safe retry."""
     live = tmp_path / transaction.HAEX_HIVE_DIR

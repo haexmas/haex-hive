@@ -114,10 +114,10 @@ def test_crash_at_boundary_converges_on_retry(
         failed_retry = _run(consumer, state_root)
 
         assert failed_retry.returncode != 0
-        assert not live.exists()
+        assert live.exists()
         assert not next_dir.exists()
-        assert prev_dir.exists()
-        assert (prev_dir / "constitution.md").read_bytes() == previous_generation
+        assert not prev_dir.exists()
+        assert (live / "constitution.md").read_bytes() == previous_generation
 
         manifest_path.write_bytes(manifest_bytes)
 
@@ -139,3 +139,45 @@ def test_crash_at_boundary_converges_on_retry(
     lock_data_1["visibility_marker"]["generation_id"] = None
     lock_data_2["visibility_marker"]["generation_id"] = None
     assert lock_data_1 == lock_data_2
+
+
+def test_rename_a_crash_restores_previous_before_retry_resolution(
+    single_source_constitution_fixture: dict,
+) -> None:
+    """A failed retry restores P before a later retry may publish C2."""
+    consumer = single_source_constitution_fixture["consumer"]
+    state_root = single_source_constitution_fixture["state_root"]
+
+    initial = _run(consumer, state_root)
+    assert initial.returncode == 0, initial.stderr.decode()
+    constitution_path = consumer / ".haex-hive" / "constitution.md"
+    constitution_path.write_bytes(constitution_path.read_bytes() + b"\n")
+
+    crashed = _run(consumer, state_root, crash_after="rename_a")
+    assert crashed.returncode != 0
+
+    live = consumer / ".haex-hive"
+    next_dir = consumer / ".haex-hive.next"
+    prev_dir = consumer / ".haex-hive.prev"
+    prior_marker = json.loads((prev_dir / "visibility.json").read_bytes())
+    candidate_marker = json.loads((next_dir / "visibility.json").read_bytes())
+    assert prior_marker["generation_id"] != candidate_marker["generation_id"]
+
+    manifest_path = consumer / ".haex-hive.json"
+    manifest_bytes = manifest_path.read_bytes()
+    manifest = json.loads(manifest_bytes)
+    manifest["atoms"][0]["revision"] = "deadbeef" * 5
+    manifest_path.write_bytes(json_deterministic.dumps(manifest))
+
+    failed_retry = _run(consumer, state_root)
+    assert failed_retry.returncode != 0
+    assert live.exists()
+    assert not next_dir.exists()
+    assert not prev_dir.exists()
+    assert json.loads((live / "visibility.json").read_bytes()) == prior_marker
+
+    manifest_path.write_bytes(manifest_bytes)
+    recovered = _run(consumer, state_root)
+    assert recovered.returncode == 0, recovered.stderr.decode()
+    assert not next_dir.exists()
+    assert not prev_dir.exists()

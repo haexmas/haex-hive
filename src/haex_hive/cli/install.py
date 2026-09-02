@@ -108,7 +108,9 @@ def run(args: argparse.Namespace) -> int:
     try:
         paths = transaction_paths(repo_root, state_root)
         with ConstitutionWriterLock(paths.mutex, OwnerToken.emit()):
-            inflight.clean_stale_siblings(repo_root / transaction.HAEX_HIVE_DIR)
+            live_root = repo_root / transaction.HAEX_HIVE_DIR
+            inflight.clean_stale_siblings(live_root)
+            inflight.restore_previous_generation(live_root)
 
             manifest = _load_consumer_manifest(repo_root)
             contributions = resolve_constitution_contributions(manifest, state_root)
