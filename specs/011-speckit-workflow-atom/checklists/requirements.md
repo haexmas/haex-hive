@@ -39,10 +39,12 @@
 - [x] US4 coexistence retired
 - [x] Bytewise UTF-8 atom-id ordering retired
 - [x] New FR-006 covers multi-workflow-atom refusal
+- [x] FR-008 binding and bundled-workflow fallback are explicitly recorded
 - [x] Retired items are named in the amendment preamble and the traceability is preserved
 
 ## Notes
 
 - The simplified spec has 10 FRs (down from 10 with different content), 4 user stories (down from 4 with different priorities: US4 was coexistence; new US4 is multi-workflow refusal), 6 SCs (down from 6 with SC-006 replaced), 8 diagnostic keys (down from 9 with `installed-extension-metadata-mismatch` and `workflow-atom-reset-to-default` retired, `multiple-workflow-atoms-refused` added).
+- [FR-005](../spec.md#fr-005-extensions-fragment-merge) explicitly defines `.specify/extensions.local.yml` as consumer-owned and untouched, and `.specify/extensions.yml` as regenerated output; the generated file is never used as the local source.
 - Design source doc (`docs/plans/2026-09-02-spec-011-speckit-workflow-atom-design.md`) remains valid for preserved requirements only; the amendment supersedes its registry, active-selection, provenance, coexistence, and local-extension-ownership passages.
 - Items marked incomplete require spec updates before `/speckit-plan`.
