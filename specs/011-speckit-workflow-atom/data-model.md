@@ -152,51 +152,57 @@ coordinator MUST hold the exclusive install lock and follow this protocol:
 1. Materialise complete candidate views in same-filesystem siblings
    `.haex-hive.next/` and `.specify.next/`. The `.haex-hive.next/` view contains
    the candidate `install.lock` and `visibility.json`; the `.specify.next/`
-   view contains generated extensions output, workflow files, hook files, and a
-   `.haex-hive-generation.json` record with `{ "generation_id": "...", "root": ".specify/" }`.
-   The consumer-owned
-   `.specify/extensions.local.yml` is copied from the `source_bytes` captured
-   by `[load_local_source]` when a complete `.specify.next/` view is assembled,
-   but is never generated, edited, or deleted.
+   view contains only the generated and atom-owned managed paths, plus a
+   `.haex-hive-generation.json` record with `{ "generation_id": "...", "root": ".specify/", "participating_roots": [".haex-hive/", ".specify/"] }`.
+   The record's fields and root list are schema-validated. The consumer-owned
+   `.specify/extensions.local.yml` is excluded from the staged view and is
+   never generated, edited, renamed, or deleted.
 2. Validate both views, including schemas, path ownership, generated output,
    and the cross-root generation ID, before either live root is changed. The
    candidate view contains no removed atom-owned paths; unrelated consumer
-   files are carried forward unchanged. A generated `.specify/extensions.yml`
-   is always rebuilt from the parsed local-source snapshot and atom fragment.
+   files are outside the managed path set and remain untouched. A generated
+   `.specify/extensions.yml` is always rebuilt from the parsed local-source
+   snapshot and atom fragment.
    Immediately before the first swap, re-read the live local-source path and
    compare its presence and bytes with `LocalExtensionsSource.source_bytes`;
    if it differs, refuse or retry without publishing either root.
-3. Commit the `.specify/` view first by the Spec 008 sibling swap
-   (`.specify/` -> `.specify.prev/`, then `.specify.next/` -> `.specify`, with
-   parent-directory fsyncs). Commit `.haex-hive/` second through
-   `publish_generation`, with `visibility.json` naming both participating roots
-   (`[".haex-hive/", ".specify/"]`) and the candidate generation ID. Publishing
-   that marker is the sole repository-wide visibility event; until it is
-   published, a candidate root paired with the previous marker is unavailable
-   and must not be accepted by readers.
+3. Commit the `.specify/` managed path set first without swapping the root:
+   save the previous managed paths in `.specify.prev/`, write the candidate
+   `.haex-hive-generation.json` record first, then atomically replace or delete
+   managed files in deterministic order, excluding
+   `.specify/extensions.local.yml` and all unrelated consumer files. Fsync each
+   changed file and the `.specify/` directory. Commit `.haex-hive/` second
+   through `publish_generation`, with `visibility.json` naming both
+   participating roots (`[".haex-hive/", ".specify/"]`) and the candidate
+   generation ID. Publishing that marker is the sole repository-wide visibility
+   event; until it is published, a candidate root paired with the previous
+   marker is unavailable and must not be accepted by readers.
 4. Pass the cross-root verification as `publish_generation`'s
    `post_write_verify` callback. The callback runs after the `.haex-hive/`
    swap but before that primitive removes `.haex-hive.prev/`; it verifies both
    live-root generation records and the marker. If verification fails, it
-   restores `.specify/` from `.specify.prev/` and raises so
-   `publish_generation` restores `.haex-hive/` while its previous root is still
-   available. On success, `publish_generation` may remove `.haex-hive.prev/`,
-   after which the coordinator removes `.specify.prev/`; both parent
-   directories are fsynced. Cleanup is not part of the visibility event and is
-   retry-safe.
+   restores all changed `.specify/` managed paths from `.specify.prev/` and
+   raises so `publish_generation` restores `.haex-hive/` while its previous root
+   is still available. The local source is not part of this rollback because it
+   was never changed. On success, `publish_generation` may remove
+   `.haex-hive.prev/`, after which the coordinator removes `.specify.prev/`;
+   both parent directories are fsynced. Cleanup is not part of the visibility
+   event and is retry-safe.
 
-Recovery runs under the same lock before a retry reads inputs. It removes stale
-`.next/` siblings blindly: it first reads and validates each sibling's
-generation record and classifies it against the live marker, the matching
+Recovery runs under the same lock before a retry reads inputs. It first reads
+and validates each `.next/` sibling and its generation record, then classifies
+it against the live marker, the matching
 `.prev/` record, and the other root's sibling. A sibling is deleted only when
 its well-formed generation is attributable as stale (for example, an
 unpublished candidate older than the live generation). A missing, malformed, or
 unattributable record causes recovery to refuse and preserve that sibling.
 After classification, recovery compares the generation records in both live
-roots and the marker. If only one root was swapped, or the marker and roots name
-different generations, it restores every swapped root from its matching
-`.prev/` sibling and fsyncs the parent directories. If both roots and the marker
-agree, recovery only removes attributable stale `.prev/` siblings. A failed
+roots and the marker. If only the `.specify/` managed paths were changed, or the
+marker and roots name different generations, it restores those paths from
+`.specify.prev/`. If `.haex-hive/` was also swapped, `publish_generation`
+restores it from `.haex-hive.prev/`; recovery fsyncs the parent directories. If
+both roots and the marker agree, recovery only removes attributable stale
+`.prev/` siblings. A failed
 retry keeps the previous complete generation. Downgrade cleanup is therefore
 atomic at the repository visibility boundary: removed atom-owned workflow
 directories and generated entries become absent together with the new marker,
@@ -213,9 +219,10 @@ swap, is unavailable; the reader rejects the view and retries after the install
 recovery path has run.
 
 The integration suite MUST inject process termination after staging, after the
-`.specify/` swap, after the `.haex-hive/` swap, after post-write verification,
-and during stale-sibling cleanup. It MUST also exercise a reader during the
-interval between the two swaps and mutate `.specify/extensions.local.yml`
+first `.specify/` managed-path replacement, after the `.haex-hive/` swap, after
+post-write verification, and during stale-sibling cleanup. It MUST also
+exercise a reader during the interval between the managed-path replacements and
+the marker swap, and mutate `.specify/extensions.local.yml`
 between parsing and staging. Each retry MUST converge to either the old
 generation or the fully published candidate, never a mixed generation; tests
 also assert that removed atom paths are absent, unrelated files are unchanged,
@@ -277,11 +284,12 @@ START
   │
   ▼
 [publish_install_generation]      (repository-wide coordinator: stage both
-                                   roots, swap `.specify/`, then call the
-                                   Spec 008 `.haex-hive/` rename-swap; verify
-                                   the shared generation ID before cleanup.
-                                   `.specify/extensions.local.yml` is copied
-                                   byte-for-byte and never generated.)
+                                   roots, replace managed `.specify/` paths,
+                                   then call the Spec 008 `.haex-hive/`
+                                   rename-swap; verify the shared generation
+                                   ID before cleanup. The consumer-owned
+                                   `.specify/extensions.local.yml` remains
+                                   outside the transaction.)
   │
   ▼
 END
@@ -290,7 +298,7 @@ END
 **Invariants**:
 
 - No workflow-atom-derived file is written before `[validate_workflow_paths]`, `[load_workflow_fragment]`, `[merge_extensions]`, and `[validate_required_extensions]` all pass.
-- The live `.specify/extensions.local.yml` is NEVER written or deleted by the runtime. It is read by `[load_local_source]`; the cross-root staging step may copy those bytes into `.specify.next/` without changing the live consumer-owned file.
+- The live `.specify/extensions.local.yml` is NEVER written, renamed, or deleted by the runtime. It is read by `[load_local_source]` and remains outside the staged and published managed path set.
 - After a successful install, every resolved adopted `speckit-workflow` atom results in exactly one directory under `.specify/workflows/`; bundled `.specify/workflows/speckit/` is untouched by atom adoption.
 - A refused install, including invalid paths, broken YAML, missing required extensions, or multiple workflow atoms, creates no new atom directory and preserves the previous published generation.
 
