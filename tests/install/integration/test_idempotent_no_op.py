@@ -8,6 +8,7 @@ the earlier snapshot-digest scaffolding.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -15,6 +16,8 @@ import sys
 from pathlib import Path
 
 import pytest
+
+from haex_hive.migrate.transform import clone_dir
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git binary required")
 
@@ -69,3 +72,30 @@ def test_second_install_is_a_no_op(
         for p in (live / "constitution.md", live / "install.lock", live / "visibility.json")
     }
     assert stat_after == stat_before, "no-op path must not touch on-disk files"
+
+
+def test_changed_source_url_republishes_lock(
+    single_source_constitution_fixture: dict,
+) -> None:
+    consumer: Path = single_source_constitution_fixture["consumer"]
+    state_root: Path = single_source_constitution_fixture["state_root"]
+    new_source = "https://github.com/example/renamed-publisher"
+
+    first = _run_install(consumer, state_root)
+    assert first.returncode == 0, first.stderr
+
+    old_clone = clone_dir(state_root, single_source_constitution_fixture["canonical"])
+    new_clone = clone_dir(state_root, new_source)
+    shutil.copytree(old_clone, new_clone)
+
+    manifest_path = consumer / ".haex-hive.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["atoms"][0]["source"] = new_source
+    manifest_path.write_text(json.dumps(manifest, indent=2))
+
+    second = _run_install(consumer, state_root)
+    assert second.returncode == 0, second.stderr
+    assert second.stdout.startswith("installed generation g_")
+
+    lock = json.loads((consumer / ".haex-hive" / "install.lock").read_text())
+    assert lock["constitution"]["sources"][0]["source"] == new_source
