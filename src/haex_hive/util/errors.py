@@ -143,13 +143,6 @@ class InstallLockSourcesNotCanonicalError(HaexError):
 
 
 @dataclass
-class ConstitutionIntegrityMismatchError(HaexError):
-    diagnostic_key: str = "constitution-integrity-mismatch"
-    exit_code: int = exit_codes.POST_WRITE_VALIDATION
-    hint: str = "Run `git pull` or `haex install` to restore a matched generation."
-
-
-@dataclass
 class PublisherCloneUnavailableError(HaexError):
     diagnostic_key: str = "publisher-clone-unavailable"
     exit_code: int = exit_codes.IO_REFUSE
