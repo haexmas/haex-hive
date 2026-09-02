@@ -3,11 +3,8 @@ LLM-merge (US3)."""
 
 from __future__ import annotations
 
-import datetime
-import hashlib
 import json
 import os
-import re
 import sys
 from contextlib import suppress
 from pathlib import Path
@@ -30,6 +27,7 @@ from haex_hive.constitution.safety import (
     validate_no_concealment_instructions,
     validate_no_plaintext_secrets,
 )
+from haex_hive.install.generation import allocate_generation_id
 from haex_hive.io import json_deterministic, transaction
 from haex_hive.model.install_lock import (
     AssembledBy,
@@ -43,31 +41,12 @@ from haex_hive.util import exit_codes
 from haex_hive.util.errors import MergeNotConfirmedError, PostWriteValidationError, UsageError
 
 TOOL_NAME = "haex"
-_GENERATION_ID_TIMESTAMP = "%Y%m%dT%H%M%SZ"
 
 DEFAULT_TASK_PROMPT = (
     "Merge the following constitution contributions into a single coherent "
     "constitution. Preserve every non-conflicting principle; where two sources "
     "conflict, resolve explicitly and note the resolution."
 )
-
-
-def _allocate_generation_id(body: bytes, existing_generation_id: str | None) -> str:
-    """Allocate a fresh, time-ordered generation identifier."""
-    timestamp = datetime.datetime.now(datetime.timezone.utc)
-    suffix = hashlib.sha256(body).hexdigest()[:4]
-    candidate = f"g_{timestamp.strftime(_GENERATION_ID_TIMESTAMP)}_{suffix}"
-    if existing_generation_id is None or candidate > existing_generation_id:
-        return candidate
-
-    match = re.fullmatch(r"g_(\d{8}T\d{6}Z)_[0-9a-f]{4}", existing_generation_id)
-    if match is not None:
-        timestamp = datetime.datetime.strptime(
-            match.group(1), _GENERATION_ID_TIMESTAMP
-        ).replace(tzinfo=datetime.timezone.utc) + datetime.timedelta(seconds=1)
-    else:
-        timestamp += datetime.timedelta(seconds=1)
-    return f"g_{timestamp.strftime(_GENERATION_ID_TIMESTAMP)}_{suffix}"
 
 
 def _read_existing_lock(repo_root: Path) -> InstallLock | None:
@@ -116,7 +95,7 @@ def _publish_constitution(
     )
 
     existing_marker = existing_lock.visibility_marker if existing_lock is not None else None
-    generation_id = _allocate_generation_id(
+    generation_id = allocate_generation_id(
         body,
         existing_marker.generation_id if existing_marker is not None else None,
     )
