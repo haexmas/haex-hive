@@ -179,7 +179,7 @@ Whether the review gates additionally recommend a new session for the review its
 
 ### hooks/before-step.sh
 
-One script for every step. It reads the step name from `$1`, discovers the worktree root and branch from `git`, and prints the English prompt block on stdout. No file lookup, no network, no jq.
+One script for every step. It reads the step name from `$1`, discovers the worktree root, branch, and checked-out commit from `git`, generates a fresh handoff nonce, and prints the English prompt block on stdout. No repository file lookup, no network, no jq.
 
 ```sh
 #!/usr/bin/env sh
@@ -188,10 +188,15 @@ set -eu
 STEP="${1:-<step>}"
 BRANCH="$(git branch --show-current 2>/dev/null || echo '<unknown>')"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+COMMIT="$(git rev-parse HEAD 2>/dev/null || echo '<unknown>')"
 ROOT_ESCAPED="$(printf '%s' "$ROOT" | sed "s/'/'\"'\"'/g")"
 ROOT_ESCAPED="'${ROOT_ESCAPED}'"
 BRANCH_ESCAPED="$(printf '%s' "$BRANCH" | sed "s/'/'\"'\"'/g")"
 BRANCH_ESCAPED="'${BRANCH_ESCAPED}'"
+HANDOFF_NONCE="$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d '[:space:]')"
+if [ -z "$HANDOFF_NONCE" ]; then
+    HANDOFF_NONCE="$(date +%s)-$$-${COMMIT}"
+fi
 
 cat <<EOF
 ======================================================
@@ -202,9 +207,11 @@ Open a new session in the same worktree:
     cd ${ROOT_ESCAPED}
 Expected branch: ${BRANCH}
 Paste this exact one-shot marker as the first message in that session:
-    HAEX-HIVE-HANDOFF: com.github.haexmas.atoms.speckit-session-hopper ${STEP}
-    root: ${ROOT_ESCAPED}
-    branch: ${BRANCH_ESCAPED}
+HAEX-HIVE-HANDOFF: com.github.haexmas.atoms.speckit-session-hopper ${STEP}
+root: ${ROOT_ESCAPED}
+branch: ${BRANCH_ESCAPED}
+commit: ${COMMIT}
+nonce: ${HANDOFF_NONCE}
 Then run:
     /speckit-${STEP}
 
@@ -217,9 +224,10 @@ Notes:
 
 - The script uses POSIX `sh` (not bash) for portability across the operator's environment. `ROOT_ESCAPED` is a single-quoted POSIX-shell literal, so spaces, command substitutions, backticks, quotes, and shell metacharacters in the worktree path remain data when the printed command is pasted.
 - It does NOT reference the constitution or any spec artefacts. The new session finds those itself: the user-global CLAUDE.md loads `.haex-hive.json` and the constitution automatically on session start (haex-hive detection); the `/speckit-<step>` slash-command reads whatever `specs/<slug>/` files are relevant for that step; `active_workflow` is read by any agent that cares.
-- The three-line `HAEX-HIVE-HANDOFF` block is a one-shot protocol marker, not a shell command. Its `root` and `branch` values are single-quoted POSIX-shell literals containing the originating session's exact values. A new session consumes the marker only when the atom, step, root (`git rev-parse --show-toplevel`), and branch (`git branch --show-current`) all match its current context; otherwise it rejects the marker and follows the normal prompt-and-wait rule. A valid marker skips this atom's `hooks.before` prompt once and executes exactly `/speckit-<step>`; it MUST NOT be forwarded or reused for a later step or checkout.
+- The five-line `HAEX-HIVE-HANDOFF` block is a one-shot protocol marker, not a shell command; every marker line is emitted at column 1 so the copied block has its exact protocol form. Its `root` and `branch` values are single-quoted POSIX-shell literals containing the originating session's exact values. `commit` is the exact output of `git rev-parse HEAD`, and `nonce` is fresh for this emission (random bytes when available, with the timestamp/process/commit fallback). A new session consumes the marker only when the atom, step, root (`git rev-parse --show-toplevel`), branch (`git branch --show-current`), and commit (`git rev-parse HEAD`) all match its current context and the nonce has not already been consumed in this checkout; otherwise it rejects the marker and follows the normal prompt-and-wait rule. A valid marker skips this atom's `hooks.before` prompt once and executes exactly `/speckit-<step>`; it MUST NOT be forwarded or reused for a later step or checkout.
+- Before executing a valid marker's step, the session atomically claims the nonce in the device-local haex state root under `session-handoffs/consumed/<nonce>/`. Exclusive directory creation is the consumption event; an existing nonce is rejected, so copied markers cannot rerun a non-idempotent step in the same checkout. The claim record contains the atom, step, root, branch, commit, and nonce and is written before execution; this state is never committed to the repository. A crash after the claim is treated as consumed (at-most-once semantics).
 - It falls back gracefully outside a git worktree (`<unknown>` branch, current directory as root). The atom is not intended for non-git use; that fallback exists only to avoid a shell error if someone accidentally invokes the script by hand.
-- Executable bit: Spec 011 FR-003 states hook payloads are copied byte-identically. If `haex install` does not currently preserve the mode bit for atom-shipped scripts, that is a Spec 011 follow-up ticket, not a change to this design. In the interim the operator or the hook runner MUST `chmod +x` the published script.
+- Executable bit: Spec 011 FR-003 states hook payloads are copied byte-identically. Before activation, the hook check uses the exact invocation semantics of the runner: a direct-execution runner requires the published regular file to have its executable mode and to run successfully; an interpreter-mediated runner requires the corresponding interpreter invocation to run successfully. If a manual `chmod +x` is needed for a direct runner, it MUST happen before the activation check; the atom MUST NOT be activated with an unexecutable hook.
 
 ### constitution.md (fragment)
 
@@ -232,16 +240,20 @@ Sessions whose `active_workflow` resolves to
 `com.github.haexmas.atoms.speckit-session-hopper` MUST, before every
 `command:` step of that workflow:
 
-1. If the session's first message is the exact three-line one-shot marker
+1. If the session's first message is the exact five-line one-shot marker
    consisting of
    `HAEX-HIVE-HANDOFF: com.github.haexmas.atoms.speckit-session-hopper <step>`,
-   `root: <single-quoted-originating-repository-root>`, and
-   `branch: <single-quoted-originating-branch>`, validate that the atom,
-   `<step>`, decoded root, and decoded branch match the current session and
-   repository. If any value differs, reject the marker and continue with the
-   normal hook below. If all values match, consume the marker, skip the
-   prompt exactly once, and execute that step. The marker MUST NOT be
-   forwarded to another step or session.
+   `root: <single-quoted-originating-repository-root>`,
+   `branch: <single-quoted-originating-branch>`, `commit: <originating-HEAD>`,
+   and `nonce: <fresh-nonce>`, validate that the atom, `<step>`, decoded root,
+   decoded branch, and commit match the current session and repository. If any
+   value differs, reject the marker and continue with the normal hook below.
+   If all values match, atomically create the device-local
+   `session-handoffs/consumed/<nonce>/` claim directory and write its bound
+   record before executing the step. An existing claim rejects the marker;
+   there is no retry after a crash following a successful claim. Only after a
+   successful claim, skip the prompt exactly once and execute that step. The
+   marker MUST NOT be forwarded to another step or session.
 2. Otherwise, execute the step's `hooks.before` script and capture its stdout.
 3. Display the captured block to the operator verbatim.
 4. Wait for the operator's answer.
@@ -271,7 +283,7 @@ Documented in `haexmas/atoms/README.md` and mirrored in this design for the plan
    }
    ```
 2. Run `haex install` without `--llm` or `--accept-merged` for this design's single constitution contribution. `run()` selects `assemble_single_source(...)`, which publishes deterministically and writes no pending merge state. If the consumer has two or more constitution contributions, use the separate multi-source path: run `haex install --llm=file`, review the pending candidate, then rerun `haex install --accept-merged <candidate>`.
-3. Before activation, inspect `.specify/workflows/workflow-registry.json` and verify all of the following: `workflows["com.github.haexmas.atoms.speckit-session-hopper"]` exists; its `source` is exactly `"atom"`; its `atom_id` is exactly `"com.github.haexmas.atoms.speckit-session-hopper"`; and `.specify/workflows/com.github.haexmas.atoms.speckit-session-hopper/workflow.yml` exists and matches the published contribution. Test these assertions against the actual post-install registry entry and workflow file; if any assertion fails, do not activate the atom because the resolver would correctly fall back to the bundled workflow. The corresponding `workflows` entry key and `atom_id` use the same full atom id; only `workflow.yml.workflow.id` remains `speckit-session-hopper`.
+3. Before activation, inspect `.specify/workflows/workflow-registry.json` and verify all of the following: `workflows["com.github.haexmas.atoms.speckit-session-hopper"]` exists; its `source` is exactly `"atom"`; its `atom_id` is exactly `"com.github.haexmas.atoms.speckit-session-hopper"`; `.specify/workflows/com.github.haexmas.atoms.speckit-session-hopper/workflow.yml` exists and matches the published contribution; and `.specify/extensions/workflow-atoms/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh` is the expected regular file, has byte-identical published content, and is executable under the actual hook-runner semantics. Test these assertions against the actual post-install registry entry, workflow file, and hook: invoke the hook exactly as the runner does for a representative step, requiring successful exit and the expected prompt/marker output; when the runner executes scripts directly, also require the executable mode and a successful direct invocation. If any assertion fails, do not activate the atom because the resolver would correctly fall back to the bundled workflow. The corresponding `workflows` entry key and `atom_id` use the same full atom id; only `workflow.yml.workflow.id` remains `speckit-session-hopper`.
 4. Only after all registry assertions pass, edit `.specify/workflows/workflow-registry.json` and set `active_workflow` to `com.github.haexmas.atoms.speckit-session-hopper`. (Spec 011 does not require a helper for this yet; a plain text edit suffices.)
 
 Post-adoption state:
@@ -302,7 +314,7 @@ is needed.
 ## Open questions
 
 1. **Review gates and isolation**: should the workflow additionally recommend a new session for review-gate steps? Default: no, because gates are the operator's decision moment and belong in the main session. If a future variant wants to isolate long "analyze" or "review-plan" reads, a fork of this atom can add `hooks.before` to gate steps too.
-2. **Executable bit on published hook script**: Spec 011 FR-003 says byte-identical copy. Does that include the mode bit, or does the installer need an explicit rule for `speckit_hooks/**` payloads? Filed as a Spec 011 clarification, not blocking for this design (README can instruct `chmod +x` as a workaround).
+2. **Executable bit on published hook script**: Spec 011 FR-003 says byte-identical copy. The activation flow now resolves the ambiguity using the actual runner semantics: direct runners require executable mode, while interpreter-mediated runners require a successful interpreter invocation. Spec 011 may later formalize mode preservation for `speckit_hooks/**`; a manual `chmod +x` is only a pre-activation remediation for direct runners.
 3. **`inline` as the sentinel word**: any risk of collision with an operator who genuinely wants to say "inline" as text? Extremely unlikely inside a "new-session-or-inline" prompt, but the constitution rule could be tightened to "exactly the single token `inline`, case-insensitive" if collisions ever surface.
 4. **Second `haexmas/atoms` occupant**: this design leaves publisher-manifest room for future atoms in the same repo. Adding a second atom is a follow-up PR against `haexmas/atoms` that appends to `manifest.json.atoms`. No design change here.
 
