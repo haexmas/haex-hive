@@ -23,6 +23,7 @@ pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git binary 
 
 
 def _run_install(repo_root: Path, state_root: Path) -> subprocess.CompletedProcess:
+    """Run `haex install` against a fixture repository."""
     env = os.environ.copy()
     env["HAEX_HIVE_STATE"] = str(state_root)
     return subprocess.run(
@@ -43,6 +44,7 @@ def _run_install(repo_root: Path, state_root: Path) -> subprocess.CompletedProce
 def test_second_install_is_a_no_op(
     single_source_constitution_fixture: dict,
 ) -> None:
+    """Verify unchanged inputs leave the published generation untouched."""
     consumer: Path = single_source_constitution_fixture["consumer"]
     state_root: Path = single_source_constitution_fixture["state_root"]
 
@@ -77,12 +79,15 @@ def test_second_install_is_a_no_op(
 def test_changed_source_url_republishes_lock(
     single_source_constitution_fixture: dict,
 ) -> None:
+    """Verify a changed source URL creates a generation with updated metadata."""
     consumer: Path = single_source_constitution_fixture["consumer"]
     state_root: Path = single_source_constitution_fixture["state_root"]
     new_source = "https://github.com/example/renamed-publisher"
 
     first = _run_install(consumer, state_root)
     assert first.returncode == 0, first.stderr
+    assert first.stdout.startswith("installed generation g_")
+    first_generation_id = first.stdout.strip().removeprefix("installed generation ")
 
     old_clone = clone_dir(state_root, single_source_constitution_fixture["canonical"])
     new_clone = clone_dir(state_root, new_source)
@@ -96,6 +101,8 @@ def test_changed_source_url_republishes_lock(
     second = _run_install(consumer, state_root)
     assert second.returncode == 0, second.stderr
     assert second.stdout.startswith("installed generation g_")
+    second_generation_id = second.stdout.strip().removeprefix("installed generation ")
+    assert second_generation_id != first_generation_id
 
     lock = json.loads((consumer / ".haex-hive" / "install.lock").read_text())
     assert lock["constitution"]["sources"][0]["source"] == new_source

@@ -22,6 +22,7 @@ pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git binary 
 
 
 def _run_install(repo_root: Path, state_root: Path) -> subprocess.CompletedProcess:
+    """Run `haex install` against a fixture repository."""
     env = os.environ.copy()
     env["HAEX_HIVE_STATE"] = str(state_root)
     return subprocess.run(
@@ -42,6 +43,7 @@ def _run_install(repo_root: Path, state_root: Path) -> subprocess.CompletedProce
 def test_happy_path_single_source_publishes_all_three_files(
     single_source_constitution_fixture: dict,
 ) -> None:
+    """Install a single source and verify all published generation files."""
     consumer: Path = single_source_constitution_fixture["consumer"]
     state_root: Path = single_source_constitution_fixture["state_root"]
     atom_id = single_source_constitution_fixture["atom_id"]

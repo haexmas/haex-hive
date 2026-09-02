@@ -176,6 +176,7 @@ def assemble_single_source(
     tool_version: str,
     state_root: Path | None = None,
 ) -> None:
+    """Publish one resolved constitution contribution without merging."""
     validate_no_plaintext_secrets(
         contribution.body, location=f"constitution source {contribution.source.id}"
     )
@@ -189,6 +190,7 @@ def assemble_single_source(
 
 
 def _select_adapter(llm_method: str | None, repo_root: Path) -> MergeLLM:
+    """Select the configured merge adapter for a multi-source assembly."""
     method = llm_method or os.environ.get("HAEX_LLM")
     if not method:
         method = "stdio" if sys.stdin.isatty() else "none"
@@ -211,6 +213,7 @@ def assemble_multi_source(
     task_prompt: str = DEFAULT_TASK_PROMPT,
     state_root: Path | None = None,
 ) -> int:
+    """Merge multiple constitution contributions and publish the result."""
     if accept_merged_path is not None and llm_method is not None:
         raise UsageError(message="--accept-merged and --llm are mutually exclusive")
 

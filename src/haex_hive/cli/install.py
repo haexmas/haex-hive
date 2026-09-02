@@ -27,6 +27,7 @@ from haex_hive.util.errors import HaexError, NoSourcesDeclaredError
 
 
 def _load_consumer_manifest(repo_root: Path) -> ConsumerManifest:
+    """Load and validate the consumer's v2 harness manifest."""
     manifest_path = repo_root / ".haex-hive.json"
     if not manifest_path.exists():
         raise HaexError(
@@ -49,6 +50,7 @@ def _load_consumer_manifest(repo_root: Path) -> ConsumerManifest:
 
 
 def _live_generation_id(repo_root: Path) -> str | None:
+    """Return the currently published generation ID, if one is available."""
     lock_path = repo_root / transaction.HAEX_HIVE_DIR / transaction.INSTALL_LOCK_NAME
     if not lock_path.exists():
         return None
