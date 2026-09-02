@@ -292,12 +292,14 @@ single-participant special case of `haex install`'s transaction. Concretely:
 - A Spec 007-vintage `install.lock` fails Spec 008 schema validation with
   `InstallLockSchemaInvalidError` and there is no in-tool migration. Operator
   recovery is to remove the stale file and re-run `haex install`.
-- Multi-source LLM merge retains Spec 007's two-phase authoring flow, but its
-  confirmed candidate is a pinned input artifact for installation.
-  `haex install` MUST NOT invoke the LLM or regenerate that candidate; the
-  reviewed result is committed before it is consumed by the transaction.
-  This is what makes the generated payload reproducible for satellites using
-  the same pinned inputs.
+- Multi-source LLM merge retains Spec 007's two-phase authoring flow. The
+  `--llm=stdio` and `--llm=file` modes are the separate authoring path that
+  produces a candidate and records the pending merge inputs; the candidate is
+  only published after operator confirmation. The `--accept-merged PATH` mode
+  consumes that reviewed candidate as a pinned input artifact: it MUST NOT
+  invoke the LLM or regenerate the candidate, and it MUST retain the pending
+  input mismatch validation before publication. This is what makes the
+  accepted payload reproducible for satellites using the same pinned inputs.
 - Shared path helpers derive `$HAEX_HIVE_STATE`, the canonical project
   identity, its SHA-256 `<repo-key>`, and the repository mutex. Both
   `haex install` and `haex constitution show` use these helpers. The
