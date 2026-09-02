@@ -150,13 +150,6 @@ class ConstitutionIntegrityMismatchError(HaexError):
 
 
 @dataclass
-class IncompleteAssemblyTransactionError(HaexError):
-    diagnostic_key: str = "constitution-transaction-incomplete"
-    exit_code: int = exit_codes.INCOMPLETE_TRANSACTION
-    hint: str = "Run `haex install` to recover the paired output generation."
-
-
-@dataclass
 class PublisherCloneUnavailableError(HaexError):
     diagnostic_key: str = "publisher-clone-unavailable"
     exit_code: int = exit_codes.IO_REFUSE

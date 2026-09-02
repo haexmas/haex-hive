@@ -1,4 +1,9 @@
-"""FR-035 rename-swap publication + concurrent-writer refusal (R1/R7 amendment)."""
+"""Rename-swap publication + concurrent-writer refusal + stale-sibling cleanup.
+
+Covers the §R1 rename-swap primitive, the concurrent-writer refusal via the
+ConstitutionWriterLock, and the 2026-09-02 detect+retry cleanup helper that
+replaced the earlier 8-state recovery dispatcher.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +20,6 @@ from haex_hive.io import transaction, writer_lock
 from haex_hive.io.state import transaction_paths
 from haex_hive.util.errors import (
     ConstitutionWriterBusyError,
-    HaexError,
     PostWriteValidationError,
 )
 
@@ -178,7 +182,43 @@ def test_post_write_verify_rollback_removes_first_generation(tmp_path: Path) -> 
     assert not (tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev").exists()
 
 
-def test_inflight_resolve_completes_forward_after_mid_swap_crash(tmp_path: Path) -> None:
+def test_clean_stale_siblings_removes_next_only(tmp_path: Path) -> None:
+    """A leftover `.next/` from a pre-swap crash is deleted; live is untouched."""
+    live = tmp_path / transaction.HAEX_HIVE_DIR
+    next_dir = tmp_path / f"{transaction.HAEX_HIVE_DIR}.next"
+
+    live.mkdir()
+    (live / "constitution.md").write_bytes(b"live\n")
+    next_dir.mkdir()
+    (next_dir / "constitution.md").write_bytes(b"aborted\n")
+
+    next_removed, prev_removed = inflight.clean_stale_siblings(live)
+
+    assert (next_removed, prev_removed) == (True, False)
+    assert live.exists()
+    assert (live / "constitution.md").read_bytes() == b"live\n"
+    assert not next_dir.exists()
+
+
+def test_clean_stale_siblings_removes_prev_only(tmp_path: Path) -> None:
+    """A leftover `.prev/` from a post-swap crash is deleted; live is untouched."""
+    live = tmp_path / transaction.HAEX_HIVE_DIR
+    prev_dir = tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev"
+
+    live.mkdir()
+    (live / "constitution.md").write_bytes(b"live\n")
+    prev_dir.mkdir()
+    (prev_dir / "constitution.md").write_bytes(b"prev\n")
+
+    next_removed, prev_removed = inflight.clean_stale_siblings(live)
+
+    assert (next_removed, prev_removed) == (False, True)
+    assert (live / "constitution.md").read_bytes() == b"live\n"
+    assert not prev_dir.exists()
+
+
+def test_clean_stale_siblings_removes_both_after_mid_swap_crash(tmp_path: Path) -> None:
+    """A mid-swap crash leaves both siblings; both are deleted for reinstall."""
     live = tmp_path / transaction.HAEX_HIVE_DIR
     next_dir = tmp_path / f"{transaction.HAEX_HIVE_DIR}.next"
     prev_dir = tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev"
@@ -188,98 +228,30 @@ def test_inflight_resolve_completes_forward_after_mid_swap_crash(tmp_path: Path)
     prev_dir.mkdir()
     (prev_dir / "constitution.md").write_bytes(b"prev gen\n")
 
-    state = inflight.resolve(live)
+    next_removed, prev_removed = inflight.clean_stale_siblings(live)
 
-    assert state is inflight.InflightState.MID_SWAP
-    assert live.exists()
-    assert (live / "constitution.md").read_bytes() == b"new gen\n"
+    assert (next_removed, prev_removed) == (True, True)
     assert not next_dir.exists()
     assert not prev_dir.exists()
-
-
-def test_inflight_resolve_cleans_up_post_swap(tmp_path: Path) -> None:
-    live = tmp_path / transaction.HAEX_HIVE_DIR
-    prev_dir = tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev"
-
-    live.mkdir()
-    (live / "constitution.md").write_bytes(b"live\n")
-    prev_dir.mkdir()
-    (prev_dir / "constitution.md").write_bytes(b"prev\n")
-
-    state = inflight.resolve(live)
-
-    assert state is inflight.InflightState.POST_SWAP
-    assert (live / "constitution.md").read_bytes() == b"live\n"
-    assert not prev_dir.exists()
-
-
-def test_inflight_resolve_deletes_stale_next_pre_swap(tmp_path: Path) -> None:
-    live = tmp_path / transaction.HAEX_HIVE_DIR
-    next_dir = tmp_path / f"{transaction.HAEX_HIVE_DIR}.next"
-
-    live.mkdir()
-    (live / "constitution.md").write_bytes(b"live\n")
-    next_dir.mkdir()
-    (next_dir / "constitution.md").write_bytes(b"aborted\n")
-
-    state = inflight.resolve(live)
-
-    assert state is inflight.InflightState.PRE_SWAP
-    assert live.exists()
-    assert not next_dir.exists()
-
-
-def test_inflight_resolve_is_noop_on_steady_state(tmp_path: Path) -> None:
-    live = tmp_path / transaction.HAEX_HIVE_DIR
-    live.mkdir()
-    (live / "constitution.md").write_bytes(b"live\n")
-
-    assert inflight.resolve(live) is inflight.InflightState.STEADY
-    assert live.exists()
-
-
-def test_inflight_resolve_is_noop_on_uninitialized_state(tmp_path: Path) -> None:
-    live = tmp_path / transaction.HAEX_HIVE_DIR
-
-    assert inflight.resolve(live) is inflight.InflightState.UNINITIALIZED
     assert not live.exists()
 
 
-@pytest.mark.parametrize(
-    "row_name,make_state",
-    [
-        (
-            "orphan_prev",
-            lambda tmp_path, live: (tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev").mkdir(),
-        ),
-        (
-            "orphan_next",
-            lambda tmp_path, live: (tmp_path / f"{transaction.HAEX_HIVE_DIR}.next").mkdir(),
-        ),
-        (
-            "illegal_all",
-            lambda tmp_path, live: [
-                live.mkdir(),
-                (tmp_path / f"{transaction.HAEX_HIVE_DIR}.next").mkdir(),
-                (tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev").mkdir(),
-            ],
-        ),
-    ],
-)
-def test_inflight_resolve_raises_on_integrity_failures(
-    tmp_path: Path,
-    row_name: str,
-    make_state,
-) -> None:
-    del row_name
+def test_clean_stale_siblings_is_noop_on_steady_state(tmp_path: Path) -> None:
+    """No siblings, no work; live is preserved."""
     live = tmp_path / transaction.HAEX_HIVE_DIR
-    make_state(tmp_path, live)
+    live.mkdir()
+    (live / "constitution.md").write_bytes(b"live\n")
 
-    with pytest.raises(inflight.InflightIntegrityError) as raised:
-        inflight.resolve(live)
-    assert isinstance(raised.value, HaexError)
-    assert raised.value.diagnostic_key == "constitution-transaction-incomplete"
-    assert raised.value.exit_code == 7
+    assert inflight.clean_stale_siblings(live) == (False, False)
+    assert live.exists()
+
+
+def test_clean_stale_siblings_is_noop_when_uninitialized(tmp_path: Path) -> None:
+    """No live, no siblings, no work."""
+    live = tmp_path / transaction.HAEX_HIVE_DIR
+
+    assert inflight.clean_stale_siblings(live) == (False, False)
+    assert not live.exists()
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="fcntl-based lock is POSIX-only")

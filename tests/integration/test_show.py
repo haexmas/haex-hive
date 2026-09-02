@@ -148,28 +148,32 @@ def test_body_is_rendered_from_a_valid_lock(single_source_constitution_fixture: 
     assert proc.stdout.endswith(b"tampered\n")
 
 
-@pytest.mark.parametrize(
-    "state,expected_returncode",
-    [("orphan_prev", 7), ("pre_swap", 0), ("post_swap", 0)],
-)
-def test_inflight_state_handling(
-    single_source_constitution_fixture: dict, state: str, expected_returncode: int
+@pytest.mark.parametrize("sibling", ["next", "prev"])
+def test_show_ignores_stale_siblings(
+    single_source_constitution_fixture: dict, sibling: str
 ) -> None:
-    """Show reads a valid live root during cleanup and refuses unavailable states."""
+    """`haex constitution show` is read-only; stale siblings do not affect it."""
     consumer = single_source_constitution_fixture["consumer"]
     state_root = single_source_constitution_fixture["state_root"]
     _assemble(consumer, state_root)
 
-    if state == "orphan_prev":
-        shutil.rmtree(consumer / ".haex-hive")
-        (consumer / ".haex-hive.prev").mkdir()
-    elif state == "pre_swap":
-        (consumer / ".haex-hive.next").mkdir()
-    else:
-        (consumer / ".haex-hive.prev").mkdir()
+    (consumer / f".haex-hive.{sibling}").mkdir()
 
     proc = _show(consumer, state_root=state_root)
-    assert proc.returncode == expected_returncode, proc.stderr.decode()
-    if expected_returncode:
-        assert b"key=constitution-transaction-incomplete" in proc.stderr
-        assert proc.stdout == b""
+    assert proc.returncode == 0, proc.stderr.decode()
+
+
+def test_show_refuses_when_live_absent(
+    single_source_constitution_fixture: dict,
+) -> None:
+    """A missing `.haex-hive/` produces the standard not-assembled refusal."""
+    consumer = single_source_constitution_fixture["consumer"]
+    state_root = single_source_constitution_fixture["state_root"]
+    _assemble(consumer, state_root)
+
+    shutil.rmtree(consumer / ".haex-hive")
+    (consumer / ".haex-hive.prev").mkdir()
+
+    proc = _show(consumer, state_root=state_root)
+    assert proc.returncode == 2, proc.stderr.decode()
+    assert b"key=constitution-not-assembled" in proc.stderr

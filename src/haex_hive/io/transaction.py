@@ -8,10 +8,12 @@ parent-directory fsync after each rename. An optional `post_write_verify`
 callback runs after the swap. `<root>.prev/` is removed as the transaction's
 final step.
 
-Recovery of a mid-swap crash lives in `haex_hive.install.inflight`; callers
-must invoke `install.inflight.resolve(live_dir)` under the exclusive install
-lock BEFORE calling `publish_generation` to clean up any interrupted prior
-run per research §R7.
+Stale-sibling cleanup lives in `haex_hive.install.inflight.clean_stale_siblings`;
+callers must invoke it under the exclusive install lock BEFORE calling
+`publish_generation` so any `<root>.next/` or `<root>.prev/` left over from
+a prior crashed install is removed. Under the 2026-09-02 detect+retry
+simplification the recovery model is "reinstall converges" — there is no
+mid-swap recovery-forward logic.
 
 If `post_write_verify` raises after the swap, the swap is rolled back —
 `<root>` is renamed back to `<root>.next` and, when `<root>.prev/` existed
@@ -136,9 +138,10 @@ def publish_generation(
         post_write_verify: Optional callback invoked after the swap completes;
             if it raises, the swap is rolled back and the exception re-raised.
         state_root: Device-local state root. When supplied, the identity
-            record is refreshed for diagnostic purposes; recovery still
-            depends on the caller having invoked
-            `install.inflight.resolve(live)` under the exclusive lock.
+            record is refreshed for diagnostic purposes; callers still
+            must have invoked
+            `install.inflight.clean_stale_siblings(live)` under the
+            exclusive lock before this call.
         repo_root: The repository root — used with `state_root` to derive the
             identity record. Defaults to `live.parent` when omitted.
     """

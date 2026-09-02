@@ -1,8 +1,10 @@
-"""T067 — SC-008 crash-safety sweep across rename-swap boundaries.
+"""SC-001 crash-safety sweep across rename-swap boundaries.
 
 Each child is terminated at a real in-flight boundary, then a subsequent
-`haex install` resolves the directory-name state and converges to a
-fully-successful generation.
+`haex install` cleans any leftover `<root>.next/` / `<root>.prev/` siblings
+and either reinstalls from scratch (pre-rename-B crash) or takes the
+idempotent no-op path (post-rename-B crash) — the 2026-09-02 detect+retry
+model that replaced the earlier 8-state recovery-forward dispatcher.
 
 Uses the `HAEX_HIVE_CRASH_AFTER` test seam in `haex_hive.io.transaction` to
 terminate the child process (SIGKILL on POSIX, TerminateProcess-equivalent on

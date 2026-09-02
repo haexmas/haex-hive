@@ -16,21 +16,23 @@ If Spec 009 (hooks), Spec 010 (adapters), or a future requirement introduces a v
 
 ### In-flight recovery state
 
-Replaces the earlier `JournalEntry` + `PlanStep-to-JournalEntry mapping`
-sections. There is no durable JSONL journal, no tail-hash chain, and no
-sidecar file. The in-flight state of one participating output root is the
-combination of three directory names beside that root:
+Superseded 2026-09-02 by the detect+retry amendment (research.md §R7). There
+is no durable JSONL journal, no state-table dispatcher, and no per-state
+recovery action. The in-flight state of one haex-owned output root is
+simply the presence or absence of two same-filesystem siblings beside the
+live directory:
 
 | Directory | Meaning |
 |---|---|
 | `<root>/` | The currently-live generation. Its `visibility.json` names the published `generation_id`. |
-| `<root>.next/` | A staged, fully-written generation with schema-compatible metadata, awaiting rename-in. |
-| `<root>.prev/` | The previous generation, retained during the swap so it can be restored on a mid-swap crash. |
+| `<root>.next/` | Leftover staging directory from a crashed prior install; deleted on the next install. |
+| `<root>.prev/` | Leftover pre-image from a crashed prior install; deleted on the next install. |
 
-Every legal combination of presence/absence and its recovery action is
-enumerated in research §R7's state table. Recovery reads
-`os.listdir(parent_of_root)`, filters for the three names, and dispatches on
-the combination. No other durable state is consulted or required.
+The recovery primitive is `install.inflight.clean_stale_siblings(live)`. It
+removes either sibling if present, fsyncs the parent, and returns which
+were removed (for diagnostics). The subsequent regular install pipeline
+runs to completion and produces a valid generation deterministically from
+the pinned inputs — there is no "restore from `.prev/`" path.
 
 The rename-swap performs at most two atomic transitions per root:
 

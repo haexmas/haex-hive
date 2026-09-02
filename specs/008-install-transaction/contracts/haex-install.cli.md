@@ -23,15 +23,14 @@ The `--llm` and `--accept-merged` options apply to multi-source constitution
 installation. Single-source installations use the deterministic fast path when
 neither option is supplied.
 
-Recovery is explicit through `haex verify --recover`, which acquires the EXCLUSIVE lock, replays or rolls back an incomplete journal, and builds no new install.
+Recovery is implicit: any subsequent `haex install` acquires the exclusive lock, removes any leftover `<root>.next/` / `<root>.prev/` sibling, and reinstalls to a valid generation from the deterministic pinned inputs. There is no separate `haex verify --recover` verb (retired 2026-09-02 by the detect+retry amendment).
 
 ## Behaviour matrix
 
 | Invocation | Lock class | On success | On failure |
 |---|---|---|---|
-| `haex install` | Exclusive | Prints "installed generation `<gen>`", exit 0 | Prints refusal reason + exit code per matrix below |
+| `haex install` | Exclusive | Prints "installed generation `<gen>`" or "no changes", exit 0. Cleans any leftover `<root>.next/`/`<root>.prev/` first. | Prints refusal reason + exit code per matrix below |
 | `haex install --verify-only` | Shared | Prints "generation `<gen>` verified", exit 0 | Prints mismatch detail, exit per matrix |
-| `haex verify --recover` | Exclusive | Prints "recovered generation `<gen>`" (either completed or rolled back), exit 0 | Prints diagnostic |
 
 ## Exit codes
 
@@ -61,7 +60,7 @@ haex install
 error: exit=9 key=install-lock-busy (FR-001 / FR-010)
   lock held by 31245@laptop-hex.local since 2026-08-31T14:20:11Z
   (heartbeat 3s ago, ttl 60s)
-  hint: wait or investigate PID 31245; if the process is dead, run `haex verify --recover`
+  hint: wait or investigate PID 31245; if the process is dead, retry `haex install`
 
 haex install
 error: exit=4 key=commit-snapshot-mismatch (FR-006)
