@@ -20,21 +20,21 @@ A **speckit-workflow atom**: a new atom kind that carries:
 
 1. A `workflow.yml` payload compatible with `.specify/workflows/<id>/workflow.yml` today.
 2. Optionally, a `constitution.md` fragment stating the MUST rules that the workflow imposes.
-3. Optionally, an `extensions.yml` fragment declaring which speckit-community extensions the workflow depends on (with pinned versions).
+3. Optionally, an `extensions.yml` fragment declaring which speckit-community extensions the workflow depends on (with version constraints).
 4. Optionally, additional per-skill or per-hook payloads (e.g. custom slash commands, per-stage hook scripts).
 
 Adoption is via `.haex-hive.json`, same as any other atom. On `haex install`:
 
 - The workflow.yml payload lands at `.specify/workflows/<atom-workflow-id>/workflow.yml`.
 - Any constitution fragment merges into `.haex-hive/constitution.md` via the existing multi-source merge, so the workflow's MUST rules become part of the assembled constitution automatically.
-- Any extensions.yml fragment merges into `.specify/extensions.yml` under a new `hooks_from_atoms` key, so per-workflow hook contributions coexist with locally-declared hooks.
+- Any `extensions.yml` fragment contributes its extension requirements and hook declarations to the canonical top-level `required_extensions`, `optional_extensions`, and `hooks` keys in `.specify/extensions.yml`. Requirements remain separate from hook declarations; atom hooks are merged into the same `hooks.<stage>` lists as local hooks, with atom entries first and local entries last.
 
 ## What this does NOT cover (deliberately)
 
 - **Runtime enforcement of workflow adherence**: mechanical refusal on non-workflow task landings. This stays advisory-to-the-agent for now; a future ADR under Phase 7 may add a pre-commit hook, but that is orthogonal to atom distribution.
 - **A registry of "approved" workflows**: every publisher is free to publish workflow atoms; there is no central curation. The operator picks their workflow the same way they pick any other atom (by pinning a specific source+revision).
 - **Live workflow updates without pinning**: an atom-adopted workflow uses the same `revision` pin as every other atom (Principle IV, NON-NEGOTIABLE). Workflow drift on the operator's device is intentional (it happens when the operator bumps the pin) and not detectable as concurrent replay.
-- **Automatic installation of speckit-community extensions** the workflow declares as required. The atom declares which extensions and pinned versions are needed; installation of extensions themselves is delegated to specifyr's extension-install mechanism (or a manual `speckit extensions install <name>@<version>` step). Preventing workflow use when required extensions are missing is a validator concern, not a distribution one.
+- **Automatic installation of speckit-community extensions** the workflow declares as required. The atom declares which extensions and version constraints are needed; installation of extensions themselves is delegated to specifyr's extension-install mechanism (or a manual `speckit extensions install <name>@<version>` step). Preventing workflow use when required extensions are missing or incompatible is a validator concern, not a distribution one.
 
 ## Terminology
 
@@ -56,9 +56,21 @@ priority: 5
 contributes:
   speckit_workflow: "workflow.yml"          # required for this atom kind
   constitution: "constitution.md"           # optional; MUST-rules the workflow imposes
-  speckit_extensions: "extensions.yml"      # optional; required extensions with pinned versions
+  speckit_extensions: "extensions.yml"      # optional; requirements + hook declarations
   speckit_hooks: "hooks/"                   # optional; directory of hook scripts to install
 ```
+
+`speckit_workflow`, `constitution`, `speckit_extensions`, and
+`speckit_hooks` are atom-directory-relative source paths. Every source path is
+validated with `RepoRelativePath.validate`. The resolver then performs a
+canonical containment check: the resolved source must remain below the atom
+root, and the destination must remain below the consumer repository root.
+Absolute paths, backslash or drive-qualified paths, `.`/`..` traversal, and
+symlink or reparse-point targets that escape either root are refused. The
+validator applies the same checks to every discovered file copied from the
+`speckit_hooks` directory. Valid relative paths remain supported. Output paths
+are never state-root-relative in committed configuration; the device-local
+state root is reserved for caches and transaction internals.
 
 The `constitution.md` fragment is contributed alongside the `speckit_workflow`: same multi-source merge as any other constitution atom. Difference: its content is scoped to workflow discipline (e.g. "every failing test MUST be reported before implementation continues"), not general system principles.
 
@@ -81,10 +93,11 @@ Consumer's `.haex-hive.json`:
 On `haex install`:
 
 1. The publisher's atom is resolved via the existing publisher-clone + pinned-revision machinery.
-2. `contributes.speckit_workflow` payload publishes to `.specify/workflows/<atom-workflow-id>/workflow.yml`. The atom's `id` becomes the workflow directory name; multiple workflow atoms may coexist under `.specify/workflows/`. One is designated active via `.specify/workflows/workflow-registry.json` (a new field: `active`).
-3. `contributes.constitution` fragment participates in the existing multi-source constitution merge; the constitution's declared-speckit-workflow bullet (v1.4.0) now applies to the adopted workflow's declared steps.
-4. `contributes.speckit_extensions` fragment merges into `.specify/extensions.yml` under a new `atom_hooks` list; local overrides win when there is a collision on a `before_*` / `after_*` slot for a stage.
-5. `contributes.speckit_hooks/*` scripts land under `.specify/extensions/<atom-id>/` for reuse by declared hooks.
+2. `contributes.speckit_workflow` payload publishes to `.specify/workflows/<atom-workflow-id>/workflow.yml`. The atom's `id` becomes the workflow directory name; multiple workflow atoms may coexist under `.specify/workflows/`. One is designated active through the canonical `active_workflow` field in `.specify/workflows/workflow-registry.json`.
+3. `contributes.constitution` fragment participates in the existing multi-source constitution merge; the constitution's declared speckit workflow bullet (v1.4.0) now applies to the adopted workflow's declared steps.
+4. `contributes.speckit_extensions` is parsed using the `extensions.yml` contract below. Its requirements merge into the canonical `required_extensions` and `optional_extensions` lists, while its hook declarations merge into the canonical `hooks.<stage>` lists. Atom hooks run before local hooks; a local declaration for the same hook identity (`stage`, `extension`, and `command`) replaces the atom declaration.
+5. `contributes.speckit_hooks/*` scripts land under `.specify/extensions/<atom-id>/` for reuse by the canonical `hooks` declarations. The copied files are included in the same transaction as the declarations that reference them.
+6. All outputs from steps 2–5 and the assembled `.haex-hive/constitution.md` are prepared and validated by one repository-wide install transaction. No output is published until every output is valid and any required constitution review has been accepted. A failed review or later validation discards the staged candidate; if publication has already begun, existing in-flight recovery restores the previous marker-consistent generation and all output roots before the install reports failure. The existing `.haex-hive/` generation and rename-swap behavior remains unchanged.
 
 ### Active-workflow selection
 
@@ -101,52 +114,93 @@ On `haex install`:
 }
 ```
 
-The constitution's v1.4.0 clause becomes concrete: readers look at `.specify/workflows/workflow-registry.json.active_workflow`, then load the matching `workflow.yml`, and MUST follow those steps. When `active_workflow` is unset, the built-in `speckit` bundled workflow is the default.
+The constitution's v1.4.0 clause becomes concrete: readers look at `.specify/workflows/workflow-registry.json.active_workflow`, then load the matching `workflow.yml`, and MUST follow those steps. The registry always writes `active_workflow`; its default value is the built-in `speckit` workflow. During reconciliation, if the selected atom workflow is removed, the transaction resets `active_workflow` to `speckit` before publishing. A registry MUST never retain an active ID whose `workflow.yml` is absent.
 
 ### Extension declaration format
 
-Contributed `extensions.yml` fragment shape (new; separate from the local `.specify/extensions.yml` shape):
+The contributed `extensions.yml` fragment uses the same vocabulary as the
+consumer file, omitting consumer-owned `installed` and `settings` keys. This
+is the one canonical extension contract; no alternate atom-specific hook key
+is defined. The manifest contribution names identify source payloads, while
+the destination configuration always uses the canonical keys below.
 
 ```yaml
 required_extensions:
   - id: v-model-extension-pack
-    version: ">=0.7.2, <1.0.0"
+    version_constraint: ">=0.7.2, <1.0.0"
     homepage: https://speckit-community.github.io/extensions/v-model-extension-pack
   - id: bugfix-workflow
-    version: "~=1.0.0"
+    version_constraint: "~=1.0.0"
     homepage: https://speckit-community.github.io/extensions/bugfix-workflow
 
 optional_extensions:
   - id: speckit-companion
-    version: ">=0.21.0"
+    version_constraint: ">=0.21.0"
+
+hooks:
+  before_implement:
+    - extension: v-model-extension-pack
+      command: v_model.prepare
+      enabled: true
+      optional: false
+      prompt: Run the V-Model preparation hook?
+      description: Prepare the implementation stage
+      condition: null
 ```
 
-Validator behaviour: on install, if `required_extensions` names a package that is not installed in the local `.specify/extensions/`, `haex install` refuses with `key=required-workflow-extension-missing` (new exit code slot). Version constraints follow Spec 007's existing `VersionConstraint` grammar.
+The local `.specify/extensions.yml` retains its consumer-owned `installed` and
+`settings` keys and uses the same `required_extensions`,
+`optional_extensions`, and `hooks` keys shown above. Requirement entries are
+merged by extension ID; incompatible constraints for one ID refuse the
+install. Hook entries merge by stage, with atom entries preceding local
+entries, except that an exact local hook identity replaces the atom entry.
+
+Validator behaviour: on install, every `required_extensions` entry must name a
+package installed in the local `.specify/extensions/` whose installed semantic
+version satisfies its declared `version_constraint`. A missing package
+refuses with `key=required-workflow-extension-missing`; an incompatible
+installed version refuses with `key=required-workflow-extension-incompatible`
+(new exit-code slots). Optional extensions may be absent. Version constraints
+follow Spec 007's existing `VersionConstraint` grammar; they are constraints,
+not exact pins.
 
 ## Constraints (constitution alignment)
 
 - **Principle I**: the workflow atom carries no secrets. `workflow.yml`, contributed `constitution.md` fragments, and `extensions.yml` fragments MUST NOT reference credentials.
-- **Principle II**: no absolute paths. All workflow.yml paths are repo-relative or state-root-relative.
+- **Principle II**: no absolute paths. All workflow and contribution paths in committed configuration are repository-relative and pass `RepoRelativePath.validate` plus canonical containment checks. Device-local state-root paths never enter the committed configuration.
 - **Principle IV**: the atom is pinned by full 40-char SHA, same as every other atom. No branch/HEAD adoption.
-- **Principle VI**: the assembled `.haex-hive/constitution.md` still lands through the `--accept-merged` two-phase flow (or the PR-review gate for haex-hive itself). A newly-adopted workflow atom's constitution fragment MUST NOT change the assembled constitution without the operator explicitly reviewing the merged output.
+- **Principle VI**: the assembled `.haex-hive/constitution.md` still lands through the `--accept-merged` two-phase flow (or the PR-review gate for haex-hive itself). This includes exactly one workflow constitution contribution: `haex install` MUST NOT take the `assemble_single_source` shortcut for it. Without accepted merged input, the install refuses before publishing workflow outputs or changing the assembled constitution; a regression test covers this case.
 - **Principle VIII**: a workflow atom's constitution fragment MUST NOT contain concealment instructions (`--haex-confirm` and the safety validators from Spec 007 already enforce this on the merged assembly).
 
-## Open questions for `/speckit-specify`
+## Decisions for `/speckit-specify`
 
-1. **Multi-active workflow**: does the design permit two workflow atoms adopted simultaneously (e.g. `strict-tdd` for backend + `bugfix-workflow` for hotfix branches), or is `active_workflow` single-valued? Recommend single-valued for the first version; multi-active is a v2 concern.
-2. **Precedence of local vs atom hooks**: when a locally-declared hook and an atom-contributed hook both target the same stage (`before_implement`, say), which runs first? Recommend: atom hooks run first, local hooks last. Rationale: local hooks are operator overrides.
-3. **Extension installation**: is `haex install` expected to install missing required extensions, or refuse? Recommend: refuse. Installation of external packages is out of scope for the transaction contract; the operator installs extensions separately (via specifyr or a `speckit extensions install` CLI).
-4. **Constitution-fragment merging semantics**: how does a workflow atom's constitution fragment merge with the haex-hive core constitution? Two options: (a) append as a new section, (b) merge into an existing `## Development Workflow` section. Recommend: append as a new `## Workflow-Contributed Rules` section, sourced by the workflow atom's ID.
-5. **Bundled workflow status**: when a workflow atom is adopted, does the bundled `.specify/workflows/speckit/workflow.yml` remain available as a fallback, or does adoption replace it? Recommend: coexist; `active_workflow` field decides which is binding.
-6. **Downgrade path**: what happens when an operator removes a workflow atom from `.haex-hive.json`? The workflow.yml files under `.specify/workflows/<atom-id>/` become orphans: do they get deleted, or retained? Recommend: deleted (delete-orphans semantics from Spec 008 US4 apply).
+1. **Single active workflow**: `active_workflow` is single-valued in v1. Multi-active selection is deferred to a later version.
+2. **Hook precedence**: atom hooks run first and local hooks run last. An exact local hook identity (`stage`, `extension`, `command`) replaces the atom entry.
+3. **Extension installation**: `haex install` refuses missing required extensions; the operator installs external packages separately.
+4. **Constitution-fragment merging**: append a new `## Workflow-Contributed Rules` section sourced by workflow atom ID through the existing multi-source merge.
+5. **Bundled workflow status**: the bundled `speckit` workflow coexists with adopted workflows; `active_workflow` selects the binding workflow.
+6. **Downgrade/removal**: removed workflow atoms are delete-orphaned in the same transaction. If the removed atom was active, `active_workflow` resets to `speckit`.
 
 ## Success criteria (measurable outcomes)
 
 - **SC-011.1**: Adopting a workflow atom via `.haex-hive.json` publishes `.specify/workflows/<atom-id>/workflow.yml` byte-for-byte matching the atom's contribution.
 - **SC-011.2**: The atom's `constitution.md` fragment appears in the assembled `.haex-hive/constitution.md` after `haex install --accept-merged`.
 - **SC-011.3**: Setting `active_workflow` in `workflow-registry.json` to an adopted-atom workflow ID makes the constitution's declared-speckit-workflow bullet resolve to that workflow's steps (verifiable by an agent-behavioural walkthrough test).
-- **SC-011.4**: Removing a workflow atom from `.haex-hive.json` and re-installing removes the corresponding `.specify/workflows/<atom-id>/` directory.
-- **SC-011.5**: A workflow atom declaring `required_extensions` that are not installed causes `haex install` to refuse with the documented exit code.
+- **SC-011.4**: Removing a workflow atom from `.haex-hive.json` and re-installing removes the corresponding `.specify/workflows/<atom-id>/` directory in the same transaction. If that atom was active, the transaction resets `active_workflow` to `speckit`; no registry may retain an ID whose `workflow.yml` was deleted.
+- **SC-011.5**: A workflow atom declaring a required extension causes `haex install` to refuse with `required-workflow-extension-missing` when the extension is absent and with `required-workflow-extension-incompatible` when the installed version fails its declared `version_constraint`. The conformance suite includes both cases.
+
+## Required conformance scenarios
+
+- A single workflow atom with a constitution contribution and no accepted
+  merged input is refused before publication; the previous constitution,
+  workflow files, hooks, extension configuration, and registry remain
+  byte-for-byte unchanged.
+- Every contribution path and every copied hook file rejects absolute paths,
+  `.`/`..` traversal, and symlink or reparse-point escapes, while a valid
+  relative path is accepted.
+- A transaction that fails after staging or during publication restores all
+  previous output roots and leaves no partially published workflow, hook,
+  extension, registry, or constitution output.
 
 ## Deferred to later specs
 
