@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haexmas/haex-hive/schemas/workflow-registry.v1.schema.json",
+  "title": "haex-hive Workflow Registry v1 (Spec 011)",
+  "description": "Schema for `.specify/workflows/workflow-registry.json`. The `active_workflow` field is the load-bearing new addition in Spec 011: readers of the constitution's 'Declared speckit workflow adherence' bullet dereference it to determine which workflow.yml is binding. Top-level keys are strictly enumerated (typos refused); per-workflow entries accept unknown fields for forward compat with speckit-community metadata.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "workflows"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "active_workflow": {
+      "oneOf": [
+        { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+        { "type": "null" }
+      ],
+      "description": "Names an entry in `workflows` (the bundled `speckit` id, or an adopted-atom id). When null or absent, the reader falls back to the bundled `speckit` workflow."
+    },
+    "workflows": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/workflowEntry" },
+      "minProperties": 1,
+      "description": "At minimum contains the bundled `speckit` workflow. Additional entries land when workflow atoms are adopted."
+    }
+  },
+  "$defs": {
+    "workflowEntry": {
+      "type": "object",
+      "required": ["name", "version", "source", "installed_at", "updated_at"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Human-readable workflow name."
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+.*$",
+          "description": "Semantic version of the workflow."
+        },
+        "source": {
+          "type": "string",
+          "enum": ["bundled", "atom"],
+          "description": "`bundled` for the built-in workflow that ships with haex-hive; `atom` for workflows adopted via `.haex-hive.json`."
+        },
+        "atom_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$",
+          "description": "Reverse-DNS atom id. Required when `source` is `atom`; forbidden when `source` is `bundled`."
+        },
+        "atom_revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "Full 40-char git SHA the atom was resolved at, per Principle IV. Required when `source` is `atom`."
+        },
+        "installed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "UTC ISO 8601 timestamp of first install."
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "UTC ISO 8601 timestamp of last update."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "source": { "const": "bundled" } } },
+          "then": {
+            "not": {
+              "anyOf": [
+                { "required": ["atom_id"] },
+                { "required": ["atom_revision"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": { "properties": { "source": { "const": "atom" } } },
+          "then": {
+            "required": ["atom_id", "atom_revision"]
+          }
+        }
+      ]
+    }
+  }
+}
