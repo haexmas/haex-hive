@@ -54,6 +54,15 @@ _TEXT_SERIALIZATION_PROFILE = {
     "ensure_ascii": False,
 }
 
+_JSON_SERIALIZATION_PROFILE = {
+    "format": "json",
+    "encoding": "UTF-8",
+    "newline": "LF",
+    "key_order": "lexicographic-utf8",
+    "indent": None,
+    "ensure_ascii": False,
+}
+
 
 def generation_input_identities(
     adapter_name: str, task_prompt: str
@@ -66,19 +75,18 @@ def generation_input_identities(
         {"adapter": adapter_name, "task_prompt": task_prompt}
     )
     tool_config_revision = "sha256:" + hashlib.sha256(config_bytes).hexdigest()
-    profile = dict(_TEXT_SERIALIZATION_PROFILE)
     return (
         GenerationInputIdentity(
             kind="adapter",
             id=f"com.haex.hive.adapter.{adapter_name}",
             revision=adapter_revision,
-            serialization=profile,
+            serialization=dict(_TEXT_SERIALIZATION_PROFILE),
         ),
         GenerationInputIdentity(
             kind="tool-config",
             id=f"com.haex.hive.tool-config.{adapter_name}",
             revision=tool_config_revision,
-            serialization=profile,
+            serialization=dict(_JSON_SERIALIZATION_PROFILE),
         ),
     )
 

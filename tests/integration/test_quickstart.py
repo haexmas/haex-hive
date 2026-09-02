@@ -93,12 +93,19 @@ def test_path2_single_source_assemble_and_show(
     ).read_bytes()
     constitution = (consumer / ".haex-hive" / "constitution.md").read_bytes()
     assert constitution == source_body
-    lock_bytes = (consumer / ".haex-hive" / "install.lock").read_bytes()
+    lock_data_1 = json.loads((consumer / ".haex-hive" / "install.lock").read_bytes())
 
     second = _run_haex(consumer, "constitution", "assemble", state_root=state_root)
     assert second.returncode == 0
     assert (consumer / ".haex-hive" / "constitution.md").read_bytes() == constitution
-    assert (consumer / ".haex-hive" / "install.lock").read_bytes() == lock_bytes
+    lock_data_2 = json.loads((consumer / ".haex-hive" / "install.lock").read_bytes())
+    assert (
+        lock_data_1["visibility_marker"]["generation_id"]
+        != lock_data_2["visibility_marker"]["generation_id"]
+    )
+    lock_data_1["visibility_marker"]["generation_id"] = None
+    lock_data_2["visibility_marker"]["generation_id"] = None
+    assert lock_data_1 == lock_data_2
 
     show = _run_haex(consumer, "constitution", "show", state_root=state_root)
     assert show.returncode == 0, show.stderr.decode()

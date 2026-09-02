@@ -120,6 +120,7 @@ class InstallLock:
     def from_json(raw: bytes) -> InstallLock:
         try:
             data = json.loads(raw.decode("utf-8"))
+            data = _migrate_pre_amendment_v2(data)
             schema_validator.validate(data, "install-lock.v2.schema.json")
         except (UnicodeError, ValueError) as exc:
             detail = (
@@ -161,7 +162,6 @@ class InstallLock:
             visibility_marker=visibility_marker,
             unknown_top_level=unknown,
         )
-
     def to_json_bytes(self) -> bytes:
         obj: dict[str, Any] = {
             "haex_hive_version": self.haex_hive_version,
@@ -193,6 +193,49 @@ class InstallLock:
         for k, v in self.unknown_top_level.items():
             obj.setdefault(k, thaw_json(v))
         return json_deterministic.dumps(obj)
+
+
+def _migrate_pre_amendment_v2(data: Any) -> Any:
+    """Normalize the pre-amendment v2 lock shape for the current reader.
+
+    Older v2 locks persisted output digests, root records, and an ownership
+    inventory. Those fields were deliberately retired by the trust-git
+    amendment. They must be removed before validating the current schema so a
+    crashed install can still resume and replace the old lock atomically.
+    """
+    if not isinstance(data, dict):
+        return data
+
+    migrated = dict(data)
+    constitution = migrated.get("constitution")
+    if isinstance(constitution, dict) and "content_integrity" in constitution:
+        constitution = dict(constitution)
+        constitution.pop("content_integrity", None)
+        migrated["constitution"] = constitution
+
+    atoms = migrated.get("atoms")
+    if isinstance(atoms, list):
+        migrated["atoms"] = [
+            (
+                {key: value for key, value in item.items() if key != "content_integrity"}
+                if isinstance(item, dict)
+                else item
+            )
+            for item in atoms
+        ]
+
+    roots = migrated.get("participating_roots")
+    if isinstance(roots, list) and all(isinstance(item, dict) for item in roots):
+        migrated["participating_roots"] = [item.get("root") for item in roots]
+
+    marker = migrated.get("visibility_marker")
+    if isinstance(marker, dict) and "content_integrity" in marker:
+        marker = dict(marker)
+        marker.pop("content_integrity", None)
+        migrated["visibility_marker"] = marker
+
+    migrated.pop("ownership", None)
+    return migrated
 
 
 def _parse_constitution(section: Any) -> ConstitutionLockSection | None:
