@@ -23,8 +23,6 @@ from pathlib import Path
 
 import pytest
 
-from haex_hive.migrate.transform import clone_dir
-
 pytestmark = [
     pytest.mark.slow,
     pytest.mark.skipif(shutil.which("git") is None, reason="git binary required"),
@@ -104,8 +102,11 @@ def test_crash_at_boundary_converges_on_retry(
 
     if crash_point == "rename_a" and preexisting:
         previous_generation = (prev_dir / "constitution.md").read_bytes()
-        clone = clone_dir(state_root, single_source_constitution_fixture["canonical"])
-        shutil.rmtree(clone)
+        manifest_path = consumer / ".haex-hive.json"
+        manifest_bytes = manifest_path.read_bytes()
+        manifest = json.loads(manifest_bytes)
+        manifest["atoms"][0]["revision"] = "deadbeef" * 5
+        manifest_path.write_text(json.dumps(manifest))
 
         failed_retry = _run(consumer, state_root)
 
@@ -115,7 +116,7 @@ def test_crash_at_boundary_converges_on_retry(
         assert prev_dir.exists()
         assert (prev_dir / "constitution.md").read_bytes() == previous_generation
 
-        shutil.copytree(single_source_constitution_fixture["publisher"], clone)
+        manifest_path.write_bytes(manifest_bytes)
 
     recovered = _run(consumer, state_root)
     assert recovered.returncode == 0, recovered.stderr.decode()
