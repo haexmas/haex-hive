@@ -45,11 +45,11 @@ Adoption is via `.haex-hive.json`, same as any other atom. Making this workflow 
 - Publisher repo: `haexmas/atoms` (a new sibling to `haexmas/haex-hive`), holding multiple atoms over time. First atom is this one.
 - Publisher-manifest id: `com.github.haexmas.atoms`.
 - Atom id: `com.github.haexmas.atoms.speckit-session-hopper`.
-- Workflow id inside `workflow.yml`: `speckit-session-hopper` (this is what `workflow-registry.json.active_workflow` names; Spec 011 FR-002 publishes the atom's workflow at `.specify/workflows/<atom-id>/`, and the id inside the workflow may be the short form).
+- Workflow id inside `workflow.yml`: `speckit-session-hopper`. The workflow registry key, `WorkflowEntry.atom_id`, and `workflow-registry.json.active_workflow` all use the full atom id; the short id is internal to the workflow payload only. Spec 011 FR-002 publishes the workflow at `.specify/workflows/<atom-id>/`.
 
 ### Repo layout
 
-```
+```text
 haexmas/atoms/                                # git repo root
 ├── manifest.json                             # publisher-manifest
 ├── README.md                                 # adoption instructions per atom
@@ -188,6 +188,8 @@ set -eu
 STEP="${1:-<step>}"
 BRANCH="$(git branch --show-current 2>/dev/null || echo '<unknown>')"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+ROOT_ESCAPED="$(printf '%s' "$ROOT" | sed "s/'/'\"'\"'/g")"
+ROOT_ESCAPED="'${ROOT_ESCAPED}'"
 
 cat <<EOF
 ======================================================
@@ -195,8 +197,10 @@ Next step: /speckit-${STEP}
 Recommendation: run this in a NEW session (isolated context).
 
 Open a new session in the same worktree:
-    cd ${ROOT}
+    cd ${ROOT_ESCAPED}
 Expected branch: ${BRANCH}
+Paste this exact one-shot marker as the first message in that session:
+    HAEX-HIVE-HANDOFF: com.github.haexmas.atoms.speckit-session-hopper ${STEP}
 Then run:
     /speckit-${STEP}
 
@@ -207,8 +211,9 @@ EOF
 
 Notes:
 
-- The script uses POSIX `sh` (not bash) for portability across the operator's environment.
+- The script uses POSIX `sh` (not bash) for portability across the operator's environment. `ROOT_ESCAPED` is a single-quoted POSIX-shell literal, so spaces, command substitutions, backticks, quotes, and shell metacharacters in the worktree path remain data when the printed command is pasted.
 - It does NOT reference the constitution or any spec artefacts. The new session finds those itself: the user-global CLAUDE.md loads `.haex-hive.json` and the constitution automatically on session start (haex-hive detection); the `/speckit-<step>` slash-command reads whatever `specs/<slug>/` files are relevant for that step; `active_workflow` is read by any agent that cares.
+- The `HAEX-HIVE-HANDOFF` line is a one-shot protocol marker, not a shell command. A new session that receives a valid marker for this atom and the requested step consumes it, skips this atom's `hooks.before` prompt once, and executes exactly `/speckit-<step>`; it MUST NOT forward or reuse the marker for a later step. A session without the marker follows the normal prompt-and-wait rule.
 - It falls back gracefully outside a git worktree (`<unknown>` branch, current directory as root). The atom is not intended for non-git use; that fallback exists only to avoid a shell error if someone accidentally invokes the script by hand.
 - Executable bit: Spec 011 FR-003 states hook payloads are copied byte-identically. If `haex install` does not currently preserve the mode bit for atom-shipped scripts, that is a Spec 011 follow-up ticket, not a change to this design. In the interim the operator or the hook runner MUST `chmod +x` the published script.
 
@@ -223,10 +228,15 @@ Sessions whose `active_workflow` resolves to
 `com.github.haexmas.atoms.speckit-session-hopper` MUST, before every
 `command:` step of that workflow:
 
-1. Execute the step's `hooks.before` script and capture its stdout.
-2. Display the captured block to the operator verbatim.
-3. Wait for the operator's answer.
-4. Continue the step in the current session only if the operator's
+1. If the session's first message is the exact one-shot marker
+   `HAEX-HIVE-HANDOFF: com.github.haexmas.atoms.speckit-session-hopper <step>`,
+   validate that `<step>` is the current command step, consume the
+   marker, skip the prompt exactly once, and execute that step. The marker
+   MUST NOT be forwarded to another step or session.
+2. Otherwise, execute the step's `hooks.before` script and capture its stdout.
+3. Display the captured block to the operator verbatim.
+4. Wait for the operator's answer.
+5. Continue the step in the current session only if the operator's
    answer is exactly `inline`. On any other answer, stop and defer
    the step to the new session the operator opens; the current
    session resumes at the next review gate once the new session's
@@ -251,23 +261,25 @@ Documented in `haexmas/atoms/README.md` and mirrored in this design for the plan
      "source": "https://github.com/haexmas/atoms"
    }
    ```
-2. Run `haex install --llm=file`. Review the constitution candidate. Rerun `haex install --accept-merged <candidate>`.
-3. Edit `.specify/workflows/workflow-registry.json` and set `active_workflow` to `com.github.haexmas.atoms.speckit-session-hopper`. (Spec 011 does not require a helper for this yet; a plain text edit suffices.)
+2. Run `haex install` without `--llm` or `--accept-merged` for this design's single constitution contribution. `run()` selects `assemble_single_source(...)`, which publishes deterministically and writes no pending merge state. If the consumer has two or more constitution contributions, use the separate multi-source path: run `haex install --llm=file`, review the pending candidate, then rerun `haex install --accept-merged <candidate>`.
+3. Edit `.specify/workflows/workflow-registry.json` and set `active_workflow` to `com.github.haexmas.atoms.speckit-session-hopper`. The corresponding `workflows` entry key and `atom_id` use the same full atom id; only `workflow.yml.workflow.id` remains `speckit-session-hopper`. (Spec 011 does not require a helper for this yet; a plain text edit suffices.)
 
 Post-adoption state:
 
 - `.specify/workflows/com.github.haexmas.atoms.speckit-session-hopper/workflow.yml` published.
 - `.specify/extensions/workflow-atoms/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh` published.
 - `.haex-hive/constitution.md` contains the "Per-step session isolation" subsection under `## Workflow-Contributed Rules`.
-- Every subsequent agent session opened in this repo, reading its user-global CLAUDE.md, loads the constitution, sees the MUST rule, and consequently prompts before every command step.
+- Every subsequent agent session opened in this repo, reading its user-global CLAUDE.md, loads the constitution, sees the MUST rule, and consequently prompts before every command step unless it receives the valid one-shot handoff marker for that step.
 
 ## Removal (downgrade)
 
 Removing the atom entry from `.haex-hive.json` and rerunning `haex install`
 triggers Spec 011 US3 (delete-orphans): the workflow directory, the hook
-directory, and the constitution fragment are all removed atomically; if
-`active_workflow` still named this atom, it is reset to `null` and stderr
-emits `workflow-atom-reset-to-default`. No atom-specific removal logic
+directory, and the constitution fragment are removed by their respective
+per-tree rename-swap publications; no cross-tree atomicity is claimed. If
+`active_workflow` still names the full atom id
+`com.github.haexmas.atoms.speckit-session-hopper`, it is reset to `null` and
+stderr emits `workflow-atom-reset-to-default`. No atom-specific removal logic
 is needed.
 
 ## Assumptions
