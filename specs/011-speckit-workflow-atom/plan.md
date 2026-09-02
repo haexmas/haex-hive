@@ -107,7 +107,7 @@ tests/
 
 **Structure Decision**: single-project Python CLI. Workflow lives in its own subpackage (`workflow/`) rather than extending `install/` because its concerns (registry, constraint merge, active-workflow selection) are orthogonal to the install transaction: install uses the resolver, but the resolver itself has its own model, contracts, and lifecycle. Path chosen matches Spec 008's convention of one subpackage per concern.
 
-Contract coverage MUST include valid SemVer prerelease/build metadata and invalid trailing content, registry-key/`atom_id` mismatches, duplicate adopted atom ids, all three workflow contribution fields being parsed, source containment under the atom root, destination containment under the consumer root, and symlink/reparse-point escapes for both roots. Constraint tests MUST cover exact/lower intersections and refusal of unsupported syntax rather than silently serializing a lossy intersection.
+Contract coverage MUST include valid SemVer prerelease/build metadata and invalid trailing content, registry-key/`atom_id` mismatches, non-`speckit` bundled keys, duplicate adopted atom ids, all three workflow contribution fields being parsed, source containment under the atom root, destination containment under the consumer root, and symlink/reparse-point escapes for both roots. Hook tests MUST cover duplicate identities across fragments and an unambiguous local replacement. Constraint tests MUST cover exact/lower intersections and refusal of unsupported syntax rather than silently serializing a lossy intersection. Reconciliation tests MUST verify that a refusal preserves the current generation and active selection.
 
 ## Reserved Diagnostic Keys and Exit Codes
 

@@ -65,8 +65,9 @@ Hook entries merge into the consumer's `.specify/extensions.yml.hooks.<stage>` l
 
 1. Process the union of stages present in the consumer file and all atom fragments. Atom entries are sorted by bytewise UTF-8 `(atom_id, extension, command, script)` identity and precede local entries, including for stages that exist only in an atom fragment.
 2. Duplicate entries with the same `(stage, extension, command, script)` identity within a single fragment refuse with `key=workflow-hook-mapping-invalid`.
-3. A local entry with the same exact identity replaces the atom entry in place. The local `enabled` and `optional` flags are authoritative; therefore a local `enabled: false` disables the atom hook rather than running both records. Local entries without an atom match remain after all atom entries in their canonical local order.
-4. Before any publication or rename-swap, validate both sides of every mapping: the source path must resolve below the atom's `speckit_hooks` root to one regular, non-symlink/reparse file, and the planned staged destination `.specify/extensions/workflow-atoms/<atom-id>/<relative-script>` must resolve below that atom-owned namespace. Any escaping, duplicate, missing, or non-regular mapping refuses with `key=workflow-hook-mapping-invalid`; validation MUST NOT depend on a destination that exists only after publication.
+3. After collecting all atom fragments, a duplicate atom identity across fragments also refuses with `key=workflow-hook-mapping-invalid`. Duplicate local identities refuse with the same key, so a local override can target at most one atom entry.
+4. A local entry with the same exact identity replaces the atom entry in place. The local `enabled` and `optional` flags are authoritative; therefore a local `enabled: false` disables the atom hook rather than running both records. Local entries without an atom match remain after all atom entries in their canonical local order.
+5. Before any publication or rename-swap, validate both sides of every mapping: the source path must resolve below the atom's `speckit_hooks` root to one regular, non-symlink/reparse file, and the planned staged destination `.specify/extensions/workflow-atoms/<atom-id>/<relative-script>` must resolve below that atom-owned namespace. Any escaping, duplicate, missing, or non-regular mapping refuses with `key=workflow-hook-mapping-invalid`; validation MUST NOT depend on a destination that exists only after publication.
 
 ## Non-constraint metadata
 
@@ -81,5 +82,5 @@ Hook entries merge into the consumer's `.specify/extensions.yml.hooks.<stage>` l
 | Duplicate `(stage, extension, command, script)` within a fragment | `workflow-hook-mapping-invalid` | `INPUT_REFUSE` |
 | `version_constraint` unparseable | `invalid-constraint` | `INPUT_REFUSE` |
 | Same extension id required twice in one fragment | `workflow-atom-extension-id-collision` | `INPUT_REFUSE` |
-| Hook `script` source or planned destination escapes its owned root | Principle II diagnostic | `INPUT_REFUSE` |
+| Hook `script` source or planned destination escapes its owned root | `workflow-hook-mapping-invalid` | `INPUT_REFUSE` |
 | Hook `script` file is missing, non-regular, or not present in the staged copy | `workflow-hook-mapping-invalid` | `INPUT_REFUSE` |

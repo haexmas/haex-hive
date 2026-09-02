@@ -110,10 +110,11 @@ $ cat .specify/workflows/workflow-registry.json
 
 ## 4. Activate the atom-adopted workflow
 
-Manually edit `.specify/workflows/workflow-registry.json` to set:
+Manually edit the existing `.specify/workflows/workflow-registry.json` object, preserving `schema_version`, `workflows`, and any other fields. Change only its `active_workflow` property:
 
-```json
-{"active_workflow": "com.example.publisher.strict-tdd-workflow"}
+```diff
+-  "active_workflow": null,
++  "active_workflow": "com.example.publisher.strict-tdd-workflow",
 ```
 
 Verify:
@@ -150,13 +151,35 @@ Install refuses BEFORE any file publication. Fix by installing the extension and
 With both the bundled and the atom-adopted workflow present, swap by editing `active_workflow`:
 
 ```json
-{"active_workflow": "speckit"}
+{
+  "schema_version": "1.0",
+  "active_workflow": "speckit",
+  "workflows": {
+    "speckit": {
+      "name": "Full SDD Cycle",
+      "version": "1.0.0",
+      "source": "bundled",
+      "installed_at": "2026-09-02T14:30:00Z",
+      "updated_at": "2026-09-02T14:30:00Z"
+    },
+    "com.example.publisher.strict-tdd-workflow": {
+      "name": "Strict TDD Cycle",
+      "version": "1.2.0",
+      "source": "atom",
+      "atom_id": "com.example.publisher.strict-tdd-workflow",
+      "atom_revision": "aabbccddeeff00112233445566778899aabbccdd",
+      "installed_at": "2026-09-02T14:30:00Z",
+      "updated_at": "2026-09-02T14:30:00Z"
+    }
+  }
+}
 ```
 
 or
 
-```json
-{"active_workflow": null}
+```diff
+-  "active_workflow": "com.example.publisher.strict-tdd-workflow",
++  "active_workflow": null,
 ```
 
 No `haex install` needed for a swap; the resolver reads `active_workflow` at query time. However, `haex install --verify-only` (when T037 lands) will report the resolved workflow so the operator can confirm the switch.
