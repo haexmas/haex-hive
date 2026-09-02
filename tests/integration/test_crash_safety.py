@@ -31,7 +31,9 @@ pytestmark = [
 ]
 
 _CRASH_CASES = [
+    ("pre_swap", False),
     ("pre_swap", True),
+    ("rename_a", False),
     ("rename_a", True),
     ("rename_b", False),
     ("rename_b", True),
@@ -88,13 +90,13 @@ def test_crash_at_boundary_converges_on_retry(
     next_dir = consumer / ".haex-hive.next"
     prev_dir = consumer / ".haex-hive.prev"
     if crash_point == "pre_swap":
-        assert live.exists()
+        assert live.exists() is preexisting
         assert next_dir.exists()
         assert not prev_dir.exists()
     elif crash_point == "rename_a":
         assert next_dir.exists()
         assert not live.exists()
-        assert prev_dir.exists()
+        assert prev_dir.exists() is preexisting
     else:
         assert live.exists()
         if preexisting:

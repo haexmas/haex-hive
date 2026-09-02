@@ -79,6 +79,44 @@ def _rmtree(path: Path) -> None:
 
 def _fsync_dir(path: Path) -> None:
     if _IS_WINDOWS:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        create_file = kernel32.CreateFileW
+        create_file.argtypes = [
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.HANDLE,
+        ]
+        create_file.restype = wintypes.HANDLE
+        flush_buffers = kernel32.FlushFileBuffers
+        flush_buffers.argtypes = [wintypes.HANDLE]
+        flush_buffers.restype = wintypes.BOOL
+        close_handle = kernel32.CloseHandle
+        close_handle.argtypes = [wintypes.HANDLE]
+        close_handle.restype = wintypes.BOOL
+        handle = create_file(
+            str(path),
+            0xC0000000,  # GENERIC_READ | GENERIC_WRITE
+            0x00000001 | 0x00000002 | 0x00000004,  # share read/write/delete
+            None,
+            3,  # OPEN_EXISTING
+            0x02000000,  # FILE_FLAG_BACKUP_SEMANTICS (directory handle)
+            None,
+        )
+        invalid_handle = ctypes.c_void_p(-1).value
+        if handle == invalid_handle:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            if not flush_buffers(handle):
+                raise ctypes.WinError(ctypes.get_last_error())
+        finally:
+            close_handle(handle)
         return
     fd = os.open(str(path), os.O_RDONLY)
     try:
