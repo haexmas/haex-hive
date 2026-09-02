@@ -62,14 +62,18 @@ def _live_generation_id(repo_root: Path) -> str | None:
 
 
 def _is_no_op_single_source(
-    repo_root: Path, body: bytes, source_id: str, source_revision: str
+    repo_root: Path,
+    body: bytes,
+    source_id: str,
+    source_revision: str,
+    source_url: str,
 ) -> bool:
     """True when on-disk publication already matches the single-source candidate.
 
     Compares the constitution body byte-for-byte and the recorded source
-    identity/revision. Fields under transaction metadata (generation_id,
-    written_at) are ignored — those change on every publication and are the
-    whole reason for having a no-op path.
+    identity, source URL, and revision. Fields under transaction metadata
+    (generation_id, written_at) are ignored — those change on every
+    publication and are the whole reason for having a no-op path.
     """
     live_root = repo_root / transaction.HAEX_HIVE_DIR
     constitution_path = live_root / transaction.CONSTITUTION_NAME
@@ -85,7 +89,11 @@ def _is_no_op_single_source(
     if lock.constitution is None or len(lock.constitution.sources) != 1:
         return False
     recorded = lock.constitution.sources[0]
-    if recorded.id != source_id or recorded.revision != source_revision:
+    if (
+        recorded.id != source_id
+        or recorded.revision != source_revision
+        or recorded.source != source_url
+    ):
         return False
     return lock.participating_roots == (".haex-hive/",)
 
@@ -112,6 +120,7 @@ def run(args: argparse.Namespace) -> int:
                     contribution.body,
                     contribution.source.id,
                     contribution.source.revision,
+                    contribution.source.source,
                 ):
                     sys.stdout.write("no changes\n")
                     return exit_codes.SUCCESS
