@@ -105,15 +105,14 @@ its current-generation pointer is switched. That pointer switch occurs while
 the old `.haex-hive/visibility.json` marker is still live; a reader that sees
 the new overlay with the old marker observes a generation mismatch and reports
 the installation as unavailable. If the process stops before the haex-owned
-rename-swap publishes the new marker, recovery compares every active pointer
-with the still-live marker and restores pointers naming the candidate
-generation to their retained prior generation; pointers already naming the
-prior generation are retained. Each pointer transition MUST be atomic and
-must retain enough information to identify both generations. A pointer naming
-neither generation, or no prior marker when one is needed for classification,
-is an explicit refusal without cleanup. After the marker is published, it is
-authoritative: recovery keeps matching candidate pointers and removes obsolete
-generations only after all pointers match it.
+rename-swap publishes the new marker, the next `haex install` reruns the
+regular pipeline and revalidates the complete candidate; no separate pointer-
+restoration step is defined by the detect-and-retry contract. Each pointer
+transition MUST be atomic and must retain enough information to identify the
+candidate generation. A pointer naming neither the prior nor candidate
+generation is an explicit refusal without cleanup. After the marker is
+published, it is authoritative: the regular pipeline keeps matching candidate
+pointers and removes obsolete generations only after all pointers match it.
 
 **Rationale**:
 - Directory junctions on Windows are OS-native, need no elevation, work identically to symlinks for readers, and cover the common case of adapters that publish a whole directory of skills/agents/rules.
