@@ -102,11 +102,8 @@ The transaction stages new writes AND deletions atomically per FR-008. If interr
 Any tool reading the participating output roots should follow this pattern to avoid observing a mid-install state:
 
 ```python
-import json, hashlib, base64
+import json
 from pathlib import Path
-
-def sri(digest_bytes: bytes) -> str:
-    return "sha256-" + base64.urlsafe_b64encode(digest_bytes).rstrip(b"=").decode()
 
 def load_visibility_marker(repo_root: Path) -> dict:
     marker = repo_root / ".haex-hive" / "visibility.json"
@@ -114,7 +111,7 @@ def load_visibility_marker(repo_root: Path) -> dict:
         raise RuntimeError("no installation available")
     return json.loads(marker.read_bytes())
 
-def verify_root(repo_root: Path, root_record: dict, managed_paths: set[str]) -> None:
+def verify_root(repo_root: Path, root_name: str, managed_paths: set[str]) -> None:
     # Enumerate paths per FR-005: for haex-owned roots, all files under root
     # except visibility.json; for mixed-ownership roots, only overlay_paths.
     # See research §R5 for exact normalisation.
@@ -127,17 +124,16 @@ def verify_root(repo_root: Path, root_record: dict, managed_paths: set[str]) -> 
 project_checkout = Path.cwd()
 marker = load_visibility_marker(project_checkout)
 install_lock_path = project_checkout / ".haex-hive" / "install.lock"
-install_lock_bytes = install_lock_path.read_bytes()
-expected_lock_digest = sri(hashlib.sha256(install_lock_bytes).digest())
-if marker["install_lock_content_integrity"] != expected_lock_digest:
+install_lock = json.loads(install_lock_path.read_bytes())
+if marker["generation_id"] != install_lock["visibility_marker"]["generation_id"]:
     raise RuntimeError("install.lock does not match visibility marker")
-install_lock = json.loads(install_lock_bytes)
 managed_paths = {
-    record["path"]
-    for record in install_lock.get("ownership", {}).get("paths", [])
+    path
+    for atom in install_lock.get("atoms", [])
+    for path in atom["contributed_paths"]
 }
-for root_record in marker["participating_roots"]:
-    verify_root(project_checkout, root_record, managed_paths)
+for root_name in marker["participating_roots"]:
+    verify_root(project_checkout, root_name, managed_paths)
 # All roots match: safe to proceed.
 ```
 

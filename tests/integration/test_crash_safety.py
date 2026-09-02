@@ -67,6 +67,7 @@ def _run(
 def test_crash_at_boundary_converges_on_retry(
     single_source_constitution_fixture: dict, crash_point: str, preexisting: bool
 ) -> None:
+    """Recover each rename boundary and preserve the prior generation on failure."""
     consumer = single_source_constitution_fixture["consumer"]
     state_root = single_source_constitution_fixture["state_root"]
 

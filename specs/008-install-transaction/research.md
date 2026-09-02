@@ -39,7 +39,7 @@ For **mixed-ownership roots** (`.claude/`, `.codex/`, future Spec 010 adapters),
 Renames A and B are each atomic on POSIX (`rename(2)`) and Windows (`MoveFileExW`). Between them the live `.haex-hive/` name briefly does not exist; a reader in that window sees no installation and is required to treat it as unavailable per FR-005. On single-syscall rename-swap primitives (`renameat2(RENAME_EXCHANGE)` on Linux ≥ 3.15, `renamex_np(RENAME_SWAP)` on macOS ≥ 10.13) an implementation MAY collapse steps 3+4 into one syscall when available, but the two-rename fallback is the reference contract.
 
 **Rationale**:
-- **One in-flight state, three directory names**. Recovery reads `os.listdir(parent)` and dispatches on the presence/absence of the three names (R7). There is no chained journal to parse, no tail-hash to recompute, no sidecar.
+- **One in-flight state, three directory names**. Recovery inspects the presence or absence of the three names (R7), removes stale `.next/`, and retains `.prev/` until a replacement is successfully published. There is no chained journal to parse, no tail-hash to recompute, no sidecar.
 - **Fewer moving parts than the per-file replace design**. The per-file approach required a durable journal (bespoke JSON or JSONL) with per-entry sequencing so a mid-swap crash could distinguish which files were replaced. Under rename-swap the only mid-swap crash points are the two rename boundaries, and both are resolvable by inspecting directory names.
 - **The visibility marker inside the fresh `.haex-hive.next/` is the sole publication event** (FR-004). Renaming `.haex-hive.next/` to `.haex-hive/` is the atomic commit; every reader that opens `.haex-hive/visibility.json` after step 4 either sees the new generation or, in the between-renames window, sees no marker at all.
 - **Constitutional `.haex-hive/constitution.md` invariant preserved**. `.haex-hive/constitution.md` is committed content per the constitution's Reserved-paths clause. The rename-swap keeps `.haex-hive/constitution.md` at the exact same path with a regular file — no symlinks committed to git, no per-install generation directories piling up in the tree.
@@ -53,7 +53,7 @@ Renames A and B are each atomic on POSIX (`rename(2)`) and Windows (`MoveFileExW
 **Residual risk**:
 - **Between-renames window**: readers that scan `.haex-hive/` in the window between steps 3 and 4 see a missing directory. Per FR-005 that is a legitimate "unavailable" reading; polite readers already retry via `visibility.json`. The window is expected to be sub-millisecond.
 - **`rename()` on Windows for a directory containing an open handle**: `MoveFileExW` refuses to move a directory whose children are open (`ERROR_SHARING_VIOLATION`). If a downstream agent CLI is reading `.haex-hive/constitution.md` during publication, step 3 or 4 fails. Mitigation is the same as the retired per-file design: bounded backoff (three retries at 100 ms), then refuse the install with a diagnostic naming the observed sharing violation. A future revision may integrate the Windows Restart Manager API to identify the holding process.
-- **`.haex-hive.prev/` orphaned across a crash after step 4**: recovery deletes it (R7).
+- **`.haex-hive.prev/` orphaned across a crash after step 4**: the next install removes it only after the replacement has been successfully published (R7).
 
 ---
 
@@ -87,8 +87,9 @@ from R8 is recorded in the staged metadata and overlay-generation name.
 
 **Residual risk**: an interrupted install leaves `<root>.next/` or
 `<root>.prev/` behind. Recovery inspects exactly those names alongside
-`<root>/` and dispatches per R7. Mixed-root overlay generations are recovered
-through their R3 pointer contract.
+`<root>/`; the next install removes stale `.next/`, retains `.prev/` until
+successful publication, and retries the regular pipeline per R7. Mixed-root
+overlay generations are handled through their R3 pointer contract.
 
 ---
 
