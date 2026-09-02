@@ -95,8 +95,8 @@ On `haex install`:
 1. The publisher's atom is resolved via the existing publisher-clone + pinned-revision machinery.
 2. `contributes.speckit_workflow` payload publishes to `.specify/workflows/<atom-workflow-id>/workflow.yml`. The atom's `id` becomes the workflow directory name; multiple workflow atoms may coexist under `.specify/workflows/`. One is designated active through the canonical `active_workflow` field in `.specify/workflows/workflow-registry.json`.
 3. `contributes.constitution` fragment participates in the existing multi-source constitution merge; the constitution's declared speckit workflow bullet (v1.4.0) now applies to the adopted workflow's declared steps.
-4. `contributes.speckit_extensions` is parsed using the `extensions.yml` contract below. Its requirements merge into the canonical `required_extensions` and `optional_extensions` lists, while its hook declarations merge into the canonical `hooks.<stage>` lists. Atom hooks run before local hooks; a local declaration for the same hook identity (`stage`, `extension`, and `command`) replaces the atom declaration.
-5. `contributes.speckit_hooks/*` scripts land under `.specify/extensions/<atom-id>/` for reuse by the canonical `hooks` declarations. The copied files are included in the same transaction as the declarations that reference them.
+4. `contributes.speckit_extensions` is parsed using the `extensions.yml` contract below. Its requirements merge into the canonical `required_extensions` and `optional_extensions` lists, while its hook declarations merge into the canonical `hooks.<stage>` lists. Atom hooks run before local hooks; a local declaration for the same hook identity (`stage`, `extension`, `command`, and `script`) replaces the atom declaration. Atom entries are ordered by atom ID using bytewise UTF-8 ordering, then by hook identity; local entries follow in their canonical local order.
+5. `contributes.speckit_hooks/*` scripts land under `.specify/extensions/<atom-id>/` for reuse by the canonical `hooks` declarations. Every atom-contributed hook has a required `script` field naming the final repository-relative destination (for example, `.specify/extensions/com.example.publisher.strict-tdd-workflow/hooks/v_model/prepare.py`). The installer maps that destination back to the atom-relative source below `speckit_hooks`, rejects missing or non-regular targets, and includes the copied files in the same transaction as the declarations that reference them.
 6. All outputs from steps 2–5 and the assembled `.haex-hive/constitution.md` are prepared and validated by one repository-wide install transaction. No output is published until every output is valid and any required constitution review has been accepted. A failed review or later validation discards the staged candidate; if publication has already begun, existing in-flight recovery restores the previous marker-consistent generation and all output roots before the install reports failure. The existing `.haex-hive/` generation and rename-swap behavior remains unchanged.
 
 ### Active-workflow selection
@@ -110,11 +110,18 @@ On `haex install`:
   "workflows": {
     "speckit":                                   { "source": "bundled",  ... },
     "com.example.publisher.strict-tdd-workflow": { "source": "atom",     ... }
+  },
+  "extension_contributions": {
+    "com.example.publisher.strict-tdd-workflow": {
+      "required_extensions": ["v-model-extension-pack"],
+      "optional_extensions": ["speckit-companion"],
+      "hooks": ["before_implement|v-model-extension-pack|v_model.prepare|.specify/extensions/com.example.publisher.strict-tdd-workflow/hooks/v_model/prepare.py"]
+    }
   }
 }
 ```
 
-The constitution's v1.4.0 clause becomes concrete: readers look at `.specify/workflows/workflow-registry.json.active_workflow`, then load the matching `workflow.yml`, and MUST follow those steps. The registry always writes `active_workflow`; its default value is the built-in `speckit` workflow. During reconciliation, if the selected atom workflow is removed, the transaction resets `active_workflow` to `speckit` before publishing. A registry MUST never retain an active ID whose `workflow.yml` is absent.
+The constitution's v1.4.0 clause becomes concrete: readers look at `.specify/workflows/workflow-registry.json.active_workflow`, then load the matching `workflow.yml`, and MUST follow those steps. The existing registry is the source of truth during reconciliation: preserve its selected ID when the candidate still contains a valid matching `workflow.yml`; use the built-in `speckit` value only when no valid selection exists or the selected workflow was removed. The registry always writes `active_workflow`, and a registry MUST never retain an active ID whose `workflow.yml` is absent.
 
 ### Extension declaration format
 
@@ -141,6 +148,7 @@ hooks:
   before_implement:
     - extension: v-model-extension-pack
       command: v_model.prepare
+      script: ".specify/extensions/com.example.publisher.strict-tdd-workflow/hooks/v_model/prepare.py"
       enabled: true
       optional: false
       prompt: Run the V-Model preparation hook?
@@ -150,10 +158,29 @@ hooks:
 
 The local `.specify/extensions.yml` retains its consumer-owned `installed` and
 `settings` keys and uses the same `required_extensions`,
-`optional_extensions`, and `hooks` keys shown above. Requirement entries are
-merged by extension ID; incompatible constraints for one ID refuse the
-install. Hook entries merge by stage, with atom entries preceding local
-entries, except that an exact local hook identity replaces the atom entry.
+`optional_extensions`, and `hooks` keys shown above. The `script` field is a
+repository-relative path in the canonical output; it is required for an
+atom-contributed hook and MUST resolve to the copied file described in step 5.
+Requirement entries are merged by extension ID. The effective constraint is
+the logical intersection of all declarations for that ID, serialized as a
+comma-separated conjunction of normalized constraints sorted bytewise. A
+non-empty compatible intersection is therefore preserved rather than selected
+by last-writer-wins. If an ID is both required and optional, it appears only
+in `required_extensions`; required status wins. An empty intersection or
+conflicting non-constraint metadata refuses the install. The resulting lists
+are sorted by extension ID, and hook entries use the stable atom-before-local
+ordering described above.
+
+The generated canonical file records the atom IDs contributing each merged
+entry in an `extension_contributions` map in
+`workflow-registry.json`. Each map value contains the atom's original
+`required_extensions`, `optional_extensions`, and hook identities (including
+`script`), so reconciliation can remove all entries owned by an atom and
+recompute the three canonical keys from the remaining active atom fragments
+plus local declarations. Atom-owned entries are never retained just because
+they happen to remain in the previous serialized file; local entries are
+preserved. The map is install metadata and is not consumed by the extension
+runner.
 
 Validator behaviour: on install, every `required_extensions` entry must name a
 package installed in the local `.specify/extensions/` whose installed semantic
@@ -175,11 +202,11 @@ not exact pins.
 ## Decisions for `/speckit-specify`
 
 1. **Single active workflow**: `active_workflow` is single-valued in v1. Multi-active selection is deferred to a later version.
-2. **Hook precedence**: atom hooks run first and local hooks run last. An exact local hook identity (`stage`, `extension`, `command`) replaces the atom entry.
+2. **Hook precedence and order**: atom hooks run first, grouped by ascending atom ID and then hook identity; local hooks run last in canonical local order. An exact local hook identity (`stage`, `extension`, `command`, `script`) replaces the atom entry.
 3. **Extension installation**: `haex install` refuses missing required extensions; the operator installs external packages separately.
 4. **Constitution-fragment merging**: append a new `## Workflow-Contributed Rules` section sourced by workflow atom ID through the existing multi-source merge.
 5. **Bundled workflow status**: the bundled `speckit` workflow coexists with adopted workflows; `active_workflow` selects the binding workflow.
-6. **Downgrade/removal**: removed workflow atoms are delete-orphaned in the same transaction. If the removed atom was active, `active_workflow` resets to `speckit`.
+6. **Downgrade/removal**: removed workflow atoms are delete-orphaned in the same transaction. Their recorded extension requirements and hooks are removed and the canonical extension configuration is recomputed from remaining active atoms plus local declarations. If the removed atom was active, `active_workflow` resets to `speckit`; otherwise a still-valid existing selection is preserved.
 
 ## Success criteria (measurable outcomes)
 
@@ -201,6 +228,20 @@ not exact pins.
 - A transaction that fails after staging or during publication restores all
   previous output roots and leaves no partially published workflow, hook,
   extension, registry, or constitution output.
+- Two atoms contributing hooks to one stage are serialized and executed in
+  ascending atom-ID order, independent of consumer declaration or resolution
+  order; atom hooks still precede local hooks.
+- Compatible requirements for one extension ID serialize to the normalized
+  constraint intersection; required-versus-optional resolves to required, and
+  an empty intersection refuses. The test asserts the exact canonical YAML
+  bytes for all three cases.
+- Removing one adopted atom and reinstalling removes its workflow, copied
+  hooks, requirements, and hook declarations while preserving local entries;
+  removing a non-active atom preserves a still-valid adopted
+  `active_workflow`, and removing the active atom resets it to `speckit`.
+- Every atom hook's `script` resolves to one copied regular file under its
+  atom-owned extension directory; missing or mismatched mappings refuse before
+  publication.
 
 ## Deferred to later specs
 
