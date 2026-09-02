@@ -152,7 +152,8 @@ coordinator MUST hold the exclusive install lock and follow this protocol:
    `.haex-hive.next/` and `.specify.next/`. The `.haex-hive.next/` view contains
    the candidate `install.lock` and `visibility.json`; the `.specify.next/`
    view contains generated extensions output, workflow files, hook files, and a
-   generation record carrying the same generation ID. The consumer-owned
+   `.haex-hive-generation.json` record with `{ "generation_id": "...", "root": ".specify/" }`.
+   The consumer-owned
    `.specify/extensions.local.yml` is copied byte-for-byte when a complete
    `.specify.next/` view is assembled, but is never generated, edited, or
    deleted.
@@ -165,11 +166,15 @@ coordinator MUST hold the exclusive install lock and follow this protocol:
    (`.specify/` -> `.specify.prev/`, then `.specify.next/` -> `.specify`, with
    parent-directory fsyncs). Commit `.haex-hive/` second through
    `publish_generation`, with `visibility.json` naming both participating roots
-   and the candidate generation ID. Publishing that marker is the sole
-   repository-wide visibility event; until it is published, a candidate root
-   paired with the previous marker is unavailable and must not be accepted by
-   readers.
-4. After the marker swap and a cross-root post-write verification, remove both
+   (`[".haex-hive/", ".specify/"]`) and the candidate generation ID. Publishing
+   that marker is the sole repository-wide visibility event; until it is
+   published, a candidate root paired with the previous marker is unavailable
+   and must not be accepted by readers.
+4. After the marker swap, verify that both live roots carry the candidate
+   generation ID and that the marker names both roots. If this verification
+   fails, restore `.specify/` from `.specify.prev/` and let the
+   `publish_generation` rollback restore `.haex-hive/`; retain both `.prev/`
+   siblings and report the failure. After successful verification, remove both
    `.haex-hive.prev/` and `.specify.prev/` and fsync their parent directories.
    Cleanup is not part of the visibility event and is retry-safe.
 
@@ -261,7 +266,7 @@ END
 **Invariants**:
 
 - No workflow-atom-derived file is written before `[validate_workflow_paths]`, `[load_workflow_fragment]`, `[merge_extensions]`, and `[validate_required_extensions]` all pass.
-- `.specify/extensions.local.yml` is NEVER read, written, or deleted outside `[load_local_source]`, which is read-only.
+- The live `.specify/extensions.local.yml` is NEVER written or deleted by the runtime. It is read by `[load_local_source]`; the cross-root staging step may copy those bytes into `.specify.next/` without changing the live consumer-owned file.
 - After a successful install, every resolved adopted `speckit-workflow` atom results in exactly one directory under `.specify/workflows/`; bundled `.specify/workflows/speckit/` is untouched by atom adoption.
 - A refused install, including invalid paths, broken YAML, missing required extensions, or multiple workflow atoms, creates no new atom directory and preserves the previous published generation.
 
