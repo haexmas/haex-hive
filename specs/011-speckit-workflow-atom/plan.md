@@ -6,7 +6,7 @@
 
 ## Summary
 
-Extend the haex-hive atom-manifest schema with a new `speckit-workflow` atom kind that carries a `workflow.yml` payload plus optional constitution fragment, extensions declaration, and per-hook scripts. On `haex install` these files publish under stable, atom-owned paths under `.specify/workflows/` and `.specify/extensions/workflow-atoms/`; the constitution fragment merges into `.haex-hive/constitution.md` via the existing multi-source flow; a new `active_workflow` field in `workflow-registry.json` decides which workflow is binding. The spec's 10 FRs, 6 SCs, and 4 user stories translate into a single-project Python subpackage `src/haex_hive/workflow/` plus a reserved namespace of new error types and exit-code slots. Reader-side, a `resolve_active_workflow(repo_root)` helper hides the fallback logic from downstream speckit skills.
+Extend the haex-hive atom-manifest schema with a new `speckit-workflow` atom kind that carries a `workflow.yml` payload plus optional constitution fragment, extensions declaration, and per-hook scripts. On `haex install` these files publish under stable, atom-owned paths under `.specify/workflows/` and `.specify/extensions/workflow-atoms/`; the constitution fragment merges into `.haex-hive/constitution.md` via the existing multi-source flow; a new `active_workflow` field in `workflow-registry.json` decides which workflow is binding. The spec's 10 FRs, 6 SCs, and 4 user stories translate into a single-project Python subpackage `src/haex_hive/workflow/` plus a reserved namespace of diagnostic keys that reuse existing exit-code categories. Reader-side, a `resolve_active_workflow(repo_root)` helper hides the fallback logic from downstream speckit skills.
 
 ## Technical Context
 
@@ -17,8 +17,8 @@ Extend the haex-hive atom-manifest schema with a new `speckit-workflow` atom kin
 **Target Platform**: Linux, macOS, Windows CLI (single-project Python CLI baseline). No new platform-specific primitives beyond what Spec 008 already ships.
 **Project Type**: single-project Python CLI (Spec 007 baseline).
 **Performance Goals**: `haex install` latency budget unchanged; the workflow-atom resolver adds one YAML parse per adopted workflow atom and a single JSON Schema validate against `workflow-registry.v1.schema.json`. Sub-100ms for the resolver on typical adoption (≤5 workflow atoms). No new I/O beyond what atom resolution already does.
-**Constraints**: no absolute paths (Principle II: critical because the workflow.yml payload's own path fields must be validated by `RepoRelativePath.validate` + containment check against BOTH atom root and consumer root); no secrets in workflow.yml, constitution fragment, extensions.yml (Principle I: enforced by the existing `validate_no_plaintext_secrets` for constitution fragments; workflow.yml and extensions.yml add analogous checks); SHA-pinning on adoption (Principle IV: inherited from `.haex-hive.json` atom entries); constitution-merge review gate via `--accept-merged` (Principle VI: reused unchanged); concealment guard on workflow-contributed constitution fragments (Principle VIII: reused unchanged).
-**Scale/Scope**: initial target ≤5 workflow atoms per project (typical: 1). No hard cap; the registry is a list, not a keyed table, and constraint-conflict resolution is O(n²) worst-case in atom count: acceptable at this scale.
+**Constraints**: no absolute paths (Principle II: critical because source paths must resolve below the atom root and planned destinations below the consumer root; reject traversal and symlink/reparse-point escapes); no secrets in workflow.yml, referenced scripts, constitution fragment, extensions.yml (Principle I: scan every validated payload before publication); SHA-pinning on adoption (Principle IV: inherited from `.haex-hive.json` atom entries); constitution-merge review gate via `--accept-merged` (Principle VI: reused unchanged); concealment guard on workflow-contributed constitution fragments and validated scripts (Principle VIII: reused unchanged).
+**Scale/Scope**: initial target ≤5 workflow atoms per project (typical: 1). No hard cap; the registry is one object keyed by workflow id, and constraint-conflict resolution is O(n²) worst-case in atom count: acceptable at this scale.
 
 ## Constitution Check
 
@@ -28,14 +28,14 @@ Constitution v1.4.0 (via `.haex-hive/constitution.md` at generation `g_20260902T
 
 | Principle | Verdict | Rationale |
 |---|---|---|
-| I. No Secrets in Git (NON-NEGOTIABLE) | PASS | Workflow atoms MUST NOT contribute secrets. FR-010 already runs the concealment guard on constitution fragments; the plan adds analogous `validate_no_plaintext_secrets` to workflow.yml and extensions.yml payloads before publication. |
+| I. No Secrets in Git (NON-NEGOTIABLE) | PASS | Workflow atoms MUST NOT contribute secrets. FR-010 already runs the concealment guard on constitution fragments; the plan adds analogous `validate_no_plaintext_secrets` to workflow.yml, every referenced hook script, and extensions.yml payloads before publication. |
 | II. No Local Absolute Paths in Versioned Config (NON-NEGOTIABLE) | PASS | FR-001 mandates path containment via `RepoRelativePath.validate` on every `contributes.speckit_*` source, checked against both the atom root and the consumer repo root. The plan lifts these validators from Spec 007 (existing) and adds explicit path checks for workflow.yml's own `steps[].script` fields. |
 | III. Project Identity Is Device-Independent (NON-NEGOTIABLE) | PASS | Workflow atoms are addressed by `(source, revision, atom-id)` triples exactly as any other atom. Nothing in this spec touches the identity layer. |
 | IV. Cross-Repo References Pin Immutable Revisions (NON-NEGOTIABLE) | PASS | Workflow atoms are adopted via `.haex-hive.json` `atoms[].revision`: the same 40-char SHA discipline as every other atom. No branch/HEAD adoption. |
 | V. Constitution Is a Contract, Not a Vibe (NON-NEGOTIABLE) | PASS | Workflow-atom constitution fragments merge into a designated `## Workflow-Contributed Rules` section with atom-id byline (FR-004). Section boundaries and byline make provenance auditable. |
 | VI. Self-Modifying Instructions Are Always Review-Gated (NON-NEGOTIABLE) | PASS | The constitution merge remains a two-phase `--llm=file` / `--accept-merged` operation. No new bypass introduced; the multi-source merge machinery is reused as-is. |
 | VII. Trust Boundaries Are Enforced Between Devices, Not Just Between Users | N/A | This spec adds no cross-device flow; it operates within one satellite's install transaction. |
-| VIII. Reviewability Is the Only Trustworthy Base | PASS | `validate_no_concealment_instructions` runs against every workflow-atom constitution fragment as part of the accepted merged assembly (FR-010). The plan additionally runs safety validators on workflow.yml and extensions.yml payload bodies before publication. |
+| VIII. Reviewability Is the Only Trustworthy Base | PASS | `validate_no_concealment_instructions` runs against every workflow-atom constitution fragment as part of the accepted merged assembly (FR-010). The plan additionally runs safety validators on workflow.yml, every referenced hook script, and extensions.yml payload bodies before publication. |
 | §Development Workflow: Declared speckit workflow adherence | PASS | This plan is produced through `/speckit-plan` per the declared `.specify/workflows/speckit/workflow.yml` step. Next step per the same workflow is `review-plan` (PR review gate) → `/speckit-tasks`. |
 | §Development Workflow: phasing discipline | PASS | Spec 011 lives in Phase 2/3 territory (compiler-adjacent) but its runtime dependencies (Spec 007, Spec 008) are landed. No Phase 4+ prerequisites needed. |
 | §Governance: Conventional Commits | PASS | Every commit landed via the declared workflow will use `feat(...)`, `fix(...)`, `docs(...)`, `refactor(...)`, `test(...)`, or `spec(...)` prefixes as appropriate. |
@@ -84,7 +84,7 @@ src/haex_hive/
 │   └── data/
 │       └── workflow-registry.v1.schema.json  # NEW: vendored copy of the contract
 ├── util/
-│   └── exit_codes.py                      # EXTENDED: 8 new numeric slots (see §Reserved diagnostic keys)
+│   └── exit_codes.py                      # existing categories reused (see §Reserved diagnostic keys)
 └── cli/
     └── install.py                         # EXTENDED: install() calls workflow.resolver.validate_required_extensions before publishing
 
@@ -96,8 +96,8 @@ tests/
     │   ├── test_fragment.py
     │   └── test_constraint.py
     ├── contract/
-    │   ├── test_workflow_registry_schema.py
-    │   └── test_atom_manifest_speckit_workflow.py
+    │   ├── test_workflow_registry_schema.py       # SemVer, identity, and unknown-field cases
+    │   └── test_atom_manifest_speckit_workflow.py # cross-root/path and parser cases
     └── integration/
         ├── test_adopt_workflow_atom.py            # US1
         ├── test_required_extension_gate.py        # US2
@@ -107,9 +107,11 @@ tests/
 
 **Structure Decision**: single-project Python CLI. Workflow lives in its own subpackage (`workflow/`) rather than extending `install/` because its concerns (registry, constraint merge, active-workflow selection) are orthogonal to the install transaction: install uses the resolver, but the resolver itself has its own model, contracts, and lifecycle. Path chosen matches Spec 008's convention of one subpackage per concern.
 
+Contract coverage MUST include valid SemVer prerelease/build metadata and invalid trailing content, registry-key/`atom_id` mismatches, duplicate adopted atom ids, all three workflow contribution fields being parsed, source containment under the atom root, destination containment under the consumer root, and symlink/reparse-point escapes for both roots. Constraint tests MUST cover exact/lower intersections and refusal of unsupported syntax rather than silently serializing a lossy intersection.
+
 ## Reserved Diagnostic Keys and Exit Codes
 
-The spec (SC-005 tick-note) already reserved eight diagnostic keys; this plan assigns numeric exit-code slots. All slots reuse existing categories from `haex_hive.util.exit_codes` where semantically appropriate; new numeric values are reserved only where no fit exists.
+The spec (SC-005 tick-note) defines nine diagnostic keys. This plan adds zero numeric exit-code values: every refusal reuses an existing category from `haex_hive.util.exit_codes`, and warnings remain stderr-only with exit code 0.
 
 | Diagnostic key | Category | Exit code | Trigger |
 |---|---|---|---|
@@ -123,7 +125,7 @@ The spec (SC-005 tick-note) already reserved eight diagnostic keys; this plan as
 | `workflow-atom-extension-id-collision` | Input | reuse `INPUT_REFUSE` (2) | atom's `required_extensions[]` names the same id twice within a single atom |
 | `workflow-atom-reset-to-default` | Warning (stderr only) | not an exit code | downgrade removed the atom that `active_workflow` named; auto-reset to null |
 
-**Note**: the "reuse existing categories" discipline avoids inventing new exit codes for cases that fit cleanly into the existing FR-006 exit-code table. Only if a spec review objects at the review-plan gate would we add fresh numeric slots.
+**Note**: the "reuse existing categories" discipline avoids inventing new exit codes for cases that fit cleanly into the existing FR-006 exit-code table. The diagnostic key, not a new numeric value, distinguishes workflow-specific faults.
 
 ## Phases
 
@@ -132,9 +134,9 @@ The spec (SC-005 tick-note) already reserved eight diagnostic keys; this plan as
 Open decisions the spec left implicit that the plan resolves during research:
 
 1. **Registry schema shape**: is `workflow-registry.json` a strictly-versioned schema, or a loose JSON document with an ignored-unknown-fields policy? Decision (research): strictly versioned via `workflow-registry.v1.schema.json`, reject unknown top-level fields to catch typos, allow unknown per-workflow entries under `workflows.<id>` to accommodate future speckit-community fields.
-2. **Constraint merge algorithm**: how do we combine two exact-or-lower-bound constraints for the same extension id in an order-independent way? Decision (research): normalise to canonical form (exact wins over lower-bound; two lower bounds merge to the higher; exact-vs-exact must match or refuse; exact-vs-lower-bound requires exact ≥ lower). Documented as an algorithm in research.md and mirrored in `workflow/constraint.py`.
+2. **Constraint merge algorithm**: how do we combine two exact-or-lower-bound constraints for the same extension id in an order-independent way? Decision (research): normalise to canonical form (exact wins over lower-bound; two lower bounds merge to the higher; exact-vs-exact must match or refuse; exact-vs-lower-bound requires exact ≥ lower). Unsupported upper, compatible, wildcard, comma, and caret syntax refuses as `invalid-constraint`; no lossy composite is serialized. Documented as an algorithm in research.md and mirrored in `workflow/constraint.py`.
 3. **Extension-directory naming discipline**: should atom-contributed hook scripts live under `.specify/extensions/<atom-id>/` (namespace overlap with speckit-community extensions) or under a reserved `.specify/extensions/workflow-atoms/<atom-id>/` sub-namespace? Decision (research, ratified by spec's US1 acceptance scenario 1): reserved `workflow-atoms/` prefix. Prevents any possibility of an atom shadowing a legitimately-installed community extension.
-4. **Constitution fragment merge byline format**: how is a workflow-atom's fragment attributed inside the shared `## Workflow-Contributed Rules` section? Decision (research): each fragment prefixed by a subsection heading `### From atom \`<atom-id>\` (revision \`<short-sha>\`)` followed by the fragment body. Multiple fragments append in include-order under the shared section header.
+4. **Constitution fragment merge byline format**: how is a workflow-atom's fragment attributed inside the shared `## Workflow-Contributed Rules` section? Decision (research): each fragment prefixed by a subsection heading `### From atom \`<atom-id>\` (revision \`<short-sha>\`)` followed by the fragment body. Multiple fragments append in bytewise UTF-8 atom-id order under the shared section header.
 5. **Diagnostic-key exit-code discipline**: reuse existing category codes vs new numeric slots? Decision (research, already anchored in §Reserved Diagnostic Keys above): reuse existing codes with disambiguation via the diagnostic key string. No new numeric slots needed for MVP.
 
 ### Phase 1: Design & Contracts (produces `data-model.md`, `contracts/`, `quickstart.md`)
@@ -144,10 +146,10 @@ Prerequisites: research.md complete.
 **data-model.md** captures five new frozen dataclasses:
 
 - `WorkflowAtomManifest(atom_id, workflow_path, constitution_path?, extensions_path?, hooks_dir?)`: the atom-manifest v2 extension. Constructor validates all paths via `RepoRelativePath.validate` + containment.
-- `WorkflowRegistry(schema_version, active_workflow, workflows: dict[str, WorkflowEntry])`: the shape of `.specify/workflows/workflow-registry.json`. `WorkflowEntry(id, name, version, source: Literal["bundled", "atom"], installed_at, updated_at, atom_id?)`. IO via `from_json` / `to_json_bytes` with strict schema-validate.
-- `WorkflowFragment(atom_id, revision, required_extensions, optional_extensions, hooks)`: parsed representation of an atom-contributed extensions.yml fragment. `required_extensions` / `optional_extensions` are `list[ExtensionRequirement(id, version_constraint, homepage?)]`.
+- `WorkflowRegistry(schema_version, active_workflow, workflows: dict[str, WorkflowEntry])`: the shape of `.specify/workflows/workflow-registry.json`, one canonical object keyed by workflow id. `WorkflowEntry(name, version, source: Literal["bundled", "atom"], installed_at, updated_at, atom_id?, atom_revision?, unknown_extras)`. IO via `from_json` / `to_json_bytes` with schema validation, a post-schema `workflows`-key/`atom_id` identity check, and round-tripping of unknown per-entry metadata.
+- `WorkflowFragment(atom_id, revision, required_extensions, optional_extensions, hooks)`: parsed representation of an atom-contributed extensions.yml fragment. `required_extensions` / `optional_extensions` are `list[ExtensionRequirement(id, version_constraint, homepage?)]`; constraints are exactly Spec 007's `X.Y.Z` or `>=X.Y.Z` grammar.
 - `ResolvedExtensionRequirement(extension_id, effective_constraint, sources: list[tuple[atom_id, kind]])`: result of merging fragments across all adopted workflow atoms. Records which atoms contributed to each requirement for diagnostics.
-- `WorkflowResolution(active_id, workflow_path, source: Literal["bundled", "atom", "fallback"], diagnostics: list[str])`: return value of `resolve_active_workflow(repo_root)`. `fallback` when `active_workflow` names an unresolvable id.
+- `WorkflowResolution(active_id, workflow_path, source: Literal["bundled", "atom", "fallback"], diagnostics: list[str])`: return value of `resolve_active_workflow(repo_root)`. IDs are validated before path construction and the resolved path is contained under `.specify/workflows/`; `fallback` covers invalid/unresolvable selections.
 
 **contracts/**:
 
@@ -175,8 +177,8 @@ Prerequisites: research.md complete.
 
 Re-evaluated against the same principles after data-model + contracts + quickstart draft:
 
-- **Principle I / VIII**: the design preserves the concealment / secret guards (FR-010 unchanged; plan adds analogous checks to workflow.yml and extensions.yml payloads).
-- **Principle II**: `WorkflowAtomManifest`'s constructor validates all paths at parse time; `workflow.yml`'s own `steps[].script` and `hooks[].script` fields are validated in `workflow/fragment.py` before publication.
+- **Principle I / VIII**: the design preserves the concealment / secret guards (FR-010 unchanged; plan adds analogous checks to workflow.yml, every referenced hook script, and extensions.yml payload bodies).
+- **Principle II**: `WorkflowAtomManifest`'s constructor validates all source paths at parse time; the resolver validates source containment under the atom root and planned destination containment under the consumer root, including traversal and symlink/reparse-point handling. `workflow.yml`'s own `steps[].script` and `hooks[].script` fields are validated in `workflow/fragment.py` before publication.
 - **Principle IV**: `WorkflowRegistry.WorkflowEntry.atom_id` (when `source == "atom"`) is a reverse-DNS id; the underlying `revision` is recorded in `install.lock.atoms[]` already (Spec 008 machinery, unused-and-unchanged here).
 - **Principle VI**: constitution merge remains gated by `--accept-merged`. `## Workflow-Contributed Rules` section is populated only through the merge candidate; no direct write.
 - **§Development Workflow**: `resolve_active_workflow` is what the constitution's declared-workflow bullet resolves to at read time. The design closes the loop.

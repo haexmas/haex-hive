@@ -19,7 +19,7 @@ This delta document defines three new optional `contributes.*` fields that Spec 
   - Content parses as YAML
   - Content passes `validate_no_plaintext_secrets`
   - Any string field passes `validate_no_concealment_instructions`
-  - Any `steps[].script` or `hooks[].script` reference inside the yml body passes `RepoRelativePath.validate` + containment against the atom root
+  - Any `steps[].script` or `hooks[].script` reference inside the yml body passes `RepoRelativePath.validate` and names a file below the declared `speckit_hooks` source directory; every such file is included in the directory publication below
 
 ### `contributes.speckit_extensions`
 
@@ -32,6 +32,12 @@ This delta document defines three new optional `contributes.*` fields that Spec 
   - Content parses as YAML and matches the fragment contract
   - Every `required_extensions[i].version_constraint` and `optional_extensions[i].version_constraint` parses as a `VersionConstraint`
   - Every `hooks.<stage>[i].script` reference passes `RepoRelativePath.validate` and resolves to a file under the atom's `speckit_hooks` directory
+
+### Cross-field validation
+
+`contributes.speckit_extensions` and `contributes.speckit_hooks` are workflow-specific payloads. If either field is present, `contributes.speckit_workflow` MUST also be present and resolve to a valid workflow file. An atom MUST NOT publish workflow-specific payloads without declaring the workflow they belong to.
+
+The `steps[].script` and `hooks[].script` references in that workflow are source references, not independent publication inputs. They MUST resolve below the declared `speckit_hooks` directory and every referenced regular file MUST be copied by the `speckit_hooks/*` publication row. A reference outside that directory, or a script that is not included by that row, is refused before staging.
 
 ### `contributes.speckit_hooks`
 
@@ -57,7 +63,7 @@ When an atom carries these fields, `haex install` publishes the payloads as foll
 
 ## Delete-orphans behaviour
 
-When an operator removes the atom from `.haex-hive.json` and re-runs `haex install`, the transaction deletes `.specify/workflows/<atom-id>/` and `.specify/extensions/workflow-atoms/<atom-id>/` atomically as part of the R1 rename-swap generation. The constitution fragment disappears from the merged output because the atom no longer contributes. If `workflow-registry.json.active_workflow` named the removed atom, it resets to `null` in the same generation with `key=workflow-atom-reset-to-default` on stderr.
+When an operator removes the atom from `.haex-hive.json` and re-runs `haex install`, the generated live trees delete `.specify/workflows/<atom-id>/` and `.specify/extensions/workflow-atoms/<atom-id>/` through their respective R1 rename-swap publications. Each live-tree replacement is atomic; no cross-tree atomicity is claimed. A retry after interruption converges all trees to the same adopted-atom set. The constitution fragment disappears from the merged output because the atom no longer contributes. If `workflow-registry.json.active_workflow` named the removed atom, it resets to `null` in the same reconciliation with `key=workflow-atom-reset-to-default` on stderr.
 
 ## Concrete example
 

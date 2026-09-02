@@ -68,7 +68,7 @@ Parsed representation of a workflow atom's contributed `extensions.yml`.
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `str` | Speckit-community extension id. |
-| `version_constraint` | `VersionConstraint` | Parsed per Spec 007's grammar (`>=X.Y.Z`, `<=X.Y.Z`, `X.Y.Z`, `~=X.Y.Z`). |
+| `version_constraint` | `VersionConstraint` | Parsed per Spec 007's grammar (`X.Y.Z` or `>=X.Y.Z`); unsupported forms refuse with `key=invalid-constraint`. |
 | `homepage` | `str \| None` | Optional URL for diagnostics. |
 
 Construction: `version_constraint` parse-error at load time raises `InvalidConstraintError` (`key=invalid-constraint`, exit `INPUT_REFUSE`).
@@ -81,8 +81,8 @@ Represents one hook mapping contributed by a workflow atom.
 |---|---|---|
 | `stage` | `str` | Enum: `before_constitution`/`after_constitution`/`before_specify`/`after_specify`/`before_plan`/`after_plan`/`before_tasks`/`after_tasks`/`before_implement`/`after_implement`/`before_checklist`/`after_checklist`/`before_analyze`/`after_analyze`/`before_taskstoissues`/`after_taskstoissues` per existing `.specify/extensions.yml` shape. |
 | `command` | `str` | Dotted command name (e.g. `speckit.strict-tdd.pre-hook`); the runner maps dot to hyphen. |
-| `script_path` | `str` | Repo-relative path under `.specify/extensions/workflow-atoms/<atom-id>/`. Validated at parse; must resolve to a file that was copied from the atom's `hooks_dir`. |
-| `enabled` | `bool` | Default `true`; local overrides may disable. |
+| `script_path` | `str` | Repo-relative path under `.specify/extensions/workflow-atoms/<atom-id>/`. Validated before publication against both the atom source root and the staged consumer destination; must resolve to a file copied from the atom's `hooks_dir`. |
+| `enabled` | `bool` | Default `true`; an exact local override is authoritative and may disable the atom hook with `false`. |
 | `optional` | `bool` | Default `true` for atom-contributed hooks. |
 | `description` | `str` | For operator display. |
 | `prompt` | `str \| None` | Optional user-facing prompt when the hook is invoked. |
@@ -128,6 +128,12 @@ Return type of `resolve_active_workflow(repo_root)`.
 - Every `WorkflowFragment` contributes zero or more `ExtensionRequirement` entries; requirements from multiple fragments merge into `ResolvedExtensionRequirement` per-id via R2's algorithm.
 - Every `WorkflowFragment.hooks[stage]` entry contributes one `HookEntry` to the transaction's atom-first merge with locally-declared hooks in `.specify/extensions.yml`.
 
+### Adoption and registry identity
+
+Before workflow resolution, flatten all adopted atom includes and reject a duplicate workflow atom id with Spec 007's existing `AtomIdCollisionError` (`key=atom-id-collision`). This applies even when the duplicate comes from two different source entries; no source or revision silently wins. The synthetic bundled `speckit` entry is not an adopted atom and remains unaffected.
+
+Registry parsing performs the JSON Schema validation first, then a post-schema identity check: every entry under `workflows[<key>]` with `source == "atom"` MUST have `atom_id == <key>`. A mismatch is refused before publication or reader-side path construction. `WorkflowEntry.unknown_extras` contains all unrecognised per-entry fields; `to_json_bytes()` writes those fields back unchanged, merges known fields deterministically, and never lets an extra overwrite a known field.
+
 ---
 
 ## State machine of an install with workflow atoms
@@ -169,7 +175,7 @@ START
 [compose_install_lock + visibility.json + workflow-registry.json]
   │
   ▼
-[publish_generation]  (Spec 008: rename-swap; the whole `.haex-hive.next/` and `.specify/workflows/**` and `.specify/extensions/workflow-atoms/**` deltas commit atomically)
+[publish_generation]  (Spec 008: atomic rename-swap for each live root and only the files passed to that call; no cross-tree atomicity guarantee)
   │
   ▼
 END
@@ -179,14 +185,14 @@ END
 
 - No workflow-atom-derived file (workflow.yml, hooks, fragments) is written before `[validate_workflow_paths]` and `[validate_required_extensions]` pass.
 - The `workflow-registry.json`'s `active_workflow` field is preserved across install runs unless (a) an operator edits it manually, or (b) the atom it names is removed (auto-reset to `null` with `key=workflow-atom-reset-to-default` diagnostic).
-- Every atom that appears in `.haex-hive.json`'s `atoms[]` and is a workflow atom appears exactly once in `WorkflowRegistry.workflows` after publication. The bundled `speckit` entry is unaffected by atom adoption.
+- Every atom that appears in `.haex-hive.json`'s `atoms[]` and is a workflow atom appears exactly once in `WorkflowRegistry.workflows` after duplicate-id validation. The bundled `speckit` entry is unaffected by atom adoption.
 
 ---
 
 ## Boundaries
 
-- **Spec 007** (atom-manifest schema, ConsumerManifest, VersionConstraint): reused unchanged. `WorkflowAtomManifest` is a specialisation of the base atom.
-- **Spec 008** (install transaction, rename-swap, multi-source constitution merge): reused unchanged. Workflow-atom deltas participate in the same `publish_generation` call.
+- **Spec 007** (atom-manifest schema, `ConsumerManifest`, `VersionConstraint`): reused with the schema, model, and parser extended for `contributes.speckit_workflow`, `contributes.speckit_extensions`, and `contributes.speckit_hooks`. Parser coverage MUST verify these fields while preserving existing constitution, spec, rules, hooks, and skills handling. `WorkflowAtomManifest` is a specialisation of the base atom.
+- **Spec 008** (install transaction, rename-swap, multi-source constitution merge): reused for each participating live root. `publish_generation` is atomic only for the live directory and staged files passed to that call; a cross-tree commit protocol is out of scope. Retry-after-interruption convergence remains required.
 - **Constitution v1.4.0** (§Development Workflow → Declared speckit workflow adherence): the `resolve_active_workflow` helper is what that clause resolves to at read-time.
 - **Spec 010** (compiler adapters): out of scope. When Spec 010 lands, its adapter atoms may co-exist with workflow atoms under `.specify/workflows/` and `.specify/extensions/workflow-atoms/`.
 - **specifyr extension-install** (external): out of scope. Workflow atoms declare which extensions they need; installation is delegated.
