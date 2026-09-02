@@ -1,6 +1,6 @@
 <!--
 Sync Impact Report (2026-09-02 amendment)
-Version change: 1.3.0 → 1.3.1 (PATCH: workflow-discipline clarification, no principle change)
+Version change: 1.3.0 → 1.4.0 (MINOR: material expansion of the development workflow contract)
 Modified sections:
 - ## Development Workflow — added bullet "Declared speckit workflow adherence" referencing `.specify/workflows/speckit/workflow.yml` as the binding source; forward-references Spec 011 (planned) for per-project workflow selection via a `speckit-workflow` atom.
 Added principles: none
@@ -283,4 +283,4 @@ agent unfiltered — which is every cross-tool handoff in this system.
   Phase 7) validates that no committed file violates Principles I, II, or IV
   mechanically.
 
-**Version**: 1.3.1 | **Ratified**: 2026-08-26 | **Last Amended**: 2026-09-02
+**Version**: 1.4.0 | **Ratified**: 2026-08-26 | **Last Amended**: 2026-09-02
