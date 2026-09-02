@@ -121,7 +121,7 @@ On `haex install`:
 }
 ```
 
-The constitution's v1.4.0 clause becomes concrete: readers look at `.specify/workflows/workflow-registry.json.active_workflow`, then load the matching `workflow.yml`, and MUST follow those steps. The existing registry is the source of truth during reconciliation: preserve its selected ID when the candidate still contains a valid matching `workflow.yml`; use the built-in `speckit` value only when no valid selection exists or the selected workflow was removed. The registry always writes `active_workflow`, and a registry MUST never retain an active ID whose `workflow.yml` is absent.
+The constitution's v1.4.0 clause becomes concrete: readers look at `.specify/workflows/workflow-registry.json.active_workflow`, then load the matching `workflow.yml`, and MUST follow those steps. The existing registry is the source of truth during reconciliation: preserve its selected ID when the candidate still contains a valid matching `workflow.yml`; reset `active_workflow` to `null` when no valid selection exists or the selected workflow was removed, so readers use the implicit bundled `speckit` default. The registry always writes `active_workflow`, and a registry MUST never retain an active ID whose `workflow.yml` is absent.
 
 ### Extension declaration format
 
@@ -134,10 +134,10 @@ the destination configuration always uses the canonical keys below.
 ```yaml
 required_extensions:
   - id: v-model-extension-pack
-    version_constraint: ">=0.7.2, <1.0.0"
+    version_constraint: ">=0.7.2"
     homepage: https://speckit-community.github.io/extensions/v-model-extension-pack
   - id: bugfix-workflow
-    version_constraint: "~=1.0.0"
+    version_constraint: "1.0.0"
     homepage: https://speckit-community.github.io/extensions/bugfix-workflow
 
 optional_extensions:
@@ -162,14 +162,16 @@ The local `.specify/extensions.yml` retains its consumer-owned `installed` and
 repository-relative path in the canonical output; it is required for an
 atom-contributed hook and MUST resolve to the copied file described in step 5.
 Requirement entries are merged by extension ID. The effective constraint is
-the logical intersection of all declarations for that ID, serialized as a
-comma-separated conjunction of normalized constraints sorted bytewise. A
-non-empty compatible intersection is therefore preserved rather than selected
-by last-writer-wins. If an ID is both required and optional, it appears only
-in `required_extensions`; required status wins. An empty intersection or
-conflicting non-constraint metadata refuses the install. The resulting lists
-are sorted by extension ID, and hook entries use the stable atom-before-local
-ordering described above.
+the logical intersection of all declarations for that ID, normalized to Spec
+007's supported `X.Y.Z` exact or `>=X.Y.Z` lower-bound grammar: exact
+constraints must agree, lower bounds retain the strongest lower bound, and an
+exact constraint combined with a lower bound remains exact only when it
+satisfies that bound. An empty intersection refuses the install; no
+comma-separated, tilde, caret, or wildcard constraint is serialized. If an ID
+is both required and optional, it appears only in `required_extensions`;
+required status wins. Conflicting non-constraint metadata also refuses the
+install. The resulting lists are sorted by extension ID, and hook entries use
+the stable atom-before-local ordering described above.
 
 The generated canonical file records the atom IDs contributing each merged
 entry in an `extension_contributions` map in
@@ -206,14 +208,14 @@ not exact pins.
 3. **Extension installation**: `haex install` refuses missing required extensions; the operator installs external packages separately.
 4. **Constitution-fragment merging**: append a new `## Workflow-Contributed Rules` section sourced by workflow atom ID through the existing multi-source merge.
 5. **Bundled workflow status**: the bundled `speckit` workflow coexists with adopted workflows; `active_workflow` selects the binding workflow.
-6. **Downgrade/removal**: removed workflow atoms are delete-orphaned in the same transaction. Their recorded extension requirements and hooks are removed and the canonical extension configuration is recomputed from remaining active atoms plus local declarations. If the removed atom was active, `active_workflow` resets to `speckit`; otherwise a still-valid existing selection is preserved.
+6. **Downgrade/removal**: removed workflow atoms are delete-orphaned in the same transaction. Their recorded extension requirements and hooks are removed and the canonical extension configuration is recomputed from remaining active atoms plus local declarations. If the removed atom was active, `active_workflow` resets to `null` and readers use the bundled default; otherwise a still-valid existing selection is preserved.
 
 ## Success criteria (measurable outcomes)
 
 - **SC-011.1**: Adopting a workflow atom via `.haex-hive.json` publishes `.specify/workflows/<atom-id>/workflow.yml` byte-for-byte matching the atom's contribution.
 - **SC-011.2**: The atom's `constitution.md` fragment appears in the assembled `.haex-hive/constitution.md` after `haex install --accept-merged`.
 - **SC-011.3**: Setting `active_workflow` in `workflow-registry.json` to an adopted-atom workflow ID makes the constitution's declared-speckit-workflow bullet resolve to that workflow's steps (verifiable by an agent-behavioural walkthrough test).
-- **SC-011.4**: Removing a workflow atom from `.haex-hive.json` and re-installing removes the corresponding `.specify/workflows/<atom-id>/` directory in the same transaction. If that atom was active, the transaction resets `active_workflow` to `speckit`; no registry may retain an ID whose `workflow.yml` was deleted.
+- **SC-011.4**: Removing a workflow atom from `.haex-hive.json` and re-installing removes the corresponding `.specify/workflows/<atom-id>/` directory in the same transaction. If that atom was active, the transaction resets `active_workflow` to `null`; no registry may retain an ID whose `workflow.yml` was deleted.
 - **SC-011.5**: A workflow atom declaring a required extension causes `haex install` to refuse with `required-workflow-extension-missing` when the extension is absent and with `required-workflow-extension-incompatible` when the installed version fails its declared `version_constraint`. The conformance suite includes both cases.
 
 ## Required conformance scenarios
@@ -238,7 +240,8 @@ not exact pins.
 - Removing one adopted atom and reinstalling removes its workflow, copied
   hooks, requirements, and hook declarations while preserving local entries;
   removing a non-active atom preserves a still-valid adopted
-  `active_workflow`, and removing the active atom resets it to `speckit`.
+  `active_workflow`, and removing the active atom resets it to `null` so readers
+  use the bundled default.
 - Every atom hook's `script` resolves to one copied regular file under its
   atom-owned extension directory; missing or mismatched mappings refuse before
   publication.
