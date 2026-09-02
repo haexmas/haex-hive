@@ -32,7 +32,7 @@ The `revision` MUST be a full 40-char SHA (Principle IV). The workflow atom is a
 
 ## 2. First install with the atom
 
-Because the atom contributes a `constitution.md` fragment (in addition to the workflow.yml), the multi-source merge path applies. Two-phase flow:
+The multi-source merge path applies only when multiple constitution contributions require merging. The sample atom contributes one `constitution.md`; if the consumer has no other constitution contribution, the single-source path applies. If a base constitution atom is already adopted, this becomes a multi-source install and follows the two-phase flow:
 
 ```console
 $ haex install --llm=file
@@ -86,14 +86,21 @@ $ cat .specify/workflows/workflow-registry.json
   "schema_version": "1.0",
   "active_workflow": null,
   "workflows": {
-    "speckit": { "name": "Full SDD Cycle", "version": "1.0.0", "source": "bundled", ... },
+    "speckit": {
+      "name": "Full SDD Cycle",
+      "version": "1.0.0",
+      "source": "bundled",
+      "installed_at": "2026-09-02T14:30:00Z",
+      "updated_at": "2026-09-02T14:30:00Z"
+    },
     "com.example.publisher.strict-tdd-workflow": {
       "name": "Strict TDD Cycle",
       "version": "1.2.0",
       "source": "atom",
       "atom_id": "com.example.publisher.strict-tdd-workflow",
       "atom_revision": "aabbccddeeff00112233445566778899aabbccdd",
-      ...
+      "installed_at": "2026-09-02T14:30:00Z",
+      "updated_at": "2026-09-02T14:30:00Z"
     }
   }
 }
@@ -106,7 +113,7 @@ $ cat .specify/workflows/workflow-registry.json
 Manually edit `.specify/workflows/workflow-registry.json` to set:
 
 ```json
-"active_workflow": "com.example.publisher.strict-tdd-workflow"
+{"active_workflow": "com.example.publisher.strict-tdd-workflow"}
 ```
 
 Verify:
@@ -143,20 +150,20 @@ Install refuses BEFORE any file publication. Fix by installing the extension and
 With both the bundled and the atom-adopted workflow present, swap by editing `active_workflow`:
 
 ```json
-"active_workflow": "speckit"          # back to bundled
+{"active_workflow": "speckit"}
 ```
 
 or
 
 ```json
-"active_workflow": null                # explicit fallback to bundled
+{"active_workflow": null}
 ```
 
 No `haex install` needed for a swap; the resolver reads `active_workflow` at query time. However, `haex install --verify-only` (when T037 lands) will report the resolved workflow so the operator can confirm the switch.
 
 ## 7. Downgrade: remove the workflow atom
 
-Delete the atom entry from `.haex-hive.json.atoms[]` and re-install:
+This walkthrough assumes that another constitution-contributing source remains adopted as the project's base constitution. Delete only the workflow atom entry from `.haex-hive.json.atoms[]` and re-install:
 
 ```console
 $ haex install
@@ -185,6 +192,8 @@ $ ls .specify/extensions/workflow-atoms/
 ```
 
 The constitution's `## Workflow-Contributed Rules` section is either gone (no atoms contribute rules anymore) or reduced (only remaining atoms' fragments survive).
+
+If the removed workflow atom was the final constitution source, the current install contract refuses with `key=no-sources-declared` before publication. A zero-constitution generation is not part of this walkthrough; retain an additional constitution source when demonstrating removal.
 
 ## 8. Where things live (recap)
 

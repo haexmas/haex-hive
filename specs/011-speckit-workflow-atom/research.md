@@ -39,6 +39,8 @@
 
 **Rationale**: strict top-level catches operator typos on `active_workflow`, `schema_version`, `workflows` before they turn into silent fallbacks. Per-workflow openness lets community extensions add fields (extra metadata, capability declarations) without a Spec 011 revision.
 
+Schema validation is followed by a semantic identity check: for every atom entry, `workflows[<key>].atom_id` MUST equal `<key>`. JSON Schema cannot compare an object property name with a nested value, so a mismatch is rejected by the registry parser before resolution or publication. Unknown per-entry fields are captured in `WorkflowEntry.unknown_extras` and round-tripped unchanged by `to_json_bytes()`.
+
 **Alternatives considered**:
 - **Fully strict schema everywhere**: rejected, blocks community extensions from carrying metadata Spec 011 does not yet know about.
 - **Fully loose top level**: rejected, defeats the "catch typos on `active_workflow`" objective.
@@ -48,19 +50,14 @@
 
 ## R2. Constraint-merge algorithm
 
-**Decision**: Version constraints on the same extension id merge into a canonical form independent of atom declaration order. The algorithm:
+**Decision**: Version constraints on the same extension id merge into a canonical form independent of atom declaration order. Spec 007 supports only exact and lower-bound constraints; unsupported upper, compatible, wildcard, comma, and caret syntax is rejected rather than represented lossy. The algorithm:
 
-1. Parse every atom-declared constraint into a `VersionConstraint` (Spec 007 grammar; supports `>=X.Y.Z`, `<=X.Y.Z`, `X.Y.Z` exact, `~=X.Y.Z` compatible-release).
-2. Group by kind: exact constraints, lower-bound constraints, upper-bound constraints, compatible-release constraints.
+1. Parse every atom-declared constraint into a `VersionConstraint` (Spec 007 grammar; supports `X.Y.Z` exact and `>=X.Y.Z` lower-bound only).
+2. Group by kind: exact constraints and lower-bound constraints.
 3. Reduce:
    - **Exact vs Exact**: identical → keep. Different → refuse with `key=conflicting-constraint`.
    - **Exact vs Lower-bound (`>=X`)**: exact must be `>= X`, else refuse.
-   - **Exact vs Upper-bound (`<=Y`)**: exact must be `<= Y`, else refuse.
-   - **Exact vs Compatible-release (`~=X`)**: exact must be compatible with X, else refuse.
    - **Multiple lower-bounds**: keep the highest.
-   - **Multiple upper-bounds**: keep the lowest.
-   - **Lower-bound > Upper-bound**: refuse (empty range).
-   - **Compatible-release + Compatible-release**: keep the higher; refuse if incompatible.
 4. Emit a single canonical `VersionConstraint` for the id.
 5. Record every contributing atom in `ResolvedExtensionRequirement.sources` for diagnostic tracing.
 
@@ -69,9 +66,9 @@
 **Alternatives considered**:
 - **First-declared wins**: rejected, order-dependent.
 - **Merge everything into a set of constraints without reducing**: rejected, forces the extension-validator to interpret multiple constraints per id, doubling its complexity.
-- **Reject any conflict, even compatible ones (e.g. exact `1.2.3` + `>=1.0.0`)**: rejected, too strict; the compatible case is a legitimate operator choice.
+- **Reject every exact/lower intersection (e.g. exact `1.2.3` + `>=1.0.0`)**: rejected, because the canonical exact result preserves the full intersection without adding syntax beyond Spec 007.
 
-**Residual risk**: SemVer's compatible-release (`~=X.Y.Z`) intersects awkwardly with lower-bound and exact. The algorithm handles the common cases; exotic combinations (e.g. two disjoint compatible-release constraints `~=1.2.0` + `~=2.0.0`) refuse rather than pick, matching operator expectations.
+**Residual risk**: richer range syntax may be needed in a future Spec 007 revision. Until that revision defines a lossless composite representation, rejecting unsupported forms with `key=invalid-constraint` prevents a resolver from claiming a constraint that accepts versions outside the declared intersection.
 
 ## R3. Extension-directory naming discipline
 
@@ -99,9 +96,9 @@
 <fragment body verbatim>
 ```
 
-Multiple fragments append in `.haex-hive.json` `atoms[]` include-order. The section header appears exactly once even when only one atom contributes; when no atom contributes, the section is omitted entirely.
+Multiple fragments append in bytewise UTF-8 atom-id order, independent of `.haex-hive.json` source/include order. The section header appears exactly once even when only one atom contributes; when no atom contributes, the section is omitted entirely.
 
-**Rationale**: byline attribution makes provenance auditable (Principle V, VIII); the shared `## Workflow-Contributed Rules` header keeps workflow-imposed rules grouped so readers can find them without scanning the whole file. Include-order matches the operator's declared adoption order, aligning with Spec 007's precedence rules for atom manifests.
+**Rationale**: byline attribution makes provenance auditable (Principle V, VIII); the shared `## Workflow-Contributed Rules` header keeps workflow-imposed rules grouped so readers can find them without scanning the whole file. Bytewise atom-id ordering makes output independent of source/include declaration order.
 
 **Alternatives considered**:
 - **Append each fragment as its own top-level `## <atom-id>` section**: rejected, floods the constitution's top-level structure with a section per workflow atom.
@@ -136,9 +133,9 @@ Multiple fragments append in `.haex-hive.json` `atoms[]` include-order. The sect
 
 **Decision**: workflow.yml's own content is validated for:
 
-1. **Path safety on `steps[].script` and `hooks[].script` fields**: every path passes `RepoRelativePath.validate` + containment check against the atom root at publish time. Same rule as `contributes.speckit_hooks/**` files. Refuses absolute / traversal / symlink-escape.
-2. **No plaintext secrets**: `validate_no_plaintext_secrets` runs over the entire workflow.yml body. Same validator used for constitution fragments.
-3. **No concealment instructions in workflow.yml prose fields**: `description`, `prompt` (in gate steps), or any string field: run `validate_no_concealment_instructions`. Same validator used for constitution fragments.
+1. **Path safety on `steps[].script` and `hooks[].script` fields**: every path passes `RepoRelativePath.validate`, resolves below the atom's declared `speckit_hooks` source root, and names a regular non-symlink/reparse file included by the `speckit_hooks/*` publication. At staging time, the corresponding destination is resolved below `.specify/extensions/workflow-atoms/<atom-id>/` under the consumer root. Absolute, traversal, and symlink/reparse-point escapes are refused. Source and destination containment are checked independently; a valid source does not authorise an escaping destination.
+2. **No plaintext secrets**: `validate_no_plaintext_secrets` runs over the entire workflow.yml body and the contents of every validated script referenced by `steps[].script` or `hooks[].script`, before any publication.
+3. **No concealment instructions**: `validate_no_concealment_instructions` runs over every string field in workflow.yml and every validated referenced script, using the same policy as constitution fragments.
 4. **Schema validation**: workflow.yml MUST parse as valid YAML and match the same shape the existing bundled `.specify/workflows/speckit/workflow.yml` conforms to (schema_version, workflow.id/name/version, steps[]).
 
 **Rationale**: Principle I and VIII apply to every payload haex-hive publishes into a committed root. A workflow-atom that contributes a workflow.yml with an absolute path in `steps[].script` would violate Principle II just as clearly as an absolute path in `contributes.speckit_hooks`.
@@ -149,9 +146,9 @@ Multiple fragments append in `.haex-hive.json` `atoms[]` include-order. The sect
 
 ## R7. Delete-orphans semantics for workflow atoms
 
-**Decision**: when a workflow atom is removed from `.haex-hive.json`, its `.specify/workflows/<atom-id>/` and `.specify/extensions/workflow-atoms/<atom-id>/` directories are deleted atomically as part of the R1 rename-swap generation (Spec 008 US4 delete-orphans semantics). The constitution fragment ceases to appear in the assembled `.haex-hive/constitution.md` because the atom no longer contributes to the multi-source merge. If `active_workflow` named the removed atom, it resets to `null` in the same generation and stderr emits `key=workflow-atom-reset-to-default`.
+**Decision**: when a workflow atom is removed from `.haex-hive.json`, its `.specify/workflows/<atom-id>/` and `.specify/extensions/workflow-atoms/<atom-id>/` directories are removed by the corresponding per-root R1 rename-swap publications (Spec 008 US4 delete-orphans semantics). `publish_generation` guarantees atomic replacement only for its live directory and the files passed to that call; it does not guarantee a cross-tree commit between `.haex-hive/` and `.specify/`. The constitution fragment ceases to appear in the assembled `.haex-hive/constitution.md` because the atom no longer contributes to the multi-source merge. If `active_workflow` named the removed atom, it resets to `null` during reconciliation and stderr emits `key=workflow-atom-reset-to-default`. A retry after interruption converges the participating roots.
 
-**Rationale**: consistency with Spec 008's whole-generation rename-swap. No new per-file delete-logic; the reduced set of adopted atoms just produces a smaller `.haex-hive.next/` and `.specify.next/` (if any), and rename-A moves the old whole tree aside.
+**Rationale**: consistency with Spec 008's rename-swap for each live root. No new per-file delete-logic; each call receives the reduced set of files for its own root. Cross-tree atomicity is not inferred until a commit protocol exists and is tested.
 
 **Alternatives considered**:
 - **Retain the directory but mark the atom as "inactive"**: rejected, contradicts Spec 008 US4's whole-generation replacement contract.
@@ -164,8 +161,9 @@ Multiple fragments append in `.haex-hive.json` `atoms[]` include-order. The sect
 1. Load `.specify/workflows/workflow-registry.json`. If absent: return `WorkflowResolution(active_id="speckit", workflow_path=<bundled path>, source="fallback", diagnostics=["registry file missing"])`.
 2. Parse and schema-validate against `workflow-registry.v1.schema.json`. On failure: return `fallback` with a diagnostic.
 3. Read `active_workflow` field. If `None` or absent: return `WorkflowResolution(active_id="speckit", workflow_path=<bundled path>, source="fallback", diagnostics=[])`.
-4. Look up `workflows[active_id]`. If missing: return `fallback` with a diagnostic naming the unresolvable id.
-5. Otherwise: return `WorkflowResolution(active_id=<id>, workflow_path=<computed>, source=<entry.source>, diagnostics=[])`. `workflow_path` is `.specify/workflows/<id>/workflow.yml` when `source == "atom"`, or `.specify/workflows/speckit/workflow.yml` when `source == "bundled"`.
+4. Validate `active_workflow` against the path-safe identifier grammar `^[A-Za-z0-9][A-Za-z0-9._-]*$` before using it as a map key or path component. Atom ids MUST additionally satisfy the reverse-DNS `AtomId` grammar; the bundled id is the fixed path-safe literal `speckit`. Invalid or traversal-like ids return `fallback` with the existing reset diagnostic.
+5. Look up `workflows[active_id]`. If missing, or if an atom entry's `atom_id` does not exactly equal its map key, return `fallback` with a diagnostic naming the unresolvable identity.
+6. Compute the candidate path only after validation: `.specify/workflows/<id>/workflow.yml` when `source == "atom"`, or `.specify/workflows/speckit/workflow.yml` when `source == "bundled"`. Resolve it and require it to remain contained below `repo_root/.specify/workflows`; reject symlink/reparse-point escapes and return `fallback` on failure. Otherwise return `WorkflowResolution(active_id=<id>, workflow_path=<candidate>, source=<entry.source>, diagnostics=[])`.
 
 **Rationale**: downstream skills (`/speckit-implement`, `/speckit-plan`, etc.) that ask "which workflow is binding?" should never see a raw exception on registry-file corruption; they get a typed answer with diagnostics they can log or surface. The `fallback` variant is a first-class outcome, not an error.
 
