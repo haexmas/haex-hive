@@ -79,7 +79,9 @@ Hook entries merge into the consumer's `.specify/extensions.yml.hooks.<stage>` l
 |---|---|---|
 | YAML parse fails | `workflow-fragment-parse-failed` | `INPUT_REFUSE` |
 | Unknown stage name | `workflow-hook-mapping-invalid` | `INPUT_REFUSE` |
-| Duplicate `(stage, extension, command, script)` within a fragment | `workflow-hook-mapping-invalid` | `INPUT_REFUSE` |
+| Duplicate `(stage, extension, command, script)` within one atom fragment | `workflow-hook-mapping-invalid` | `INPUT_REFUSE` |
+| Duplicate `(stage, extension, command, script)` across atom fragments | `workflow-hook-mapping-invalid` | `INPUT_REFUSE` |
+| Duplicate `(stage, extension, command, script)` among local entries | `workflow-hook-mapping-invalid` | `INPUT_REFUSE` |
 | `version_constraint` unparseable | `invalid-constraint` | `INPUT_REFUSE` |
 | Same extension id required twice in one fragment | `workflow-atom-extension-id-collision` | `INPUT_REFUSE` |
 | Hook `script` source or planned destination escapes its owned root | `workflow-hook-mapping-invalid` | `INPUT_REFUSE` |
