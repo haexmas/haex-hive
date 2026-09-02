@@ -190,6 +190,8 @@ BRANCH="$(git branch --show-current 2>/dev/null || echo '<unknown>')"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 ROOT_ESCAPED="$(printf '%s' "$ROOT" | sed "s/'/'\"'\"'/g")"
 ROOT_ESCAPED="'${ROOT_ESCAPED}'"
+BRANCH_ESCAPED="$(printf '%s' "$BRANCH" | sed "s/'/'\"'\"'/g")"
+BRANCH_ESCAPED="'${BRANCH_ESCAPED}'"
 
 cat <<EOF
 ======================================================
@@ -201,6 +203,8 @@ Open a new session in the same worktree:
 Expected branch: ${BRANCH}
 Paste this exact one-shot marker as the first message in that session:
     HAEX-HIVE-HANDOFF: com.github.haexmas.atoms.speckit-session-hopper ${STEP}
+    root: ${ROOT_ESCAPED}
+    branch: ${BRANCH_ESCAPED}
 Then run:
     /speckit-${STEP}
 
@@ -213,7 +217,7 @@ Notes:
 
 - The script uses POSIX `sh` (not bash) for portability across the operator's environment. `ROOT_ESCAPED` is a single-quoted POSIX-shell literal, so spaces, command substitutions, backticks, quotes, and shell metacharacters in the worktree path remain data when the printed command is pasted.
 - It does NOT reference the constitution or any spec artefacts. The new session finds those itself: the user-global CLAUDE.md loads `.haex-hive.json` and the constitution automatically on session start (haex-hive detection); the `/speckit-<step>` slash-command reads whatever `specs/<slug>/` files are relevant for that step; `active_workflow` is read by any agent that cares.
-- The `HAEX-HIVE-HANDOFF` line is a one-shot protocol marker, not a shell command. A new session that receives a valid marker for this atom and the requested step consumes it, skips this atom's `hooks.before` prompt once, and executes exactly `/speckit-<step>`; it MUST NOT forward or reuse the marker for a later step. A session without the marker follows the normal prompt-and-wait rule.
+- The three-line `HAEX-HIVE-HANDOFF` block is a one-shot protocol marker, not a shell command. Its `root` and `branch` values are single-quoted POSIX-shell literals containing the originating session's exact values. A new session consumes the marker only when the atom, step, root (`git rev-parse --show-toplevel`), and branch (`git branch --show-current`) all match its current context; otherwise it rejects the marker and follows the normal prompt-and-wait rule. A valid marker skips this atom's `hooks.before` prompt once and executes exactly `/speckit-<step>`; it MUST NOT be forwarded or reused for a later step or checkout.
 - It falls back gracefully outside a git worktree (`<unknown>` branch, current directory as root). The atom is not intended for non-git use; that fallback exists only to avoid a shell error if someone accidentally invokes the script by hand.
 - Executable bit: Spec 011 FR-003 states hook payloads are copied byte-identically. If `haex install` does not currently preserve the mode bit for atom-shipped scripts, that is a Spec 011 follow-up ticket, not a change to this design. In the interim the operator or the hook runner MUST `chmod +x` the published script.
 
@@ -228,11 +232,16 @@ Sessions whose `active_workflow` resolves to
 `com.github.haexmas.atoms.speckit-session-hopper` MUST, before every
 `command:` step of that workflow:
 
-1. If the session's first message is the exact one-shot marker
+1. If the session's first message is the exact three-line one-shot marker
+   consisting of
    `HAEX-HIVE-HANDOFF: com.github.haexmas.atoms.speckit-session-hopper <step>`,
-   validate that `<step>` is the current command step, consume the
-   marker, skip the prompt exactly once, and execute that step. The marker
-   MUST NOT be forwarded to another step or session.
+   `root: <single-quoted-originating-repository-root>`, and
+   `branch: <single-quoted-originating-branch>`, validate that the atom,
+   `<step>`, decoded root, and decoded branch match the current session and
+   repository. If any value differs, reject the marker and continue with the
+   normal hook below. If all values match, consume the marker, skip the
+   prompt exactly once, and execute that step. The marker MUST NOT be
+   forwarded to another step or session.
 2. Otherwise, execute the step's `hooks.before` script and capture its stdout.
 3. Display the captured block to the operator verbatim.
 4. Wait for the operator's answer.
@@ -262,7 +271,8 @@ Documented in `haexmas/atoms/README.md` and mirrored in this design for the plan
    }
    ```
 2. Run `haex install` without `--llm` or `--accept-merged` for this design's single constitution contribution. `run()` selects `assemble_single_source(...)`, which publishes deterministically and writes no pending merge state. If the consumer has two or more constitution contributions, use the separate multi-source path: run `haex install --llm=file`, review the pending candidate, then rerun `haex install --accept-merged <candidate>`.
-3. Edit `.specify/workflows/workflow-registry.json` and set `active_workflow` to `com.github.haexmas.atoms.speckit-session-hopper`. The corresponding `workflows` entry key and `atom_id` use the same full atom id; only `workflow.yml.workflow.id` remains `speckit-session-hopper`. (Spec 011 does not require a helper for this yet; a plain text edit suffices.)
+3. Before activation, inspect `.specify/workflows/workflow-registry.json` and verify all of the following: `workflows["com.github.haexmas.atoms.speckit-session-hopper"]` exists; its `source` is exactly `"atom"`; its `atom_id` is exactly `"com.github.haexmas.atoms.speckit-session-hopper"`; and `.specify/workflows/com.github.haexmas.atoms.speckit-session-hopper/workflow.yml` exists and matches the published contribution. Test these assertions against the actual post-install registry entry and workflow file; if any assertion fails, do not activate the atom because the resolver would correctly fall back to the bundled workflow. The corresponding `workflows` entry key and `atom_id` use the same full atom id; only `workflow.yml.workflow.id` remains `speckit-session-hopper`.
+4. Only after all registry assertions pass, edit `.specify/workflows/workflow-registry.json` and set `active_workflow` to `com.github.haexmas.atoms.speckit-session-hopper`. (Spec 011 does not require a helper for this yet; a plain text edit suffices.)
 
 Post-adoption state:
 
