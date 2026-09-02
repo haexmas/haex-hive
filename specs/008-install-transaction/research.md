@@ -183,7 +183,29 @@ Consequences carried through the amendment: `install.lock` no longer carries `co
 
 ## R7. In-flight recovery via directory-name state
 
-**Decision**: There is no durable JSONL journal, no tail-hash chain, and no per-entry sidecar. For each haex-owned output root, the transaction's in-flight state is encoded entirely in the presence or absence of three directory names beside the root:
+**2026-09-02 amendment (detect+retry simplification)**: The 8-row §R7 recovery
+dispatcher was retired in favour of pip/npm-style detect+retry. Under this
+model the rename-swap primitive already gives readers atomic visibility (they
+see either the pre-install generation, no live directory, or the
+post-install generation), and `haex install` is deterministic and idempotent,
+so a reinstall converges to a valid generation. The runtime keeps only a
+tiny `clean_stale_siblings(live)` helper that removes any leftover
+`<root>.next/` or `<root>.prev/` sibling under the exclusive install lock,
+then the regular install pipeline runs; there is no mid-swap recovery-forward
+logic, no `POST_SWAP` cleanup path, no `ORPHAN_*`/`ILLEGAL_ALL` refusal, and
+no `haex verify --recover` verb. The tradeoff is one extra reinstall pass on
+crash (deterministic bytes, so no data loss and no correctness risk) in
+exchange for a much smaller state machine, no separate recovery command, and
+one fewer conformance suite to maintain. tasks.md T038 / T039 / T042 / T043
+/ T044 / T045 / T048 are retired by this amendment.
+
+**What remains** (unchanged): the rename-swap primitive (§R1) with its two
+`os.rename(2)` syscalls and parent-directory fsyncs; the exclusive install
+lock (§R4 owner-token + writer-lock primitive); the deterministic
+generation contract (trust-git amendment); the idempotent single-source
+no-op path in `haex install`.
+
+**Original decision (retained for context)**: There is no durable JSONL journal, no tail-hash chain, and no per-entry sidecar. For each haex-owned output root, the transaction's in-flight state is encoded entirely in the presence or absence of three directory names beside the root:
 
 - `<root>/` — the live generation. Its `visibility.json` names the currently-published `generation_id`.
 - `<root>.next/` — a staged, verified fresh generation, ready to become live but not yet renamed in.
