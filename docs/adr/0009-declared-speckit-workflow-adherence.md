@@ -3,7 +3,7 @@
 **Status**: Accepted
 **Date**: 2026-09-02
 **Related**: `.specify/memory/constitution.md` §Development Workflow;
-constitution version bump 1.3.0 → 1.3.1
+constitution version bump 1.3.0 → 1.4.0
 
 ## Context
 
@@ -51,8 +51,8 @@ Add a new bullet to the constitution's §Development Workflow section:
 > `speckit-workflow` atom can replace or extend the local `workflow.yml`
 > without touching this constitution.
 
-Version bump: 1.3.0 → 1.3.1 (PATCH: workflow-discipline clarification, no
-principle change).
+Version bump: 1.3.0 → 1.4.0 (MINOR: material expansion of the development
+workflow contract).
 
 ## Consequences
 
