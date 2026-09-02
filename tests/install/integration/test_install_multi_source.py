@@ -1,4 +1,9 @@
-"""T056 — end-to-end `haex constitution assemble` (multi-source, US3)."""
+"""End-to-end `haex install` multi-source merge tests.
+
+Migrated from `tests/integration/test_assemble_multi_source.py` when
+`haex constitution assemble` was retired in favour of `haex install`. The
+`--llm` and `--accept-merged` flags now live on `haex install`.
+"""
 
 from __future__ import annotations
 
@@ -24,7 +29,7 @@ def _run_haex(
     env["HAEX_HIVE_STATE"] = str(state_root)
     return subprocess.run(
         [sys.executable, "-m", "haex_hive", "--repo-root", str(repo_root),
-         "constitution", "assemble", *args],
+         "install", *args],
         input=stdin_bytes if stdin_bytes is not None else b"",
         capture_output=True,
         env=env,

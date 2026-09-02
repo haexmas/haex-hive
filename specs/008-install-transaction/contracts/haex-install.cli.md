@@ -78,6 +78,8 @@ The Spec 008 landing includes a reference reader-guide in [quickstart.md](../qui
 - **Publisher-hook invocations** (Spec 009 territory) — will surface as a new `entry_type` in the journal and matching CLI diagnostic; no change to this contract.
 - **Adapter-emitted outputs** (Spec 010 territory) — will surface as additional participating roots and per-atom `contributed_paths`; the CLI schema of THIS spec already accommodates them without change.
 
-## Existing subcommands unchanged
+## Sibling subcommands
 
-Spec 008 leaves `haex constitution assemble` and `haex constitution show` in place as narrow-scope shortcuts. Internally they invoke the install-transaction machinery scoped to constitution steps only. This is a scope statement, not a compatibility promise — under the project's pre-user policy, keeping them is a design choice we can revisit any time.
+`haex constitution show` remains as the read-only inverse of `haex install`: it prints the byte-for-byte effective constitution from the currently published generation. It does not resolve, assemble, or write.
+
+The former `haex constitution assemble` shortcut was retired in favour of `haex install` (which now owns the `--llm` and `--accept-merged` flags directly). Under the pre-user policy, keeping two commands doing the same work carried UX cost without adoption benefit.

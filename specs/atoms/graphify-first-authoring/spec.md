@@ -20,7 +20,7 @@
 
 ### User Story 1 — Operator adopts the rule and agents stop silently duplicating code (Priority: P1)
 
-An operator working in a haex-hive-managed repo wants agents to stop rebuilding helpers, classes, or components that already exist under a different name or in a different file. They run the atom's installer, then `haex constitution assemble` picks up the contributed principle text. From that point forward, any agent bound by the assembled constitution consults the project's graphify knowledge graph before authoring new named code, and — when the graph reveals an existing candidate, even an unexported or incomplete one — proposes extending it instead of silently building a parallel implementation.
+An operator working in a haex-hive-managed repo wants agents to stop rebuilding helpers, classes, or components that already exist under a different name or in a different file. They run the atom's installer, then `haex install` picks up the contributed principle text. From that point forward, any agent bound by the assembled constitution consults the project's graphify knowledge graph before authoring new named code, and — when the graph reveals an existing candidate, even an unexported or incomplete one — proposes extending it instead of silently building a parallel implementation.
 
 **Why this priority**: This is the entire reason the atom exists. Every other capability (auto-refresh hooks, worktree snapshots, dependency handling) exists to make this rule practical to live with — none of them matter if the rule itself doesn't change agent behavior. This is the MVP: even with the graph refreshed by hand, the rule already delivers its value.
 
@@ -101,7 +101,7 @@ An operator adopting this atom should not have to separately discover and instal
 
 ### Functional Requirements
 
-- **FR-001**: The atom MUST contribute a constitution principle file that becomes part of an adopting project's assembled constitution via the existing `haex constitution assemble` mechanism.
+- **FR-001**: The atom MUST contribute a constitution principle file that becomes part of an adopting project's assembled constitution via the existing `haex install` mechanism.
 - **FR-002**: The contributed principle MUST require agents to consult the project's graphify knowledge graph before authoring any new named function, class, component, store, module, or CLI command.
 - **FR-003**: The contributed principle MUST require agents to prefer extending an existing identical, near-identical, or incomplete artifact discovered in the graph over authoring a duplicate — regardless of whether that artifact is currently exported.
 - **FR-004**: The contributed principle MUST require the agent to name the candidate, state the delta versus what is needed, and propose the extension, rather than silently authoring a parallel implementation. When similarity is borderline (not clearly identical/near-identical, not clearly independent) or extending the existing artifact would risk scope creep, the agent MUST ask the operator rather than deciding autonomously. If the graph consultation itself fails (the invocation errors or times out), the agent MUST warn and proceed with authoring rather than blocking, flagging the skipped consultation for a manual check later.
@@ -124,7 +124,7 @@ An operator adopting this atom should not have to separately discover and instal
 - **graphify-out/**: The knowledge-graph artifact directory the rule depends on. It is usable only when it contains `graph.json`; it is authoritative on tracked branches and a discarded fork-point snapshot on feature branches/worktrees.
 - **graphify-out/graph.json**: Required graph artifact used by graphify queries and copied into feature-branch snapshots.
 - **graphify-out/.meta.json**: Freshness marker recording the graph's `indexed_at_sha`, compared against current HEAD to decide bootstrap vs. refresh vs. proceed.
-- **Contributed constitution text**: The atom's `constitution.md`, merged into `.haex-hive/constitution.md` by `haex constitution assemble` alongside any other adopted constitution-contributing atoms.
+- **Contributed constitution text**: The atom's `constitution.md`, merged into `.haex-hive/constitution.md` by `haex install` alongside any other adopted constitution-contributing atoms.
 - **Tracked branch set**: The detected default branch plus `.haex-hive.json`'s optional `tracked_branches[]` — the set of branches on which the graph is considered authoritative and auto-refreshed.
 
 ## Success Criteria *(mandatory)*
@@ -139,7 +139,7 @@ An operator adopting this atom should not have to separately discover and instal
 ## Assumptions
 
 - The `graphify` CLI (package `graphifyy`) may be present already (installed via `pip install graphifyy`) or offered by the atom's installer via the opt-in prompt in FR-011; this atom does not silently mutate the operator's Python environment.
-- The operator's repo has already adopted haex-hive's Spec 007 manifest v2 machinery (`.haex-hive.json`, atom resolution, `haex constitution assemble`) — this atom is consumed the same way any other atom is.
+- The operator's repo has already adopted haex-hive's Spec 007 manifest v2 machinery (`.haex-hive.json`, atom resolution, `haex install`) — this atom is consumed the same way any other atom is.
 - Multi-agent-harness delivery of the contributed constitution text rides the existing Spec 007 D6 pointer-block mechanism (`CLAUDE.md`/`AGENTS.md`/`GEMINI.md` pointing at `.haex-hive/generated/rules.md`); no new per-harness delivery work is in scope here.
 - Cross-repo hydration of this atom's non-constitution files (hooks, installer) for consumers other than haex-hive itself is out of scope, deferred to the existing Spec 010 `haex install` territory.
 - A formal `requires` field on atom manifests (for declaring a dependency on an external tool or another atom) does not exist yet and is out of scope here; this atom's installer checks its one dependency (the `graphify` CLI) ad-hoc.

@@ -118,42 +118,42 @@ class NoSourcesDeclaredError(HaexError):
 class ConstitutionNotAssembledError(HaexError):
     diagnostic_key: str = "constitution-not-assembled"
     exit_code: int = exit_codes.INPUT_REFUSE
-    hint: str = "Run `haex constitution assemble` first."
+    hint: str = "Run `haex install` first."
 
 
 @dataclass
 class InstallLockMissingError(HaexError):
     diagnostic_key: str = "install-lock-missing"
     exit_code: int = exit_codes.IO_REFUSE
-    hint: str = "Run `haex constitution assemble` to (re)generate install.lock."
+    hint: str = "Run `haex install` to (re)generate install.lock."
 
 
 @dataclass
 class InstallLockSchemaInvalidError(HaexError):
     diagnostic_key: str = "install-lock-schema-invalid"
     exit_code: int = exit_codes.VALIDATION_REFUSE
-    hint: str = "Regenerate install.lock via `haex constitution assemble`."
+    hint: str = "Regenerate install.lock via `haex install`."
 
 
 @dataclass
 class InstallLockSourcesNotCanonicalError(HaexError):
     diagnostic_key: str = "install-lock-sources-not-canonical"
     exit_code: int = exit_codes.VALIDATION_REFUSE
-    hint: str = "Regenerate install.lock via `haex constitution assemble`."
+    hint: str = "Regenerate install.lock via `haex install`."
 
 
 @dataclass
 class ConstitutionIntegrityMismatchError(HaexError):
     diagnostic_key: str = "constitution-integrity-mismatch"
     exit_code: int = exit_codes.POST_WRITE_VALIDATION
-    hint: str = "Run `git pull` or `haex constitution assemble` to restore a matched generation."
+    hint: str = "Run `git pull` or `haex install` to restore a matched generation."
 
 
 @dataclass
 class IncompleteAssemblyTransactionError(HaexError):
     diagnostic_key: str = "constitution-transaction-incomplete"
     exit_code: int = exit_codes.INCOMPLETE_TRANSACTION
-    hint: str = "Run `haex constitution assemble` to recover the paired output generation."
+    hint: str = "Run `haex install` to recover the paired output generation."
 
 
 @dataclass
@@ -202,14 +202,14 @@ class MergeNotConfirmedError(HaexError):
 class PendingMergeInputsMismatchError(HaexError):
     diagnostic_key: str = "pending-merge-inputs-mismatch"
     exit_code: int = exit_codes.PENDING_MERGE_INPUTS_MISMATCH
-    hint: str = "Re-run `haex constitution assemble --llm=file` to refresh pending inputs."
+    hint: str = "Re-run `haex install --llm=file` to refresh pending inputs."
 
 
 @dataclass
 class ConstitutionWriterBusyError(HaexError):
     diagnostic_key: str = "constitution-writer-busy"
     exit_code: int = exit_codes.WRITER_BUSY
-    hint: str = "Another `haex constitution assemble` is running; retry after it releases the lock."
+    hint: str = "Another `haex install` is running; retry after it releases the lock."
 
 
 @dataclass

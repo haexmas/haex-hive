@@ -75,19 +75,15 @@ def _build_parser() -> argparse.ArgumentParser:
     constitution = subparsers.add_parser("constitution", help="constitution commands")
     constitution_sub = constitution.add_subparsers(dest="constitution_command", required=True)
 
-    assemble = constitution_sub.add_parser(
-        "assemble", help="produce constitution.md + install.lock"
-    )
-    assemble.add_argument("--llm", choices=["stdio", "file", "none"])
-    assemble.add_argument("--accept-merged", type=Path)
-
     show = constitution_sub.add_parser("show", help="print effective constitution")
     show.add_argument("--no-preface", action="store_true")
 
-    subparsers.add_parser(
+    install = subparsers.add_parser(
         "install",
         help="resolve `.haex-hive.json` atoms and publish a new generation (Spec 008)",
     )
+    install.add_argument("--llm", choices=["stdio", "file", "none"])
+    install.add_argument("--accept-merged", type=Path)
 
     return parser
 
@@ -111,8 +107,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "constitution":
             from haex_hive.cli import constitution as constitution_cli
 
-            if args.constitution_command == "assemble":
-                return constitution_cli.run_assemble(args)
             if args.constitution_command == "show":
                 return constitution_cli.run_show(args)
         if args.command == "install":

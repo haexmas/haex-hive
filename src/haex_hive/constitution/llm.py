@@ -182,5 +182,5 @@ class NoneMergeLLM:
         self, contributions: Sequence[ResolvedConstitutionContribution], task_prompt: str
     ) -> MergeResult:
         raise LlmRequiredForMultiSourceError(
-            message="--llm=none always refuses for multi-source assemble"
+            message="--llm=none always refuses for multi-source install"
         )

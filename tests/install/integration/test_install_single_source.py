@@ -1,4 +1,8 @@
-"""T050 — end-to-end `haex constitution assemble` (single-source, US2)."""
+"""End-to-end `haex install` refusal + single-source publication tests.
+
+Migrated from `tests/integration/test_assemble_single_source.py` when
+`haex constitution assemble` was retired in favour of `haex install`.
+"""
 
 from __future__ import annotations
 
@@ -22,7 +26,7 @@ def _run_haex(repo_root: Path, *args: str, state_root: Path) -> subprocess.Compl
     env["HAEX_HIVE_STATE"] = str(state_root)
     return subprocess.run(
         [sys.executable, "-m", "haex_hive", "--repo-root", str(repo_root),
-         "constitution", "assemble", *args],
+         "install", *args],
         capture_output=True,
         text=True,
         env=env,
@@ -68,30 +72,6 @@ def test_active_writer_is_excluded(
 
     assert proc.returncode == 9
     assert "key=constitution-writer-busy" in proc.stderr
-
-
-def test_determinism_across_two_runs(single_source_constitution_fixture: dict) -> None:
-    consumer = single_source_constitution_fixture["consumer"]
-    state_root = single_source_constitution_fixture["state_root"]
-
-    first = _run_haex(consumer, state_root=state_root)
-    assert first.returncode == 0, first.stderr
-    constitution_bytes_1 = (consumer / ".haex-hive" / "constitution.md").read_bytes()
-    lock_data_1 = json.loads((consumer / ".haex-hive" / "install.lock").read_bytes())
-
-    second = _run_haex(consumer, state_root=state_root)
-    assert second.returncode == 0, second.stderr
-    constitution_bytes_2 = (consumer / ".haex-hive" / "constitution.md").read_bytes()
-    lock_data_2 = json.loads((consumer / ".haex-hive" / "install.lock").read_bytes())
-
-    assert constitution_bytes_1 == constitution_bytes_2
-    assert (
-        lock_data_1["visibility_marker"]["generation_id"]
-        != lock_data_2["visibility_marker"]["generation_id"]
-    )
-    lock_data_1["visibility_marker"]["generation_id"] = None
-    lock_data_2["visibility_marker"]["generation_id"] = None
-    assert lock_data_1 == lock_data_2
 
 
 def test_unavailable_pinned_sha_refuses_untouched(single_source_constitution_fixture: dict) -> None:

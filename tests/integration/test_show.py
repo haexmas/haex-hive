@@ -31,7 +31,7 @@ def _run_haex(
 
 
 def _assemble(consumer: Path, state_root: Path) -> None:
-    proc = _run_haex(consumer, "constitution", "assemble", state_root=state_root)
+    proc = _run_haex(consumer, "install", state_root=state_root)
     assert proc.returncode == 0, proc.stderr.decode()
 
 
@@ -40,8 +40,7 @@ def _assemble_multi(consumer: Path, state_root: Path, merged: bytes) -> None:
     confirm = b"--haex-confirm: yes\n"
     proc = _run_haex(
         consumer,
-        "constitution",
-        "assemble",
+        "install",
         "--llm=stdio",
         state_root=state_root,
         stdin_bytes=candidate + confirm,
