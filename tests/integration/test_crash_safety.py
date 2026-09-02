@@ -12,6 +12,7 @@ against the write.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -100,8 +101,15 @@ def test_crash_at_boundary_converges_on_retry(
     assert not prev_dir.exists()
 
     constitution = (consumer / ".haex-hive" / "constitution.md").read_bytes()
-    lock_bytes = (consumer / ".haex-hive" / "install.lock").read_bytes()
+    lock_data_1 = json.loads((consumer / ".haex-hive" / "install.lock").read_bytes())
     again = _run(consumer, state_root)
     assert again.returncode == 0, again.stderr.decode()
     assert (consumer / ".haex-hive" / "constitution.md").read_bytes() == constitution
-    assert (consumer / ".haex-hive" / "install.lock").read_bytes() == lock_bytes
+    lock_data_2 = json.loads((consumer / ".haex-hive" / "install.lock").read_bytes())
+    assert (
+        lock_data_1["visibility_marker"]["generation_id"]
+        != lock_data_2["visibility_marker"]["generation_id"]
+    )
+    lock_data_1["visibility_marker"]["generation_id"] = None
+    lock_data_2["visibility_marker"]["generation_id"] = None
+    assert lock_data_1 == lock_data_2
