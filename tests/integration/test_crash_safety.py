@@ -1,8 +1,8 @@
 """T067 — SC-008 crash-safety sweep across rename-swap boundaries.
 
 Each child is terminated at a real in-flight boundary, then a subsequent
-`haex constitution assemble` resolves the directory-name state and converges
-to a fully-successful generation.
+`haex install` resolves the directory-name state and converges to a
+fully-successful generation.
 
 Uses the `HAEX_HIVE_CRASH_AFTER` test seam in `haex_hive.io.transaction` to
 terminate the child process (SIGKILL on POSIX, TerminateProcess-equivalent on
@@ -50,8 +50,7 @@ def _run(
             "haex_hive",
             "--repo-root",
             str(consumer),
-            "constitution",
-            "assemble",
+            "install",
         ],
         capture_output=True,
         env=env,
@@ -72,6 +71,10 @@ def test_crash_at_boundary_converges_on_retry(
     if preexisting:
         clean = _run(consumer, state_root)
         assert clean.returncode == 0, clean.stderr.decode()
+        # Make the next install publish a generation instead of taking the
+        # single-source idempotence fast path.
+        constitution_path = consumer / ".haex-hive" / "constitution.md"
+        constitution_path.write_bytes(constitution_path.read_bytes() + b"\n")
 
     crashed = _run(consumer, state_root, crash_after=crash_point)
     assert crashed.returncode != 0, "the child process must not exit cleanly when killed"
@@ -108,7 +111,7 @@ def test_crash_at_boundary_converges_on_retry(
     lock_data_2 = json.loads((consumer / ".haex-hive" / "install.lock").read_bytes())
     assert (
         lock_data_1["visibility_marker"]["generation_id"]
-        != lock_data_2["visibility_marker"]["generation_id"]
+        == lock_data_2["visibility_marker"]["generation_id"]
     )
     lock_data_1["visibility_marker"]["generation_id"] = None
     lock_data_2["visibility_marker"]["generation_id"] = None

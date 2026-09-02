@@ -70,7 +70,10 @@ journal file to write, fsync, or clean up. The three directory names are the
 durable in-flight state, and cleanup after a successful swap is a single
 `rmtree(<root>.prev/)`.
 
-**Checkpoint**: Foundation ready — the install subpackage compiles, schemas validate against their fixtures, and constitution assemble still passes its existing tests. User story implementation can now begin.
+**Checkpoint**: Foundation ready — the install subpackage compiles, schemas
+validate against their fixtures, `haex install` passes the constitution
+installation tests, and `haex constitution show` remains available for
+read-only inspection. User story implementation can now begin.
 
 ---
 
@@ -96,7 +99,9 @@ durable in-flight state, and cleanup after a successful swap is a single
 - [x] T030 [US1] `visibility.json` byte composition lives in [src/haex_hive/constitution/assemble.py](../../src/haex_hive/constitution/assemble.py)::`_publish_constitution` (not inlined in `cli/install.py` — see T028 deviation). Composes `{"haex_hive_version": "2", "generation_id": <T027>, "participating_roots": [".haex-hive/"]}` via `json_deterministic.dumps`. **Deviation**: `written_at` is not emitted; the marker holds only content-identity fields under the trust-git amendment. Post-write verification asserts the marker's `generation_id` equals the lock's cross-reference. Idempotence in T028 short-circuits before allocation, so no `generation_id` is ever produced for an unchanged publication.
 - [x] ~~T031~~ [US1] ~~Route existing `haex constitution assemble` through the new `install()` (T028): the CLI shortcut still exists but internally calls the same `install()` entry point.~~ **Retired**: the `haex constitution assemble` CLI subcommand was removed entirely rather than shimmed. Under the pre-user policy the shim carried no adoption benefit, and keeping two entry points doing the same work doubled the test surface. `haex install` now owns the `--llm` and `--accept-merged` flags directly. `constitution/assemble.py`'s `_publish_constitution` / `assemble_single_source` / `assemble_multi_source` functions remain as the composer layer that `cli/install.py::run` calls; there is no longer a CLI-side shortcut to forward.
 
-**Checkpoint**: User Story 1 is fully functional. Running `haex install` on a fresh checkout publishes a valid generation; a second run is a no-op. Constitution assemble still passes.
+**Checkpoint**: User Story 1 is fully functional. Running `haex install` on a
+fresh checkout publishes a valid generation; a second run is a no-op. The
+published result is inspectable with `haex constitution show`.
 
 ---
 

@@ -274,33 +274,57 @@ without a journal and never publishes a torn state.
 
 ---
 
-## R9. Constitution assemble integration
+## R9. Constitution assembly integration
 
-**2026-09-02 amendment**: The "keep the UX shortcut" bullet below was superseded. `haex constitution assemble` was retired as a distinct CLI verb; `haex install` is the single entry point and owns the `--llm` / `--accept-merged` flags directly. `haex constitution show` (the read-only inverse) remains. The library-layer functions in `constitution/assemble.py` (`_publish_constitution`, `assemble_single_source`, `assemble_multi_source`) still exist as the composer that `install()` calls. Under the pre-user policy the shim carried no adoption benefit and doubled the CLI test surface.
+**2026-09-02 amendment**: `haex install` is the single CLI entry point for
+constitution installation and owns the `--llm` / `--accept-merged` flags
+directly. `haex constitution show` remains the read-only inverse. The
+library-layer functions in `constitution/assemble.py`
+(`_publish_constitution`, `assemble_single_source`, `assemble_multi_source`)
+remain as the composer that `install()` calls. The former CLI shortcut was
+retired under the pre-user policy because it carried no adoption benefit and
+doubled the CLI test surface.
 
-**Decision**: The existing `haex constitution assemble` transaction (Spec 007) becomes a single-participant special case of `haex install`'s transaction. Concretely:
-- `haex install` composes constitution assembly with the other fixed-shape outputs when the manifest includes `contributes.constitution`.
-- The existing `.haex-hive/install.lock` schema is extended with `atoms`, immutable `generation_inputs`, `participating_roots`, and a `visibility_marker` block. It carries no content-integrity or per-path ownership records; mixed-root ownership and overlay bookkeeping are deferred to Spec 010. **Under the project's pre-user policy** (no external adopters, breaking changes fine), a Spec 007-vintage `install.lock` fails Spec 008 schema validation with `InstallLockSchemaInvalidError` and there is no in-tool migration. Operator recovery is to remove the stale file and re-run `haex constitution assemble`.
-- `haex constitution assemble` (invoked directly) still works — it becomes a shortcut that runs the install transaction with a plan filtered to constitution-only steps. This preserves the current UX.
+**Decision**: The existing constitution transaction (Spec 007) becomes a
+single-participant special case of `haex install`'s transaction. Concretely:
+- `haex install` composes constitution assembly with the other fixed-shape
+  outputs when the manifest includes `contributes.constitution`.
+- A Spec 007-vintage `install.lock` fails Spec 008 schema validation with
+  `InstallLockSchemaInvalidError` and there is no in-tool migration. Operator
+  recovery is to remove the stale file and re-run `haex install`.
 - Multi-source LLM merge retains Spec 007's two-phase authoring flow, but its
   confirmed candidate is a pinned input artifact for installation.
   `haex install` MUST NOT invoke the LLM or regenerate that candidate; the
   reviewed result is committed before it is consumed by the transaction.
   This is what makes the generated payload reproducible for satellites using
   the same pinned inputs.
-- Shared path helpers derive `$HAEX_HIVE_STATE`, the canonical project identity, its SHA-256 `<repo-key>`, and the repository mutex. Both `constitution assemble` and `constitution show` use these helpers. The rename-swap contract (R1) plus in-flight recovery state (R7) replace the earlier durable-JSONL-journal design; no journal file is created inside the state root by either command.
+- Shared path helpers derive `$HAEX_HIVE_STATE`, the canonical project
+  identity, its SHA-256 `<repo-key>`, and the repository mutex. Both
+  `haex install` and `haex constitution show` use these helpers. The
+  rename-swap contract (R1) plus in-flight recovery state (R7) replace the
+  earlier durable-JSONL-journal design; no journal file is created inside the
+  state root by either command.
 - The pre-user rollout guarantees that no older haex process is active during installation, so no cross-version writer exclusion is required.
 
 **Rationale**:
 - Duplicating the transaction machinery for install would be a source of drift. The extract-shared-implementation approach keeps one transaction, many participants.
-- The pre-user cut for the schema is cheaper than carrying a Spec 007-vintage compat shim: no external `install.lock` files exist in the wild, self-adoption regenerates its own lock on the next `haex constitution assemble`. Both PR #29 (SRI compat helper) and PR #30 (forward-compat tests) landed exactly this stance in code.
+- The pre-user cut for the schema is cheaper than carrying a Spec 007-vintage
+  compat shim: no external `install.lock` files exist in the wild, and
+  self-adoption regenerates its own lock on the next `haex install`. Both PR
+  #29 (SRI compat helper) and PR #30 (forward-compat tests) landed exactly
+  this stance in code.
 
 **Alternatives considered**:
 - **Keep the two paths separate, migrate later**: rejected — drift risk in a load-bearing invariant is unacceptable.
-- **Deprecate `haex constitution assemble` in favour of `haex install --scope=constitution`**: too disruptive for an existing landed CLI. The UX shortcut stays.
+- **Retain a separate constitution-assembly shortcut**: rejected under the
+  pre-user policy because it duplicates the install entry point and its
+  multi-source flags without adoption benefit.
 - **Preserve backward compatibility for `install.lock`**: rejected under pre-user policy — cost of the shim exceeds its value while no external adopters exist. If a first adopter ever appears this decision is revisited via a spec amendment.
 
-**Residual risk**: an operator with an in-flight Spec 007-vintage `install.lock` on their dev machine gets a schema refusal on the next `haex install`. Recovery is one `rm` and `haex constitution assemble`. This is acceptable under the pre-user policy because no external adopters need an in-place state migration.
+**Residual risk**: an operator with an in-flight Spec 007-vintage `install.lock`
+on their dev machine gets a schema refusal on the next `haex install`.
+Recovery is one `rm` and `haex install`. This is acceptable under the
+pre-user policy because no external adopters need an in-place state migration.
 
 ---
 
