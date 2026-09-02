@@ -23,6 +23,8 @@ from pathlib import Path
 
 import pytest
 
+from haex_hive.io import json_deterministic
+
 pytestmark = [
     pytest.mark.slow,
     pytest.mark.skipif(shutil.which("git") is None, reason="git binary required"),
@@ -107,7 +109,7 @@ def test_crash_at_boundary_converges_on_retry(
         manifest_bytes = manifest_path.read_bytes()
         manifest = json.loads(manifest_bytes)
         manifest["atoms"][0]["revision"] = "deadbeef" * 5
-        manifest_path.write_text(json.dumps(manifest))
+        manifest_path.write_bytes(json_deterministic.dumps(manifest))
 
         failed_retry = _run(consumer, state_root)
 
