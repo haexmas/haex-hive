@@ -77,15 +77,21 @@ def test_determinism_across_two_runs(single_source_constitution_fixture: dict) -
     first = _run_haex(consumer, state_root=state_root)
     assert first.returncode == 0, first.stderr
     constitution_bytes_1 = (consumer / ".haex-hive" / "constitution.md").read_bytes()
-    lock_bytes_1 = (consumer / ".haex-hive" / "install.lock").read_bytes()
+    lock_data_1 = json.loads((consumer / ".haex-hive" / "install.lock").read_bytes())
 
     second = _run_haex(consumer, state_root=state_root)
     assert second.returncode == 0, second.stderr
     constitution_bytes_2 = (consumer / ".haex-hive" / "constitution.md").read_bytes()
-    lock_bytes_2 = (consumer / ".haex-hive" / "install.lock").read_bytes()
+    lock_data_2 = json.loads((consumer / ".haex-hive" / "install.lock").read_bytes())
 
     assert constitution_bytes_1 == constitution_bytes_2
-    assert lock_bytes_1 == lock_bytes_2
+    assert (
+        lock_data_1["visibility_marker"]["generation_id"]
+        != lock_data_2["visibility_marker"]["generation_id"]
+    )
+    lock_data_1["visibility_marker"]["generation_id"] = None
+    lock_data_2["visibility_marker"]["generation_id"] = None
+    assert lock_data_1 == lock_data_2
 
 
 def test_unavailable_pinned_sha_refuses_untouched(single_source_constitution_fixture: dict) -> None:

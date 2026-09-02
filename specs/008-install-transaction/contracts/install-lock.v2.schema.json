@@ -119,7 +119,28 @@
           ]
         },
         "ensure_ascii": { "type": "boolean" }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "format": { "const": "json" } } },
+          "then": {
+            "properties": {
+              "key_order": { "const": "lexicographic-utf8" },
+              "ensure_ascii": { "const": false }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "format": { "enum": ["text", "toml"] } } },
+          "then": {
+            "properties": {
+              "key_order": { "const": "not-applicable" },
+              "indent": { "const": null },
+              "ensure_ascii": { "const": false }
+            }
+          }
+        }
+      ]
     },
     "visibilityMarkerRef": {
       "type": "object",

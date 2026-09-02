@@ -156,6 +156,54 @@ def test_generation_inputs_must_be_sorted_by_kind_and_id() -> None:
         validate(data, SCHEMA_NAME)
 
 
+@pytest.mark.parametrize(
+    ("format_name", "key_order", "indent", "ensure_ascii"),
+    [
+        ("json", "not-applicable", None, False),
+        ("json", "lexicographic-utf8", 2, True),
+        ("text", "lexicographic-utf8", None, False),
+        ("text", "not-applicable", 2, False),
+        ("text", "not-applicable", None, True),
+        ("toml", "lexicographic-utf8", None, False),
+        ("toml", "not-applicable", 2, False),
+        ("toml", "not-applicable", None, True),
+    ],
+)
+def test_serialization_profile_rejects_format_mismatch(
+    format_name: str, key_order: str, indent: int | None, ensure_ascii: bool
+) -> None:
+    """Reject profiles whose fields describe a different serialization format."""
+    data = _spec_008_shape()
+    data["generation_inputs"][0]["serialization"] = {
+        "format": format_name,
+        "encoding": "UTF-8",
+        "newline": "LF",
+        "key_order": key_order,
+        "indent": indent,
+        "ensure_ascii": ensure_ascii,
+    }
+    with pytest.raises(SchemaValidationError):
+        validate(data, SCHEMA_NAME)
+
+
+@pytest.mark.parametrize(
+    "format_name",
+    ["json", "text", "toml"],
+)
+def test_serialization_profile_accepts_format_specific_shape(format_name: str) -> None:
+    """Accept the canonical profile shape for every supported format."""
+    data = _spec_008_shape()
+    data["generation_inputs"][0]["serialization"] = {
+        "format": format_name,
+        "encoding": "UTF-8",
+        "newline": "LF",
+        "key_order": "lexicographic-utf8" if format_name == "json" else "not-applicable",
+        "indent": 2 if format_name == "json" else None,
+        "ensure_ascii": False,
+    }
+    validate(data, SCHEMA_NAME)
+
+
 def test_invalid_atom_source_uri_is_rejected() -> None:
     """Reject malformed atom source URIs."""
     data = _spec_008_shape()

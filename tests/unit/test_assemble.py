@@ -9,7 +9,7 @@ import pytest
 
 from haex_hive.constitution import assemble
 from haex_hive.constitution.assemble import _publish_constitution
-from haex_hive.constitution.llm import MergeResult
+from haex_hive.constitution.llm import MergeResult, generation_input_identities
 from haex_hive.constitution.resolve import ResolvedConstitutionContribution
 from haex_hive.io import transaction
 from haex_hive.model.install_lock import ConstitutionSource
@@ -51,6 +51,70 @@ def test_publish_rejects_mismatched_published_generation(
 
     with pytest.raises(PostWriteValidationError):
         _publish_constitution((source,), body, tmp_path, tool_version="2.0.0")
+
+
+def test_publish_allocates_generation_id_after_existing_generation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every publication receives a fresh generation ID after the live one."""
+    live = tmp_path / transaction.HAEX_HIVE_DIR
+    live.mkdir()
+    existing_generation_id = "g_20990101T000000Z_0000"
+    (live / transaction.INSTALL_LOCK_NAME).write_bytes(
+        json.dumps(
+            {
+                "haex_hive_version": "2",
+                "generated_by": "haex 2.0.0",
+                "constitution": {
+                    "sources": [
+                        {
+                            "id": "com.example.constitution",
+                            "revision": "0" * 40,
+                            "source": "https://example.com/publisher",
+                        }
+                    ],
+                    "assembled_by": {"tool": "haex", "version": "2.0.0"},
+                },
+                "participating_roots": [".haex-hive/"],
+                "visibility_marker": {"generation_id": existing_generation_id},
+            }
+        ).encode()
+    )
+    captured: dict = {}
+
+    def capture_publish(live_dir, files, **kwargs) -> None:
+        del live_dir, kwargs
+        for staged in files:
+            if staged.relative_path == transaction.INSTALL_LOCK_NAME:
+                captured.update(json.loads(staged.data))
+
+    monkeypatch.setattr(transaction, "publish_generation", capture_publish)
+    _publish_constitution(
+        (
+            ConstitutionSource(
+                id="com.example.constitution",
+                revision="0" * 40,
+                source="https://example.com/publisher",
+            ),
+        ),
+        b"# New Constitution\n",
+        tmp_path,
+        tool_version="2.0.0",
+    )
+
+    new_generation_id = captured["visibility_marker"]["generation_id"]
+    assert new_generation_id != existing_generation_id
+    assert new_generation_id > existing_generation_id
+
+
+def test_generation_input_profiles_match_payload_formats() -> None:
+    """Pin adapter text and compact tool-config JSON with distinct profiles."""
+    adapter, tool_config = generation_input_identities("stdio", "merge")
+    assert adapter.serialization["format"] == "text"
+    assert adapter.serialization["key_order"] == "not-applicable"
+    assert tool_config.serialization["format"] == "json"
+    assert tool_config.serialization["key_order"] == "lexicographic-utf8"
+    assert tool_config.serialization["indent"] is None
 
 
 def test_multi_source_adapter_receives_contributions_in_stable_order(

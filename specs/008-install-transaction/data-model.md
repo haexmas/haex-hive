@@ -101,7 +101,7 @@ transaction metadata and may change only for a substantive publication.
 
 ### InstallLock
 
-Slimmed shape of `.haex-hive/install.lock`. See [contracts/install-lock.v2.schema.json](./contracts/install-lock.v2.schema.json). Records the resolved atom set — the constitution block from Spec 007 plus `atoms[]`, `participating_roots`, and a `visibility_marker` cross-reference. No `content_integrity` fields per the 2026-09-01 trust-git amendment; deterministic generation from pinned inputs provides byte identity for generated payloads. Under the project's pre-user policy operator recovery from a corrupt/pre-amendment lock is to remove `.haex-hive/install.lock` and re-run `haex install`.
+Slimmed shape of `.haex-hive/install.lock`. See [contracts/install-lock.v2.schema.json](./contracts/install-lock.v2.schema.json). Records the resolved atom set — the constitution block from Spec 007 plus `atoms[]`, `participating_roots`, and a `visibility_marker` cross-reference. No `content_integrity` fields per the 2026-09-01 trust-git amendment; deterministic generation from pinned inputs provides byte identity for generated payloads. The reader migrates pre-amendment v2 locks by dropping retired integrity/ownership fields and normalising root records before current-schema validation, so crash recovery and install resume remain possible.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -159,9 +159,9 @@ The canonical profile is explicit rather than an implicit tool default:
 | `format` | `Literal["json", "text", "toml"]` | Payload serialization format. |
 | `encoding` | `Literal["UTF-8"]` | No platform-default encoding. |
 | `newline` | `Literal["LF"]` | Line endings are normalized before bytes are sealed. |
-| `key_order` | `Literal["lexicographic-utf8", "not-applicable"]` | JSON/TOML keys use bytewise UTF-8 order; text has no keys. |
-| `indent` | `int \| None` | JSON/TOML indentation width, or `null` for compact/text output. |
-| `ensure_ascii` | `bool` | Explicit Unicode escaping policy. |
+| `key_order` | `Literal["lexicographic-utf8", "not-applicable"]` | JSON uses bytewise UTF-8 order; text and TOML use `not-applicable`. |
+| `indent` | `int \| None` | JSON may use an integer width or `null`; text and TOML use `null`. |
+| `ensure_ascii` | `bool` | JSON, text, and TOML use explicit `false`; JSON-only escaping is not valid for the other formats. |
 
 For the shared JSON serializer used by `install.lock` and `visibility.json`,
 the profile is `{format: "json", encoding: "UTF-8", newline: "LF",
