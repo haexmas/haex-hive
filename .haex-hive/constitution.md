@@ -200,6 +200,19 @@ agent unfiltered — which is every cross-tool handoff in this system.
   these principles during `/speckit-plan`. Any conflict is either resolved by
   changing the plan or escalated to a constitution amendment — never silently
   accepted as an exception.
+- **Declared speckit workflow adherence**: The project's active speckit
+  workflow is declared at `.specify/workflows/speckit/workflow.yml`. Every
+  primary task landing MUST follow the steps and review gates declared there,
+  invoking the named commands (`speckit.<step>` → `/speckit-<step>`) at their
+  corresponding stages. Freehand edits against source files are allowed only
+  for (a) review-fix responses on an already-open PR, or (b) follow-up
+  doc-alignment surfaced during a walkthrough test; never for the primary task
+  landing itself. If `.specify/workflows/speckit/workflow.yml` is absent, the
+  built-in speckit skills serve as the implicit default and MUST still be
+  followed for their corresponding stages. Spec 011 (planned) will formalise
+  per-project workflow selection so an adopted `speckit-workflow` atom can
+  replace or extend the local `workflow.yml` without touching this
+  constitution.
 - The phasing discipline from the design doc (`docs/plans/2026-08-26-haex-hive-design.md`)
   is binding: features MUST be sequenced by phase (0 → 7). Features for later
   phases MAY be specified in advance, but MUST NOT be implemented before their
@@ -256,7 +269,7 @@ agent unfiltered — which is every cross-tool handoff in this system.
   Phase 7) validates that no committed file violates Principles I, II, or IV
   mechanically.
 
-**Version**: 1.3.0 | **Ratified**: 2026-08-26 | **Last Amended**: 2026-08-29
+**Version**: 1.4.0 | **Ratified**: 2026-08-26 | **Last Amended**: 2026-09-02
 
 ---
 
