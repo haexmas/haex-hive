@@ -7,6 +7,7 @@
 
 ```console
 haex install [--repo-root PATH] [--verify-only]
+            [--llm {stdio,file,none}] [--accept-merged PATH]
 ```
 
 ## Flags
@@ -15,6 +16,13 @@ haex install [--repo-root PATH] [--verify-only]
 |---|---|---|
 | `--repo-root PATH` | current working directory | Path to the project checkout. Inherited from the top-level `haex --repo-root` per Spec 007. |
 | `--verify-only` | off | Acquire the SHARED read lock, verify `install.lock` + `visibility.json` consistency, exit. Never mutates. Same shape as `haex verify` today. |
+| `--llm {stdio,file,none}` | default | Select the multi-source constitution merge workflow. `stdio` reads a framed candidate from the attached LLM and requires operator confirmation; `file` writes the pending merge inputs for an external editor/LLM and exits; `none` refuses because a multi-source constitution requires a merge method. |
+| `--accept-merged PATH` | unset | Accept a reviewed merged constitution candidate from `PATH` and publish it after validating it against the pending merge inputs. It is mutually exclusive with `--llm`. |
+
+The `--llm` and `--accept-merged` options apply to multi-source constitution
+installation. Single-source installations use the deterministic fast path when
+neither option is supplied.
+
 Recovery is explicit through `haex verify --recover`, which acquires the EXCLUSIVE lock, replays or rolls back an incomplete journal, and builds no new install.
 
 ## Behaviour matrix
