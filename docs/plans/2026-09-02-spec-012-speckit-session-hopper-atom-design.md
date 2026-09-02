@@ -189,6 +189,14 @@ STEP="${1:-<step>}"
 BRANCH="$(git branch --show-current 2>/dev/null || echo '<unknown>')"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 COMMIT="$(git rev-parse HEAD 2>/dev/null || echo '<unknown>')"
+NEWLINE='
+'
+case "$ROOT$BRANCH$STEP" in
+    *"$NEWLINE"*)
+        echo "cannot emit handoff marker with a newline in root, branch, or step" >&2
+        exit 1
+        ;;
+esac
 ROOT_ESCAPED="$(printf '%s' "$ROOT" | sed "s/'/'\"'\"'/g")"
 ROOT_ESCAPED="'${ROOT_ESCAPED}'"
 BRANCH_ESCAPED="$(printf '%s' "$BRANCH" | sed "s/'/'\"'\"'/g")"
@@ -224,7 +232,7 @@ Notes:
 
 - The script uses POSIX `sh` (not bash) for portability across the operator's environment. `ROOT_ESCAPED` is a single-quoted POSIX-shell literal, so spaces, command substitutions, backticks, quotes, and shell metacharacters in the worktree path remain data when the printed command is pasted.
 - It does NOT reference the constitution or any spec artefacts. The new session finds those itself: the user-global CLAUDE.md loads `.haex-hive.json` and the constitution automatically on session start (haex-hive detection); the `/speckit-<step>` slash-command reads whatever `specs/<slug>/` files are relevant for that step; `active_workflow` is read by any agent that cares.
-- The five-line `HAEX-HIVE-HANDOFF` block is a one-shot protocol marker, not a shell command; every marker line is emitted at column 1 so the copied block has its exact protocol form. Its `root` and `branch` values are single-quoted POSIX-shell literals containing the originating session's exact values. `commit` is the exact output of `git rev-parse HEAD`, and `nonce` is fresh for this emission (random bytes when available, with the timestamp/process/commit fallback). A new session consumes the marker only when the atom, step, root (`git rev-parse --show-toplevel`), branch (`git branch --show-current`), and commit (`git rev-parse HEAD`) all match its current context and the nonce has not already been consumed in this checkout; otherwise it rejects the marker and follows the normal prompt-and-wait rule. A valid marker skips this atom's `hooks.before` prompt once and executes exactly `/speckit-<step>`; it MUST NOT be forwarded or reused for a later step or checkout.
+- The five-line `HAEX-HIVE-HANDOFF` block is a one-shot protocol marker, not a shell command; every marker line is emitted at column 1 so the copied block has its exact protocol form. The hook rejects newline-containing root, branch, or step values before emission, so each field remains one marker line. Its `root` and `branch` values are single-quoted POSIX-shell literals containing the originating session's exact values. `commit` is the exact output of `git rev-parse HEAD`, and `nonce` is fresh for this emission (random bytes when available, with the timestamp/process/commit fallback). A new session consumes the marker only when the atom, step, root (`git rev-parse --show-toplevel`), branch (`git branch --show-current`), and commit (`git rev-parse HEAD`) all match its current context and the nonce has not already been consumed in this checkout; otherwise it rejects the marker and follows the normal prompt-and-wait rule. A valid marker skips this atom's `hooks.before` prompt once and executes exactly `/speckit-<step>`; it MUST NOT be forwarded or reused for a later step or checkout.
 - Before executing a valid marker's step, the session atomically claims the nonce in the device-local haex state root under `session-handoffs/consumed/<nonce>/`. Exclusive directory creation is the consumption event; an existing nonce is rejected, so copied markers cannot rerun a non-idempotent step in the same checkout. The claim record contains the atom, step, root, branch, commit, and nonce and is written before execution; this state is never committed to the repository. A crash after the claim is treated as consumed (at-most-once semantics).
 - It falls back gracefully outside a git worktree (`<unknown>` branch, current directory as root). The atom is not intended for non-git use; that fallback exists only to avoid a shell error if someone accidentally invokes the script by hand.
 - Executable bit: Spec 011 FR-003 states hook payloads are copied byte-identically. Before activation, the hook check uses the exact invocation semantics of the runner: a direct-execution runner requires the published regular file to have its executable mode and to run successfully; an interpreter-mediated runner requires the corresponding interpreter invocation to run successfully. If a manual `chmod +x` is needed for a direct runner, it MUST happen before the activation check; the atom MUST NOT be activated with an unexecutable hook.
@@ -246,14 +254,20 @@ Sessions whose `active_workflow` resolves to
    `root: <single-quoted-originating-repository-root>`,
    `branch: <single-quoted-originating-branch>`, `commit: <originating-HEAD>`,
    and `nonce: <fresh-nonce>`, validate that the atom, `<step>`, decoded root,
-   decoded branch, and commit match the current session and repository. If any
-   value differs, reject the marker and continue with the normal hook below.
-   If all values match, atomically create the device-local
-   `session-handoffs/consumed/<nonce>/` claim directory and write its bound
-   record before executing the step. An existing claim rejects the marker;
-   there is no retry after a crash following a successful claim. Only after a
-   successful claim, skip the prompt exactly once and execute that step. The
-   marker MUST NOT be forwarded to another step or session.
+   decoded branch, and commit match the current session and repository, and
+   that `<step>` equals the runner's current `command:` step ID (the step that
+   invoked `hooks.before`). If any value differs, reject the marker and
+   continue with the normal hook below; never execute the marker's requested
+   step when it differs from the active step. Before constructing the claim
+   path, require `<nonce>` to match
+   `^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`; reject empty, separator-containing,
+   traversal, or otherwise invalid values. If all values match, atomically
+   create the device-local `session-handoffs/consumed/<nonce>/` claim directory
+   and atomically rename its bound record into place before executing the step.
+   An existing claim rejects the marker; there is no retry after a crash
+   following a successful claim. Only after a successful claim, skip the prompt
+   exactly once and execute the current step. The marker MUST NOT be forwarded
+   to another step or session.
 2. Otherwise, execute the step's `hooks.before` script and capture its stdout.
 3. Display the captured block to the operator verbatim.
 4. Wait for the operator's answer.
