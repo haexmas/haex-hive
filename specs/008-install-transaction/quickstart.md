@@ -15,7 +15,7 @@ From the project checkout root:
 
 ```console
 haex install
-installed generation g_20260831T142011Z_a4c2 (2 atoms, 12 files)
+installed generation g_20260831T142011Z_a4c2
 ```
 
 On success, the following files exist:
@@ -30,7 +30,7 @@ On success, the following files exist:
 identity; the full identity is kept separately in `repo-identity.v1.json` and
 never appears in the directory name:
 
-- `install.mutex` (device-local, not shared across satellites) — was held during the install; heartbeat thread stops on exit.
+- `install.mutex` (device-local, not shared across satellites) — was held during the install and released on exit. The heartbeat thread + stale-lease reclaim protocol are deferred to T034.
 - `repos/<clone-hash>/` — device-local pinned publisher clones used during
   source resolution.
 
@@ -40,21 +40,14 @@ Running `haex install` again with no changes to `.haex-hive.json`:
 
 ```console
 haex install
-no changes; generation g_20260831T142011Z_a4c2 is up to date
+no changes
 ```
 
 Zero files rewritten. Zero timestamps updated. This is the SC-003 idempotence guarantee.
 
 ## 3. Verify without installing
 
-For CI or a scripted check:
-
-```console
-haex install --verify-only
-generation g_20260831T142011Z_a4c2 verified
-```
-
-Acquires the shared read lock only. Concurrent `haex install` (exclusive) blocks it until the install completes.
+*Not yet available.* `--verify-only` and the shared-read lock land in the US2 fenced-lease block (task T037). Until then, verification against a running install is done by reading `.haex-hive/visibility.json` and `.haex-hive/install.lock` directly and comparing their `generation_id` fields (see step 7).
 
 ## 4. Concurrent install attempt
 
@@ -62,10 +55,9 @@ If a second `haex install` runs while the first is in flight:
 
 ```console
 haex install
-error: exit=9 key=install-lock-busy
-  lock held by 31245@laptop-hex.local since 2026-08-31T14:20:11Z
-  (heartbeat 3s ago, ttl 60s)
-  hint: wait or investigate PID 31245; if the process is dead, retry `haex install`
+error: exit=9 key=constitution-writer-busy
+  another `haex install` is running
+  hint: another `haex install` is running; retry after it releases the lock.
 ```
 
 Non-blocking by design (per FR-001) — the operator sees ownership detail immediately.
@@ -92,10 +84,10 @@ Edit `.haex-hive.json` to drop an atom, then reinstall:
 
 ```console
 $ haex install
-installed generation g_20260831T160532Z_bb18 (1 atom, 4 files; removed 8 files owned by com.example.old-atom)
+installed generation g_20260831T160532Z_bb18
 ```
 
-The transaction stages new writes AND deletions atomically per FR-008. If interrupted mid-way, recovery leaves the tree either fully at the old state (both atoms, all files) or fully at the new state (one atom, its files only). No partial delete.
+The transaction stages the reduced generation into `.haex-hive.next/` and swaps it in atomically. Under the R1 rename-swap the whole `.haex-hive/` is replaced in one step, so any file only the removed atom would have contributed is absent from the new generation by construction. If interrupted mid-way, recovery leaves the tree either fully at the old state or fully at the new state; a subsequent `haex install` converges deterministically.
 
 ## 7. Reader consistency (for adapter authors)
 
