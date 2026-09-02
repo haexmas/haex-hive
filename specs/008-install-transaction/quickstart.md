@@ -43,7 +43,9 @@ haex install
 no changes
 ```
 
-Zero files rewritten. Zero timestamps updated. This is the SC-003 idempotence guarantee.
+No files in `.haex-hive/` are rewritten and their timestamps remain unchanged.
+The device-local `$HAEX_HIVE_STATE/locks/<repo-key>/install.mutex` may still be
+rewritten or fsynced. This is the SC-003 idempotence guarantee.
 
 ## 3. Verify without installing
 
@@ -60,7 +62,8 @@ error: exit=9 key=constitution-writer-busy
   hint: another `haex install` is running; retry after it releases the lock.
 ```
 
-Non-blocking by design (per FR-001) — the operator sees ownership detail immediately.
+Non-blocking by design (per FR-001) — the operator gets a busy diagnostic and
+a retry hint immediately.
 
 ## 5. Recovering from an interrupted install
 
@@ -97,11 +100,27 @@ Any tool reading the participating output roots should follow this pattern to av
 import json
 from pathlib import Path
 
-def load_visibility_marker(repo_root: Path) -> dict:
-    marker = repo_root / ".haex-hive" / "visibility.json"
-    if not marker.exists():
-        raise RuntimeError("no installation available")
-    return json.loads(marker.read_bytes())
+def load_consistent_metadata(repo_root: Path, attempts: int = 3) -> tuple[dict, dict]:
+    marker_path = repo_root / ".haex-hive" / "visibility.json"
+    install_lock_path = repo_root / ".haex-hive" / "install.lock"
+    for _ in range(attempts):
+        try:
+            marker_before = json.loads(marker_path.read_bytes())
+            install_lock = json.loads(install_lock_path.read_bytes())
+            marker_after = json.loads(marker_path.read_bytes())
+        except (FileNotFoundError, json.JSONDecodeError):
+            # The live tree can be absent briefly during the rename swap.
+            continue
+        if marker_before["generation_id"] != marker_after["generation_id"]:
+            # A publication happened while the metadata was being read.
+            continue
+        if (
+            marker_before["generation_id"]
+            != install_lock["visibility_marker"]["generation_id"]
+        ):
+            raise RuntimeError("install.lock does not match visibility marker")
+        return marker_after, install_lock
+    raise RuntimeError("could not read a stable installation generation")
 
 def verify_root(repo_root: Path, root_name: str, managed_paths: set[str]) -> None:
     # Enumerate paths per FR-005: for haex-owned roots, all files under root
@@ -114,11 +133,7 @@ def verify_root(repo_root: Path, root_name: str, managed_paths: set[str]) -> Non
     pass
 
 project_checkout = Path.cwd()
-marker = load_visibility_marker(project_checkout)
-install_lock_path = project_checkout / ".haex-hive" / "install.lock"
-install_lock = json.loads(install_lock_path.read_bytes())
-if marker["generation_id"] != install_lock["visibility_marker"]["generation_id"]:
-    raise RuntimeError("install.lock does not match visibility marker")
+marker, install_lock = load_consistent_metadata(project_checkout)
 managed_paths = {
     path
     for atom in install_lock.get("atoms", [])
