@@ -10,10 +10,11 @@ final step.
 
 Stale-sibling cleanup lives in `haex_hive.install.inflight.clean_stale_siblings`;
 callers must invoke it under the exclusive install lock BEFORE calling
-`publish_generation` so any `<root>.next/` or `<root>.prev/` left over from
-a prior crashed install is removed. Under the 2026-09-02 detect+retry
-simplification the recovery model is "reinstall converges" — there is no
-mid-swap recovery-forward logic.
+`publish_generation` so any `<root>.next/` left over from a prior crashed install
+is removed. A leftover `<root>.prev/` is retained until the replacement has
+been staged, validated, and published successfully. Under the 2026-09-02
+detect+retry simplification the recovery model is "reinstall converges" —
+there is no mid-swap recovery-forward logic.
 
 If `post_write_verify` raises after the swap, the swap is rolled back —
 `<root>` is renamed back to `<root>.next` and, when `<root>.prev/` existed
@@ -169,6 +170,13 @@ def publish_generation(
 
         _crash_after("pre_swap")
         if live_existed_before:
+            # A previous crash after rename B may have left an old `.prev/`.
+            # Staging and validation are complete now, so replace that stale
+            # pre-image immediately before creating the new one. If we crash
+            # before rename A, the live generation is still untouched.
+            if prev_dir.exists():
+                _rmtree(prev_dir)
+                _fsync_dir(parent)
             os.rename(str(live), str(prev_dir))
             _fsync_dir(parent)
             rename_a_done = True
@@ -200,7 +208,7 @@ def publish_generation(
                 rename_a_done = False
                 raise
 
-        if live_existed_before:
+        if prev_dir.exists():
             _rmtree(prev_dir)
             _fsync_dir(parent)
     except BaseException:

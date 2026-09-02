@@ -33,7 +33,7 @@ class InstallLockBusy(HaexInstallError):
 class IncompleteTransaction(HaexInstallError):
     diagnostic_key: str = "install-transaction-incomplete"
     exit_code: int = exit_codes.INCOMPLETE_TRANSACTION
-    hint: str = "Run `haex verify --recover` to complete or roll back the interrupted install."
+    hint: str = "Retry `haex install` to clean up and rebuild the interrupted install."
 
 
 @dataclass

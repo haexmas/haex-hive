@@ -23,6 +23,8 @@ from pathlib import Path
 
 import pytest
 
+from haex_hive.migrate.transform import clone_dir
+
 pytestmark = [
     pytest.mark.slow,
     pytest.mark.skipif(shutil.which("git") is None, reason="git binary required"),
@@ -99,6 +101,21 @@ def test_crash_at_boundary_converges_on_retry(
         else:
             assert not prev_dir.exists()
         assert not next_dir.exists()
+
+    if crash_point == "rename_a" and preexisting:
+        previous_generation = (prev_dir / "constitution.md").read_bytes()
+        clone = clone_dir(state_root, single_source_constitution_fixture["canonical"])
+        shutil.rmtree(clone)
+
+        failed_retry = _run(consumer, state_root)
+
+        assert failed_retry.returncode != 0
+        assert not live.exists()
+        assert not next_dir.exists()
+        assert prev_dir.exists()
+        assert (prev_dir / "constitution.md").read_bytes() == previous_generation
+
+        shutil.copytree(single_source_constitution_fixture["publisher"], clone)
 
     recovered = _run(consumer, state_root)
     assert recovered.returncode == 0, recovered.stderr.decode()

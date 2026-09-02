@@ -192,16 +192,16 @@ def test_clean_stale_siblings_removes_next_only(tmp_path: Path) -> None:
     next_dir.mkdir()
     (next_dir / "constitution.md").write_bytes(b"aborted\n")
 
-    next_removed, prev_removed = inflight.clean_stale_siblings(live)
+    next_removed, prev_present = inflight.clean_stale_siblings(live)
 
-    assert (next_removed, prev_removed) == (True, False)
+    assert (next_removed, prev_present) == (True, False)
     assert live.exists()
     assert (live / "constitution.md").read_bytes() == b"live\n"
     assert not next_dir.exists()
 
 
-def test_clean_stale_siblings_removes_prev_only(tmp_path: Path) -> None:
-    """A leftover `.prev/` from a post-swap crash is deleted; live is untouched."""
+def test_clean_stale_siblings_retains_prev_only(tmp_path: Path) -> None:
+    """A leftover `.prev/` from a mid-swap crash is retained; live is untouched."""
     live = tmp_path / transaction.HAEX_HIVE_DIR
     prev_dir = tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev"
 
@@ -210,15 +210,15 @@ def test_clean_stale_siblings_removes_prev_only(tmp_path: Path) -> None:
     prev_dir.mkdir()
     (prev_dir / "constitution.md").write_bytes(b"prev\n")
 
-    next_removed, prev_removed = inflight.clean_stale_siblings(live)
+    next_removed, prev_present = inflight.clean_stale_siblings(live)
 
-    assert (next_removed, prev_removed) == (False, True)
+    assert (next_removed, prev_present) == (False, True)
     assert (live / "constitution.md").read_bytes() == b"live\n"
-    assert not prev_dir.exists()
+    assert prev_dir.exists()
 
 
-def test_clean_stale_siblings_removes_both_after_mid_swap_crash(tmp_path: Path) -> None:
-    """A mid-swap crash leaves both siblings; both are deleted for reinstall."""
+def test_clean_stale_siblings_retains_prev_after_mid_swap_crash(tmp_path: Path) -> None:
+    """A mid-swap crash loses `.next/` but retains `.prev/` for a safe retry."""
     live = tmp_path / transaction.HAEX_HIVE_DIR
     next_dir = tmp_path / f"{transaction.HAEX_HIVE_DIR}.next"
     prev_dir = tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev"
@@ -228,12 +228,25 @@ def test_clean_stale_siblings_removes_both_after_mid_swap_crash(tmp_path: Path) 
     prev_dir.mkdir()
     (prev_dir / "constitution.md").write_bytes(b"prev gen\n")
 
-    next_removed, prev_removed = inflight.clean_stale_siblings(live)
+    next_removed, prev_present = inflight.clean_stale_siblings(live)
 
-    assert (next_removed, prev_removed) == (True, True)
+    assert (next_removed, prev_present) == (True, True)
     assert not next_dir.exists()
-    assert not prev_dir.exists()
+    assert prev_dir.exists()
     assert not live.exists()
+
+
+def test_clean_stale_siblings_removes_validated_prev(tmp_path: Path) -> None:
+    """A validated live replacement may remove its stale `.prev/` sibling."""
+    live = tmp_path / transaction.HAEX_HIVE_DIR
+    prev_dir = tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev"
+
+    live.mkdir()
+    prev_dir.mkdir()
+
+    assert inflight.clean_stale_siblings(live, remove_prev=True) == (False, True)
+    assert live.exists()
+    assert not prev_dir.exists()
 
 
 def test_clean_stale_siblings_is_noop_on_steady_state(tmp_path: Path) -> None:

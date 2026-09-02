@@ -21,7 +21,7 @@ installed generation g_20260831T142011Z_a4c2 (2 atoms, 12 files)
 On success, the following files exist:
 
 - `.haex-hive/constitution.md` — assembled constitution (from Spec 007's flow, now under the install transaction).
-- `.haex-hive/install.lock` — install manifest with per-atom `content_integrity` and per-root digests.
+- `.haex-hive/install.lock` — install manifest with resolved atom identities and generation metadata.
 - `.haex-hive/visibility.json` — the publication marker.
 - Additional per-adapter outputs under `.claude/`, `.codex/`, etc. as Spec 010 adapters land.
 
@@ -31,9 +31,8 @@ identity; the full identity is kept separately in `repo-identity.v1.json` and
 never appears in the directory name:
 
 - `install.mutex` (device-local, not shared across satellites) — was held during the install; heartbeat thread stops on exit.
-- `checkouts/<checkout-key>/install.journal` — removed atomically after the
-  successful cleanup step; an existing journal always means recovery is
-  required (FR-002).
+- `repos/<clone-hash>/` — device-local pinned publisher clones used during
+  source resolution.
 
 ## 2. Idempotent re-install
 
@@ -66,37 +65,26 @@ haex install
 error: exit=9 key=install-lock-busy
   lock held by 31245@laptop-hex.local since 2026-08-31T14:20:11Z
   (heartbeat 3s ago, ttl 60s)
-  hint: wait or investigate PID 31245; if the process is dead, run `haex verify --recover`
+  hint: wait or investigate PID 31245; if the process is dead, retry `haex install`
 ```
 
 Non-blocking by design (per FR-001) — the operator sees ownership detail immediately.
 
 ## 5. Recovering from an interrupted install
 
-If a previous `haex install` was killed (SIGKILL, power loss, host reboot), the next invocation detects it:
+If a previous `haex install` was killed (SIGKILL, power loss, host reboot),
+retry the same command. It removes stale `.haex-hive.next/`, retains a
+`.haex-hive.prev/` pre-image until the replacement is successfully published,
+and regenerates the deterministic generation from the pinned inputs:
 
 ```console
 haex install
-error: exit=7 key=incomplete-transaction (FR-002)
-  install.journal contains uncommitted entries from a prior invocation
-  hint: run `haex verify --recover` to complete or roll back
+installed generation g_20260831T142011Z_a4c2
 ```
 
-Recover:
-
-```console
-haex verify --recover
-recovered generation g_20260831T142011Z_a4c2 (completed; 12 files sealed)
-```
-
-Or if recovery determined the safe path was rollback:
-
-```console
-haex verify --recover
-recovered previous generation g_20260828T093345Z_7f21 (rolled back; 8 files restored)
-```
-
-Either outcome is a valid FR-011 result: complete-new OR rollback-to-previous. Never a mixed state. If the marker was already published when the crash occurred, recovery keeps that verified generation and performs cleanup only.
+If manifest or source resolution fails during the retry, the command refuses
+without claiming a new generation and retains `.prev/` when it is the only
+published generation. Fix the input and retry `haex install` again.
 
 ## 6. Removing an atom
 
@@ -164,7 +152,8 @@ for root_record in marker["participating_roots"]:
 - **Under `$HAEX_HIVE_STATE`** (device-local, NEVER shared across satellites, MUST NOT contain secrets per FR-022):
   - `~/.local/share/haex-hive/repos/<clone-hash>/` — publisher bare clones (Spec 007).
   - `$HAEX_HIVE_STATE/locks/<repo-key>/install.mutex` — install lock (new in Spec 008).
-  - `$HAEX_HIVE_STATE/locks/<repo-key>/checkouts/<checkout-key>/install.journal` — checkout-scoped durable journal (new in Spec 008).
+  - No durable install journal — interrupted installs are detected from stale
+    `.next`/`.prev` siblings beside the published root.
   - Override with `$HAEX_HIVE_STATE` env var.
 
 ## 9. Suspending automation for a session
