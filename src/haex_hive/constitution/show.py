@@ -29,6 +29,7 @@ def show(
     out: BinaryIO | None = None,
     state_root: Path | None = None,
 ) -> None:
+    """Render the currently published constitution without modifying state."""
     hive_dir = repo_root / transaction.HAEX_HIVE_DIR
     del state_root  # show is read-only; stale-sibling cleanup is a writer concern.
 

@@ -74,8 +74,9 @@ error: exit=4 key=commit-snapshot-mismatch (FR-006)
 Third-party readers (agent CLIs, editors) do not invoke this CLI — they read the participating output roots directly. Per FR-005, correct readers:
 
 1. Load `.haex-hive/visibility.json` first.
-2. Verify each participating root's on-disk digest matches `visibility.json.participating_roots[].content_integrity`.
-3. Treat a missing marker or mismatched digest as an unavailable installation, never as a partially-valid one.
+2. Verify that `install.lock.visibility_marker.generation_id` matches `visibility.json.generation_id` and that every named root is available.
+3. For mixed-ownership roots, verify that every active adapter pointer names the marker's generation.
+4. Treat a missing marker or generation mismatch as an unavailable installation, never as a partially-valid one.
 
 The Spec 008 landing includes a reference reader-guide in [quickstart.md](../quickstart.md) for adapter authors.
 
