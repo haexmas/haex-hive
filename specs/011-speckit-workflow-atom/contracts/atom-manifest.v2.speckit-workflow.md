@@ -13,7 +13,7 @@ This delta document defines the three new optional `contributes.*` fields that S
 - **Type**: string (repo-relative path).
 - **Required**: no; presence marks the atom as a `speckit-workflow` kind.
 - **Content shape**: YAML file matching the bundled `.specify/workflows/speckit/workflow.yml` reference shape (`schema_version`, `workflow.id/name/version`, `steps[]`).
-- **Validation**: path passes `RepoRelativePath.validate`; content parses as YAML; content passes `validate_no_plaintext_secrets` and `validate_no_concealment_instructions`; every `steps[].script` and `hooks[].script` inside the yml passes `RepoRelativePath.validate` + containment against the atom root.
+- **Validation**: path passes `RepoRelativePath.validate`; content parses as YAML; content passes `validate_no_plaintext_secrets` and `validate_no_concealment_instructions`; every `steps[].script` and `hooks[].script` inside the yml passes `RepoRelativePath.validate` + canonical containment below the atom's declared `contributes.speckit_hooks` directory. A workflow that declares script paths without `speckit_hooks` refuses before publication.
 
 ### `contributes.speckit_extensions`
 
@@ -29,16 +29,16 @@ This delta document defines the three new optional `contributes.*` fields that S
 
 ## Multi-workflow-atom refusal (FR-006)
 
-When two or more atoms in `.haex-hive.json`'s resolved adoption set carry `contributes.speckit_workflow`, `ConsumerManifest.from_json` refuses with `key=multiple-workflow-atoms-refused` (exit `INPUT_REFUSE=2`). Stderr names every offending atom's `id` and `source`. Zero files are written under `.specify/workflows/`, `.specify/extensions/workflow-atoms/`, `.specify/extensions.yml`, or `.haex-hive/`.
+When two or more resolved publisher atom manifests carry `contributes.speckit_workflow`, the workflow pipeline refuses with `key=multiple-workflow-atoms-refused` (exit `INPUT_REFUSE=2`) after those manifests have been loaded and validated, but before fragments or publication are processed. Stderr names every offending atom's `id` and `source`. Zero files are written under `.specify/workflows/`, `.specify/extensions/workflow-atoms/`, `.specify/extensions.yml`, or `.haex-hive/`.
 
 ## Publication targets
 
 | Contribution | Destination | Semantics |
 |---|---|---|
 | `speckit_workflow` file | `.specify/workflows/<atom-id>/workflow.yml` | Byte-for-byte copy. |
-| `speckit_extensions` file | Merged into `.specify/extensions.yml` per [extensions-fragment.v1.md](./extensions-fragment.v1.md) and [extensions-generated.v1.md](./extensions-generated.v1.md). Never published as a standalone file. |
-| `speckit_hooks/*` tree | `.specify/extensions/workflow-atoms/<atom-id>/**` (reserved namespace). Directory-preserving copy. |
-| `constitution` file | Merged into `.haex-hive/constitution.md` `## Workflow-Contributed Rules` section under a `### From atom <atom-id> (revision <short-sha>)` byline. |
+| `speckit_extensions` file | `.specify/extensions.yml` | Merged per [extensions-fragment.v1.md](./extensions-fragment.v1.md) and [extensions-generated.v1.md](./extensions-generated.v1.md); never published as a standalone file. |
+| `speckit_hooks/*` tree | `.specify/extensions/workflow-atoms/<atom-id>/**` (reserved namespace) | Directory-preserving copy for the atom's hook files. |
+| `constitution` file | `.haex-hive/constitution.md`, in `## Workflow-Contributed Rules` | Merged under a `### From atom <atom-id> (revision <short-sha>)` byline. |
 
 ## Delete-orphans
 

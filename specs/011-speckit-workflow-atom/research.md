@@ -36,18 +36,18 @@
 
 **Residual risk**: an operator who edited `.specify/extensions.yml` directly (thinking it was source-of-truth) loses those edits at the next install. Mitigation: quickstart.md documents the ownership split explicitly; the generated file SHOULD carry a top-of-file comment naming itself as generated.
 
-## R3. Single-atom refusal placement
+## R3. Multi-workflow-atom refusal placement
 
-**Decision**: `ConsumerManifest.from_json` detects the multi-workflow-atom case at manifest-load time, before any workflow resolver, fragment loader, or install pipeline runs. Refusal raises `MultipleWorkflowAtomsRefusedError` (`key=multiple-workflow-atoms-refused`, `INPUT_REFUSE`) with stderr naming every offending atom's `id` and `source`.
+**Decision**: After the publisher and selected atom manifests have been resolved and validated, the workflow pipeline counts manifests whose `contributes` map includes `speckit_workflow`. Two or more such manifests raise `MultipleWorkflowAtomsRefusedError` (`key=multiple-workflow-atoms-refused`, `INPUT_REFUSE`) with stderr naming every offending atom's `id` and `source`. The check runs before any fragment loading or publication. `ConsumerManifest.from_json` validates only the consumer-owned manifest and does not perform this check.
 
 **Rationale**:
 - **Fail early**: the refusal fires before any fragment YAML is loaded, so a broken adopted set cannot exercise the merge / resolver code paths.
-- **Single home**: putting the check on `ConsumerManifest.from_json` means every consumer of `ConsumerManifest` (install, verify, potential future consumers) sees the same refusal without each having to add its own guard.
+- **Correct data source**: `contributes.speckit_workflow` exists in publisher atom manifests, not in the consumer's atom entries, so the check must run after atom resolution rather than trust duplicated consumer data or perform hidden repository I/O in `ConsumerManifest.from_json`.
 - **Consistent diagnostic surface**: uses the existing `HaexError` machinery.
 
 **Alternatives considered**:
-- **Detect at resolver time**: rejected, allows some intermediate state (parsed fragments) that a refusing manifest should not produce.
-- **Detect at `cli/install.py::run` time only**: rejected, would leave other future callers of `ConsumerManifest` (verify-only, hypothetical `haex workflow list`) without the guard.
+- **Detect in `ConsumerManifest.from_json`**: rejected, because the consumer manifest does not contain the publisher atoms' `contributes` fields.
+- **Detect at `cli/install.py::run` time only**: rejected, because other workflow consumers would lack the guard and the check would be too late if fragment loading moved earlier.
 
 **Residual risk**: none identified. The check is O(n) in the adopted atom count.
 
@@ -78,11 +78,11 @@
 
 **Decision**: `resolve_active_workflow(repo_root: Path) -> WorkflowResolution` returns a typed object with a `source: Literal["atom", "bundled"]` field and a `diagnostics: tuple[str, ...]` field. Algorithm:
 
-1. Load `.haex-hive.json` via `ConsumerManifest.from_json`. If parse fails, return `bundled` with a diagnostic naming the parse error. If FR-006 refusal fires here, propagate the error rather than falling back (the refusal is a manifest error, not a resolver fallback case).
-2. Enumerate adopted atoms. Look up their manifests via existing atom-resolution machinery.
-3. Find the atom whose `contributes` map includes `speckit_workflow`.
-4. If found: return `WorkflowResolution(source="atom", workflow_path=<atom's published path>, atom_id=<id>, diagnostics=[])`.
-5. If not found: return `WorkflowResolution(source="bundled", workflow_path=<bundled path>, atom_id=None, diagnostics=[])`.
+1. If `.haex-hive.json` is missing, return `WorkflowResolution(source="bundled", workflow_path=<bundled path>, atom_id=None, diagnostics=(<missing-manifest diagnostic>,))`.
+2. If `.haex-hive.json` exists, load it via `ConsumerManifest.from_json`. Propagate JSON, schema, identity, and revision validation failures with diagnostics; do not select the bundled workflow for an invalid manifest.
+3. Enumerate adopted atoms and look up their manifests via existing atom-resolution machinery. After validation, refuse multiple manifests carrying `contributes.speckit_workflow` as specified in R3.
+4. Find the atom whose `contributes` map includes `speckit_workflow`. If found, return `WorkflowResolution(source="atom", workflow_path=<atom's published path>, atom_id=<id>, diagnostics=[])`.
+5. If the manifest is valid but no resolved atom contributes `speckit_workflow`, return `WorkflowResolution(source="bundled", workflow_path=<bundled path>, atom_id=None, diagnostics=[])`.
 
 **Rationale**: typed return absorbs "no workflow atom adopted" as a first-class outcome, not an error. Downstream consumers get a stable API surface.
 
@@ -154,7 +154,7 @@ Two atom-contributed entries with the same identity refuse with `key=workflow-ho
 
 - R1 registry-alternative: no registry file
 - R2 extensions ownership boundary: `.specify/extensions.local.yml` (consumer) vs `.specify/extensions.yml` (generated)
-- R3 single-atom refusal placement: `ConsumerManifest.from_json`
+- R3 multi-workflow refusal placement: after publisher atom resolution and validation
 - R4 constraint-merge algorithm: simplified to atom-vs-local
 - R5 reader resolution fallback: typed `WorkflowResolution` with `source` field
 - R6 workflow.yml payload safety guards

@@ -61,7 +61,7 @@ Edit `.haex-hive.json`:
 
 ## 3. First install
 
-Because the atom contributes a `constitution.md` fragment, the multi-source merge two-phase flow applies:
+Because the atom contributes a `constitution.md` fragment, the review-gated multi-source merge path applies even when this is the only constitution contribution. The installer MUST route this case through `assemble_multi_source`, not the `assemble_single_source` shortcut:
 
 ```console
 $ haex install --llm=file
@@ -74,6 +74,11 @@ installed generation g_20260902T160000Z_ab12
 ```
 
 Atoms without a constitution fragment use plain `haex install` (no `--llm=file` step).
+
+The US1 integration test verifies this contract by asserting exit code `5`, the
+presence of `.haex-hive/constitution.merge.pending.json`, and the absence of
+new workflow publication before the merge is accepted. After
+`--accept-merged`, it verifies the workflow files and merged constitution.
 
 ## 4. Verify the publication
 
@@ -170,7 +175,8 @@ error: exit=2 key=multiple-workflow-atoms-refused
   hint: adopt at most one speckit-workflow atom per project
 ```
 
-Install refuses at consumer-manifest load time, before any file publication.
+Install refuses after resolving and validating the selected publisher atom
+manifests, but before loading fragments or publishing any file.
 
 ## 8. Downgrade
 
