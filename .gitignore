@@ -21,3 +21,4 @@ coverage.xml
 Thumbs.db
 *.swp
 graphify-out/
+.worktrees/
