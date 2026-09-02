@@ -1,6 +1,6 @@
 """Canonical exit codes for every `haex` command.
 
-Codes are unified across `haex migrate`, `haex constitution assemble`, and
+Codes are unified across `haex migrate`, `haex install`, and
 `haex constitution show` so a caller never has to disambiguate divergent values
 for the same numeric result.
 """
@@ -36,7 +36,7 @@ INCOMPLETE_TRANSACTION = 7
 # 8 — Principle VIII concealment-instruction refuse.
 CONSTITUTION_CONCEALMENT = 8
 
-# 9 — another `haex constitution assemble` (writer lock) or `haex install`
+# 9 — another `haex install` (writer lock)
 # (install lock) owns the exclusive lock. Both surfaces share the code so
 # callers do not have to disambiguate; the diagnostic distinguishes them.
 WRITER_BUSY = 9

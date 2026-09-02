@@ -209,7 +209,7 @@ class ConstitutionWriterLock:
             os.close(fd)
             if e.errno in (errno.EWOULDBLOCK, errno.EAGAIN):
                 raise ConstitutionWriterBusyError(
-                    message="another `haex constitution assemble` is running"
+                    message="another `haex install` is running"
                 ) from None
             raise
         self._fd = fd
@@ -279,7 +279,7 @@ class ConstitutionWriterLock:
             kernel32.CloseHandle(wintypes.HANDLE(handle))
             if last_error == _ERROR_LOCK_VIOLATION:
                 raise ConstitutionWriterBusyError(
-                    message="another `haex constitution assemble` is running"
+                    message="another `haex install` is running"
                 )
             raise ctypes.WinError(last_error)
         self._handle = handle

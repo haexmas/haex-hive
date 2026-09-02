@@ -85,7 +85,7 @@ def test_path2_single_source_assemble_and_show(
     consumer = single_source_constitution_fixture["consumer"]
     state_root = single_source_constitution_fixture["state_root"]
 
-    first = _run_haex(consumer, "constitution", "assemble", state_root=state_root)
+    first = _run_haex(consumer, "install", state_root=state_root)
     assert first.returncode == 0, first.stderr.decode()
 
     source_body = (
@@ -95,17 +95,12 @@ def test_path2_single_source_assemble_and_show(
     assert constitution == source_body
     lock_data_1 = json.loads((consumer / ".haex-hive" / "install.lock").read_bytes())
 
-    second = _run_haex(consumer, "constitution", "assemble", state_root=state_root)
+    second = _run_haex(consumer, "install", state_root=state_root)
     assert second.returncode == 0
+    assert second.stdout.decode().strip() == "no changes"
     assert (consumer / ".haex-hive" / "constitution.md").read_bytes() == constitution
     lock_data_2 = json.loads((consumer / ".haex-hive" / "install.lock").read_bytes())
-    assert (
-        lock_data_1["visibility_marker"]["generation_id"]
-        != lock_data_2["visibility_marker"]["generation_id"]
-    )
-    lock_data_1["visibility_marker"]["generation_id"] = None
-    lock_data_2["visibility_marker"]["generation_id"] = None
-    assert lock_data_1 == lock_data_2
+    assert lock_data_1 == lock_data_2, "no-op re-install must leave install.lock untouched"
 
     show = _run_haex(consumer, "constitution", "show", state_root=state_root)
     assert show.returncode == 0, show.stderr.decode()
@@ -129,8 +124,7 @@ def test_path3_multi_source_assemble_second_device_show(
     confirm = b"--haex-confirm: yes\n"
     proc = _run_haex(
         consumer,
-        "constitution",
-        "assemble",
+        "install",
         "--llm=stdio",
         state_root=state_root,
         stdin_bytes=candidate + confirm,
@@ -153,7 +147,7 @@ def test_path3_refuses_missing_llm(multi_source_constitution_fixture: dict) -> N
     consumer = multi_source_constitution_fixture["consumer"]
     state_root = multi_source_constitution_fixture["state_root"]
 
-    proc = _run_haex(consumer, "constitution", "assemble", "--llm=none", state_root=state_root)
+    proc = _run_haex(consumer, "install", "--llm=none", state_root=state_root)
     assert proc.returncode == 4
     assert b"key=llm-required-for-multi-source" in proc.stderr
     assert not (consumer / ".haex-hive" / "constitution.md").exists()

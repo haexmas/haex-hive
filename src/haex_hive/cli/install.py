@@ -115,6 +115,19 @@ def run(args: argparse.Namespace) -> int:
             if not contributions:
                 raise NoSourcesDeclaredError(message="no constitution sources declared")
 
+            accept_merged_path = getattr(args, "accept_merged", None)
+            llm_method = getattr(args, "llm", None)
+
+            if accept_merged_path is not None:
+                return assemble_multi_source(
+                    contributions,
+                    repo_root,
+                    llm_method=llm_method,
+                    accept_merged_path=accept_merged_path,
+                    tool_version=INSTALLED_VERSION_STRING,
+                    state_root=state_root,
+                )
+
             if len(contributions) == 1:
                 contribution = contributions[0]
                 if _is_no_op_single_source(
@@ -142,8 +155,8 @@ def run(args: argparse.Namespace) -> int:
             return assemble_multi_source(
                 contributions,
                 repo_root,
-                llm_method=getattr(args, "llm", None),
-                accept_merged_path=getattr(args, "accept_merged", None),
+                llm_method=llm_method,
+                accept_merged_path=None,
                 tool_version=INSTALLED_VERSION_STRING,
                 state_root=state_root,
             )

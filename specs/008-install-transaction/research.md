@@ -276,6 +276,8 @@ without a journal and never publishes a torn state.
 
 ## R9. Constitution assemble integration
 
+**2026-09-02 amendment**: The "keep the UX shortcut" bullet below was superseded. `haex constitution assemble` was retired as a distinct CLI verb; `haex install` is the single entry point and owns the `--llm` / `--accept-merged` flags directly. `haex constitution show` (the read-only inverse) remains. The library-layer functions in `constitution/assemble.py` (`_publish_constitution`, `assemble_single_source`, `assemble_multi_source`) still exist as the composer that `install()` calls. Under the pre-user policy the shim carried no adoption benefit and doubled the CLI test surface.
+
 **Decision**: The existing `haex constitution assemble` transaction (Spec 007) becomes a single-participant special case of `haex install`'s transaction. Concretely:
 - `haex install` composes constitution assembly with the other fixed-shape outputs when the manifest includes `contributes.constitution`.
 - The existing `.haex-hive/install.lock` schema is extended with `atoms`, immutable `generation_inputs`, `participating_roots`, and a `visibility_marker` block. It carries no content-integrity or per-path ownership records; mixed-root ownership and overlay bookkeeping are deferred to Spec 010. **Under the project's pre-user policy** (no external adopters, breaking changes fine), a Spec 007-vintage `install.lock` fails Spec 008 schema validation with `InstallLockSchemaInvalidError` and there is no in-tool migration. Operator recovery is to remove the stale file and re-run `haex constitution assemble`.

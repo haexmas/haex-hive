@@ -43,7 +43,7 @@ def show(
         raise IncompleteAssemblyTransactionError(
             message=(
                 "install transaction is in flight (state: "
-                f"{state.value}); run `haex constitution assemble` to resolve"
+                f"{state.value}); run `haex install` to resolve"
             ),
         )
 

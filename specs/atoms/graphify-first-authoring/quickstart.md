@@ -1,6 +1,6 @@
 # Quickstart: adopting graphify-first-authoring
 
-This walks through adopting the atom on a repo that already uses haex-hive's Spec 007 manifest v2 (`.haex-hive.json`, `haex constitution assemble`) — exactly the case haex-hive itself is in.
+This walks through adopting the atom on a repo that already uses haex-hive's Spec 007 manifest v2 (`.haex-hive.json`, `haex install`) — exactly the case haex-hive itself is in.
 
 ## 1. Prerequisite: the `graphify` CLI
 
@@ -50,13 +50,13 @@ Add an entry to `atoms[]` (alongside any existing constitution atom):
 }
 ```
 
-## 4. Assemble the constitution
+## 4. Install
 
 ```console
-$ haex constitution assemble
+$ haex install
 ```
 
-If this is the only constitution-contributing atom, the result is a byte-for-byte copy. If haex-hive's own core constitution atom is also adopted (the usual case for haex-hive's own repo), this triggers the existing LLM-merge path — review the merged output before committing.
+If this is the only constitution-contributing atom, the result is a byte-for-byte copy. If haex-hive's own core constitution atom is also adopted (the usual case for haex-hive's own repo), this triggers the LLM-merge path via `haex install --llm=…` — review the merged output before committing.
 
 ## 5. Verify
 
