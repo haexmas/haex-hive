@@ -122,6 +122,12 @@ def test_refuses_when_hook_already_exists(
     _put_graphify_stub(bin_dir)
     _prepend_path(monkeypatch, bin_dir)
     monkeypatch.chdir(repo)
+    provisioned: list[bool] = []
+    monkeypatch.setattr(
+        installer,
+        "_ensure_graphify_on_path",
+        lambda: provisioned.append(True),
+    )
 
     assert installer.install() != 0
     captured = capsys.readouterr()
