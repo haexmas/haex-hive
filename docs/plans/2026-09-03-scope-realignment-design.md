@@ -160,10 +160,13 @@ forbidden. It generates the `SessionStart` hook only for a target that supports
 hooks. If `exec_prefix` is present, the hook runs `requires` outside the
 provider, then runs `verify` through the active environment prefix. If
 `exec_prefix` is absent, it skips the outside-provider checks and runs
-`verify` directly in the current environment. A failed `requires` or `verify`
-check is treated as a refusal with an explicit diagnostic rather than a
-degradation. Whether that refusal is unconditional, and which exit code it
-carries, is Open Question 4 and is not settled by this document. A target without hooks gets the prose instruction and an explicit
+`verify` directly in the current environment. A failed `verify` check is a
+system refusal with exit 5 and an explicit diagnostic; that behaviour is
+settled here because `verify` means the operator is inside the wrong
+environment. A failed `requires` check is a policy question: it may refuse
+the install or warn while letting the compiled prose carry the instruction.
+Open Question 4 records this and neither the action nor the exit code is
+settled by this document. A target without hooks gets the prose instruction and an explicit
 degradation report instead of a silently implied check.
 
 **haex-hive never installs a provider.** Installing Docker or podman means root, a daemon, groups and kernel modules. That is categorically different from writing files into a repository and would break the project's own model (Principle II, and the sidecar/review-gate philosophy). Every package manager has this boundary: npm needs node, cargo needs rustup, nix needs the Nix installer. haex-hive's boundary is `requires`.
@@ -306,7 +309,7 @@ A separate, more ambitious option is recorded but not adopted: an MCP server tha
 
 ### Decision 9: drop the multi-source LLM constitution merge
 
-Multi-source constitution assembly becomes deterministic concatenation in canonical order with provenance headers as specified in [ADR 0010](../adr/0010-drop-multi-source-llm-constitution-merge.md). An operator who wants a reconciled single document produces it themselves with a model of their choosing and adopts the result as a single-source molecule.
+A repository adopts exactly one prose atom with `binding: non-negotiable`, mirroring Spec 011's one-workflow-per-repository rule. `.haex-hive/constitution.md` is a byte-for-byte copy of that atom's source; two non-negotiable prose atoms are a refusal. Any number of `binding: recommended` prose atoms are permitted; they land in `CLAUDE.md` / `AGENTS.md`, not in the constitution. An operator who wants a reconciled document produces it themselves and adopts the result as a single-source molecule. See [ADR 0010](../adr/0010-drop-multi-source-llm-constitution-merge.md).
 
 The decisive argument is not code volume but reachability: **an install that can prompt is not automatable.** Interactive assembly requires a device with model access and an operator at a terminal, which contradicts both the offline goal (Decision 2's motivation) and ecosystem integration (Decision 10). See [ADR 0010](../adr/0010-drop-multi-source-llm-constitution-merge.md).
 
@@ -399,10 +402,10 @@ Recommendation: retain subprocess isolation, the timeout contract and the enviro
 | Spec | Effect |
 |---|---|
 | 007 | The `contributes`/`atoms` category map is restructured per Decision 6. Multi-source assembly changes per Decision 9. The v3 rename in Spec 013 should carry the new shape rather than the seven-category one. |
-| 008 | Transaction primitives landed and are exactly what Decisions 3, 4 and 10 rely on. Its install CLI contract is amended by Decisions 9 and 10 (`--llm` / `--accept-merged` removal, `--json`, exit-code table). |
+| 008 | Transaction primitives landed and support Decisions 3, 4 and 10. Its install CLI contract is amended by Decision 9 (removal of `--llm` and `--accept-merged`). Decision 10's `--json` output and exit-code table are design input for the spec revision, not a settled amendment. |
 | 009 | Recalibrate per Decision 11 before drafting. |
 | 010 | Adapter surface shrinks for skills, stays per-tool for hooks and structured config. Add degradation reporting (Decision 7), the `agent` payload kind (Decision 6) and `--json` output (Decision 10). Replace the proposed `contributes.*` extension list with the collapsed model. |
-| 011 | **Affected.** FR-004 mandates the review-gated `--llm=file` / `--accept-merged` flow and its User Story 1 test invokes both; Decision 9 retires them, so FR-004 and that test need rewriting. Its `## Workflow-Contributed Rules` section and `### From molecule` byline are retained and supply the provenance format in ADR 0010. Also gains per-step delegation declaration (Decision 8). Whether "workflow" survives as a payload kind is a Decision 6 follow-up. |
+| 011 | **Affected.** FR-004 mandates the review-gated `--llm=file` / `--accept-merged` flow and its User Story 1 test invokes both; Decision 9 retires them, so FR-004 and that test need rewriting. Under the one-non-negotiable-prose rule the workflow constitution fragment becomes `binding: recommended` prose and lands in `CLAUDE.md` / `AGENTS.md`, not in `.haex-hive/constitution.md`; the `## Workflow-Contributed Rules` section moves with it. Also gains per-step delegation declaration (Decision 8). Whether "workflow" survives as a payload kind is a Decision 6 follow-up. |
 | 013 | Gains the manifest-optional adoption path from Decision 4: `haex add` must accept a plain skills repository and a Spec Kit extension repository, not only a haex-hive publisher. |
 
 ## 5. Explicitly rejected alternatives
