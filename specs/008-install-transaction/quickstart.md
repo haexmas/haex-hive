@@ -102,17 +102,20 @@ from pathlib import Path
 def load_consistent_metadata(repo_root: Path, attempts: int = 3) -> dict:
     install_lock_path = repo_root / ".haex-hive" / "install.lock"
     for _ in range(attempts):
-        try:
-            install_lock = json.loads(install_lock_path.read_bytes())
-        except (FileNotFoundError, json.JSONDecodeError):
-            # The live tree can be absent briefly during the rename swap.
-            continue
-        validate_against_current_schema(install_lock)
-        for molecule in install_lock["molecules"]:
-            for recorded_path in molecule["paths"]:
-                if not (repo_root / recorded_path).exists():
-                    raise RuntimeError("install.lock records a missing path")
-        return install_lock
+        with acquire_shared_read_lock(repo_root):
+            try:
+                install_lock = json.loads(install_lock_path.read_bytes())
+            except (FileNotFoundError, json.JSONDecodeError):
+                # The live tree can be absent briefly during the rename swap.
+                continue
+            validate_against_current_schema(install_lock)
+            for molecule in install_lock["molecules"]:
+                for recorded_path in molecule["paths"]:
+                    if not (repo_root / recorded_path).exists():
+                        raise RuntimeError("install.lock records a missing path")
+            # Keep the shared lock while consuming all validated files and
+            # checking every active adapter pointer.
+            return install_lock
     raise RuntimeError("could not read a stable installation generation")
 
 def validate_against_current_schema(install_lock: dict) -> None:
@@ -121,13 +124,18 @@ def validate_against_current_schema(install_lock: dict) -> None:
     # unavailable and must not be silently rewritten.
     pass
 
+def acquire_shared_read_lock(repo_root: Path):
+    # Use the implementation's shared/read lock for the whole reader operation.
+    # It must cover the initial lock read, validation, and file consumption.
+    pass
+
 project_checkout = Path.cwd()
 install_lock = load_consistent_metadata(project_checkout)
 # For mixed-root adapters, also require every active pointer to name
 # install_lock["generation_id"]. All roots now match: safe to proceed.
 ```
 
-**Never** read `.haex-hive/constitution.md` (or any other participating-root file) without first loading and verifying `install.lock`. A read without verification can observe a mid-transaction state during a concurrent install.
+**Never** read `.haex-hive/constitution.md` (or any other participating-root file) without first acquiring the shared/read lock, then loading and verifying `install.lock`. Release the lock only after all validated files and overlay pointers have been consumed.
 
 ## 8. Where things live (recap)
 

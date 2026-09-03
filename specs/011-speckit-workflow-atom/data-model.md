@@ -222,8 +222,9 @@ directories and generated entries become absent together with the new
 while unrelated consumer files and `.specify/extensions.local.yml` survive
 verbatim.
 
-Readers enforce the same visibility boundary. After loading
-`.haex-hive/install.lock`, a reader MUST first apply the Spec 008 FR-005
+Readers enforce the same visibility boundary. A reader MUST acquire the
+shared/read lock before loading `.haex-hive/install.lock` and retain it through
+validation and consumption. It MUST first apply the Spec 008 FR-005
 schema/migration gate. An unsupported version, retired field, or required
 migration makes the lock non-authoritative and unavailable. Only after that
 gate passes may a reader require its `generation_id` and every path in its
