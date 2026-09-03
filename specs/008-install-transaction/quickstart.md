@@ -99,23 +99,34 @@ Any tool reading the participating output roots should follow this pattern to av
 import json
 from pathlib import Path
 
-def load_consistent_metadata(repo_root: Path, attempts: int = 3) -> dict:
+def load_consistent_metadata(repo_root: Path, consume, attempts: int = 3):
     install_lock_path = repo_root / ".haex-hive" / "install.lock"
     for _ in range(attempts):
         with acquire_shared_read_lock(repo_root):
             try:
                 install_lock = json.loads(install_lock_path.read_bytes())
-            except (FileNotFoundError, json.JSONDecodeError):
-                # The live tree can be absent briefly during the rename swap.
+                validate_against_current_schema(install_lock)
+                for molecule in install_lock["molecules"]:
+                    for recorded_path in molecule["paths"]:
+                        if not (repo_root / recorded_path).exists():
+                            raise RuntimeError("install.lock records a missing path")
+                generation_id = install_lock["generation_id"]
+                generation_record = json.loads(
+                    (repo_root / ".specify" / ".haex-hive-generation.json").read_bytes()
+                )
+                if generation_record["generation_id"] != generation_id:
+                    raise RuntimeError(".specify generation does not match install.lock")
+                for pointer_path in active_adapter_pointer_paths(repo_root):
+                    pointer_record = json.loads(pointer_path.read_bytes())
+                    if pointer_record["generation_id"] != generation_id:
+                        raise RuntimeError("adapter pointer does not match install.lock")
+                # The callback consumes constitution, generated files, and adapter
+                # overlays before this block releases the shared lock.
+                return consume(install_lock, generation_record)
+            except (FileNotFoundError, ValueError, RuntimeError):
+                # Missing, malformed, or mixed-generation metadata is unavailable;
+                # retry while retaining the shared-lock boundary for each attempt.
                 continue
-            validate_against_current_schema(install_lock)
-            for molecule in install_lock["molecules"]:
-                for recorded_path in molecule["paths"]:
-                    if not (repo_root / recorded_path).exists():
-                        raise RuntimeError("install.lock records a missing path")
-            # Keep the shared lock while consuming all validated files and
-            # checking every active adapter pointer.
-            return install_lock
     raise RuntimeError("could not read a stable installation generation")
 
 def validate_against_current_schema(install_lock: dict) -> None:
@@ -130,9 +141,9 @@ def acquire_shared_read_lock(repo_root: Path):
     pass
 
 project_checkout = Path.cwd()
-install_lock = load_consistent_metadata(project_checkout)
-# For mixed-root adapters, also require every active pointer to name
-# install_lock["generation_id"]. All roots now match: safe to proceed.
+result = load_consistent_metadata(project_checkout, consume=consume_validated_files)
+# `consume_validated_files` reads every validated file and overlay while the
+# shared lock is still held; no post-return lock reread is used.
 ```
 
 **Never** read `.haex-hive/constitution.md` (or any other participating-root file) without first acquiring the shared/read lock, then loading and verifying `install.lock`. Release the lock only after all validated files and overlay pointers have been consumed.
