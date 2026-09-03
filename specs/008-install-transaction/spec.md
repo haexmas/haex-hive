@@ -7,26 +7,37 @@
 
 **Authoritative requirements source**: This spec's transaction invariants are extracted from [docs/plans/2026-08-29-spec-008-install-transaction-requirements.md](../../docs/plans/2026-08-29-spec-008-install-transaction-requirements.md). Where the source doc's phrasing carries the load-bearing detail, this spec references it rather than restating it verbatim, so a change to one does not silently diverge from the other. The source doc's phrases (e.g. "repository lock ordering" and "repository-wide visibility commit") are the anchor names used below.
 
-## 2026-09-03 amendment: retire `visibility.json`
+## 2026-09-03 amendment: install.lock npm/pip-shape simplification
 
-Operator-driven simplification: the separate `.haex-hive/visibility.json` file is retired in favour of folding its three fields (`generation_id`, `participating_roots`, `haex_hive_version`) into `install.lock`. Rationale: both files live inside `.haex-hive/` and are published atomically together via the same `.haex-hive.next/` → `.haex-hive/` rename-swap (FR-003). Two files for the same publication event is duplication; `install.lock`'s own atomic landing IS the publication event.
+Operator-driven simplification bringing `install.lock` to an npm/pip-style minimum. What npm's `package-lock.json` and pip's lockfile carry per package is name + source + revision + integrity + paths. Everything beyond that is retired unless a load-bearing invariant demands it. Under the 2026-09-01 trust-git amendment, git already tracks committed content; deterministic generation from pinned inputs (Principle IV `.haex-hive.json` SHA pins) provides byte identity. `install.lock` should document only what molecules are installed, not how or by whom.
 
 **Retired by this amendment**:
 
-- **`.haex-hive/visibility.json` file**: retired. Its content is folded into `install.lock`.
+- **`.haex-hive/visibility.json` file**: retired. Its role (atomic publication marker) is subsumed by `install.lock`'s own atomic landing during the `.haex-hive.next/` → `.haex-hive/` rename-swap (FR-003). Two files for the same publication event is duplication.
 - **`contracts/visibility-marker.v1.schema.json`**: retired.
-- **`VisibilityMarker` dataclass and its serialiser** in `src/haex_hive/install/visibility.py`: retired. Its fields move to `InstallLock`.
-- **The `install.lock` cross-reference field `visibility_marker.generation_id`**: retired (redundant self-reference under the fold).
+- **`VisibilityMarker` dataclass and its serialiser** (`src/haex_hive/install/visibility.py`): retired.
 - **The "visibility.json matches install.lock byte-identically" check** in `constitution/assemble.py`: retired (single source of truth).
 - **The install-lock-schema constraint "`participating_roots[]` MUST match `visibility.json.participating_roots` byte-identically"**: retired (single source).
+- **`install.lock.visibility_marker.generation_id`** cross-reference field: retired (redundant self-reference under the fold).
+- **`install.lock.generation_inputs[]`** array (adapter code identity + tool-config revisions + `serialization` sub-object with `encoding`/`newline`/`indent`/`key_order`/`format`/`ensure_ascii`): retired. Its role (documenting adapter code + tool-config revisions used) is redundant under trust-git: adapter code is pinned by the running haex-hive package version; serialization contracts are code-level constants of that version; tool-config revisions are git SHAs already tracked in the consumer repo. FR-005 explicitly declares install.lock is not the source of reproducibility.
+- **The runtime code path that collects, sorts, and validates `generation_inputs[]`**: retired.
+- **`install.lock.generated_by`** field (e.g. `"haex-hive/1.4.0"`): retired. npm/pip lock files carry no equivalent; producing-version identity is derivable from git history if ever needed.
+- **`install.lock.participating_roots[]`** field: retired. Readers derive the effective set as the union of `paths[]` prefixes across all installed molecules; no explicit list needed. The FR-005 reader invariant (all participating roots present) reframes as "every path recorded in `install.lock.molecules[].paths[]` MUST exist on disk before the installation is treated as available".
+- **`install.lock.constitution` block** (`sources[]`, `assembled_by`): retired. Constitution provenance is derivable from the subset of `molecules[]` whose `paths[]` contains `.haex-hive/constitution.md`. Single-source (straight-copy) versus multi-source (LLM-merged) is inferable from that subset's cardinality; the `assembled_by` metadata carries no reader-side load.
 
-**Superseded by this amendment**:
+**Retained in `install.lock` after this amendment**:
 
-- **FR-004** ("Marker as sole publication event"): the sole publication event is now the rename-swap of `.haex-hive.next/` → `.haex-hive/` per FR-003, with `install.lock` (containing `generation_id` + `participating_roots`) as its authoritative content. No separate marker file is written.
-- **FR-005** (Reader visibility invariant): readers MUST first load `.haex-hive/install.lock` (not `visibility.json`) to determine the currently-published `generation_id`. A missing `install.lock`, or one whose named `participating_roots` are not fully in place, MUST be treated as an unavailable installation.
-- **FR-002a** (Mixed-root publication ordering): readers observing mixed-root pointers still refuse mixed-generation states, but the ordering trigger is now "publish `install.lock` last, atomic with the `.haex-hive/` rename-swap", not "publish `visibility.json` last".
+- **`haex_hive_version`**: schema version (npm-parallel: `lockfileVersion`).
+- **`generation_id`** (moved up from the retired visibility marker; unique, time-based `g_YYYYMMDDTHHMMSSZ_<4-hex>`): identifies the current installed generation for mixed-root overlay pointer publication (FR-002a). Explicitly NOT retired in this amendment; a separate future amendment may revisit it after a mixed-root pointer redesign that keys off content hashes instead.
+- **`molecules[]`** (renamed from `atoms[]` in coordination with the Spec 007 v3 amendment landing): each entry is `{id, source, revision, paths}` (npm-parallel: `packages[]` with `name/resolved/integrity/paths`). Reverse-DNS `id`, git URL `source`, full 40-char SHA `revision` (Principle IV), list of consumer-relative `paths` this molecule wrote.
+
+**Superseded FRs**:
+
+- **FR-004** ("Marker as sole publication event"): sole publication event is now the rename-swap of `.haex-hive.next/` → `.haex-hive/` per FR-003, with `install.lock` as its authoritative content. No separate marker file.
+- **FR-005** (Reader visibility invariant): readers MUST first load `.haex-hive/install.lock` to determine the currently-published `generation_id`. A missing `install.lock`, or one whose `molecules[].paths[]` union is not fully present on disk, MUST be treated as an unavailable installation. No separate `participating_roots[]` check.
+- **FR-002a** (Mixed-root publication ordering): ordering trigger is now "publish `install.lock` last, atomic with the `.haex-hive/` rename-swap"; overlay pointers name the `install.lock.generation_id`.
 - **FR-007** (Every side effect through the transaction): `install.lock` is the single last file inside `.haex-hive.next/`; no separate `visibility.json` written.
-- **FR-009** (`install.lock` content): `install.lock` MUST now carry top-level `generation_id: str` (unique, time-based; format `g_YYYYMMDDTHHMMSSZ_<4-hex>` unchanged from the retired marker) and `participating_roots: [<name>...]` (list of participating output-root names). The `visibility_marker.generation_id` cross-reference field is retired.
+- **FR-009** (`install.lock` content): after this amendment `install.lock` carries only `{haex_hive_version, generation_id, molecules[]}` where each molecule entry is `{id, source, revision, paths}`. Retired top-level fields: `generated_by`, `participating_roots`, `constitution` block, `generation_inputs[]`, `visibility_marker.generation_id` cross-reference.
 
 **Preserved unchanged**:
 
@@ -35,7 +46,7 @@ Operator-driven simplification: the separate `.haex-hive/visibility.json` file i
 - Trust-git model (2026-09-01 amendment): no per-file/per-root content_integrity.
 - Every other FR (transaction invariants, recovery contract, conformance suite).
 
-**Consumer-side migration**: pre-user policy applies (no external adopters). Consumers running `haex install` after this amendment lands regenerate `install.lock` with the new fields on their next install; the retired `visibility.json` (if it exists locally) is silently ignored and NOT re-created. A post-amendment `haex install` MAY delete a stale `visibility.json` during `.haex-hive/` rename-swap staging, but MUST NOT refuse an install that finds one locally.
+**Consumer-side migration**: pre-user policy applies (no external adopters). Consumers running `haex install` after this amendment lands regenerate `install.lock` in the new shape on their next install; stale local `visibility.json` files and stale `install.lock` files with retired fields are silently overwritten. A post-amendment `haex install` MAY delete a stale `visibility.json` during `.haex-hive/` rename-swap staging, but MUST NOT refuse an install that finds one locally.
 
 ## User Scenarios & Testing *(mandatory)*
 
