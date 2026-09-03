@@ -11,6 +11,13 @@
 
 Operator-driven simplification bringing `install.lock` to an npm/pip-style minimum. The lock records each installed molecule's name, source, revision, and paths. Everything beyond that is retired unless a load-bearing invariant demands it. Under the 2026-09-01 trust-git amendment, git already tracks committed content; deterministic generation from pinned inputs (Principle IV `.haex-hive.json` SHA pins) provides byte identity. `install.lock` should document only what molecules are installed, not how or by whom.
 
+This amendment supersedes Spec 007's pre-amendment `InstallLock` publication
+shape for Spec 008 installations. Spec 007's manifest inputs remain unchanged;
+only the shared `install.lock` entity and its publication/reader contract are
+redefined here. Writers and readers participating in Spec 008 MUST use the
+shape and migration gate below, while a legacy Spec 007 lock is non-authoritative
+until an explicit migration has passed review.
+
 **Retired by this amendment**:
 
 - **`.haex-hive/visibility.json` file**: retired. Its role (atomic publication marker) is subsumed by `install.lock`'s own atomic landing during the `.haex-hive.next/` → `.haex-hive/` rename-swap (FR-003). Two files for the same publication event is duplication.
@@ -34,10 +41,10 @@ Operator-driven simplification bringing `install.lock` to an npm/pip-style minim
 **Superseded FRs**:
 
 - **FR-004** ("Marker as sole publication event"): sole publication event is now the rename-swap of `.haex-hive.next/` → `.haex-hive/` per FR-003, with `install.lock` as its authoritative content. No separate marker file.
-- **FR-005** (Reader visibility invariant): readers MUST first load `.haex-hive/install.lock` to determine the currently-published `generation_id`. A missing `install.lock`, or one whose `molecules[].paths[]` union is not fully present on disk, MUST be treated as an unavailable installation. No separate `participating_roots[]` check.
+- **FR-005** (Reader visibility invariant): readers MUST first load `.haex-hive/install.lock` and pass its `haex_hive_version` schema/migration gate before checking recorded paths or overlay pointers. Unsupported versions, retired fields, schema failures, or required migrations are unavailable and MUST NOT be silently rewritten. After the gate passes, readers determine the published `generation_id`, require every `molecules[].paths[]` entry to be present, and require every active overlay pointer to match that generation. No separate `participating_roots[]` check.
 - **FR-002a** (Mixed-root publication ordering): ordering trigger is now "publish `install.lock` last, atomic with the `.haex-hive/` rename-swap"; overlay pointers name the `install.lock.generation_id`.
 - **FR-007** (Every side effect through the transaction): `install.lock` is the single last file inside `.haex-hive.next/`; no separate `visibility.json` written.
-- **FR-009** (`install.lock` content): after this amendment `install.lock` carries only `{haex_hive_version, generation_id, molecules[]}` where each molecule entry is `{id, source, revision, paths}`. Retired top-level fields: `generated_by`, `participating_roots`, `constitution` block, `generation_inputs[]`, `visibility_marker.generation_id` cross-reference.
+- **FR-009** (`install.lock` content): after this amendment `install.lock` carries only `{haex_hive_version, generation_id, molecules[]}` where each molecule entry is `{id, source, revision, paths}`. `molecules[]` is canonically sorted by `(id, source, revision, paths)` and duplicate tuples are rejected. Retired top-level fields: `generated_by`, `participating_roots`, `constitution` block, `generation_inputs[]`, `visibility_marker.generation_id` cross-reference.
 
 **Preserved unchanged**:
 
@@ -165,7 +172,7 @@ The functional requirements below are the direct spec-level statement of the inv
 
 - **FR-013**: The Spec 008 conformance suite MUST cover concurrent `haex install` invocations demonstrating that one wins and the other waits or fails with owner detail (PID + hostname + start time).
 
-- **FR-014**: The crash-safety sweep MUST cover a scripted `SIGKILL` (or platform equivalent) at each rename-swap boundary — `pre_swap` (staged but before rename A), `rename_a` (between rename A and rename B), and `rename_b` (after rename B, before `.prev/` cleanup) — with and without a preexisting generation. Each case MUST show that a subsequent `haex install` removes stale `<root>.next/`, restores a retained `<root>.prev/` when the live root is absent before reading inputs, and either reinstalls the fresh generation from the pinned inputs or takes the idempotent no-op path. The mixed-root case MUST cover pointer state `P → C1` before marker publication, a retry failure, and a later successful retry that publishes `C2` without leaving a pointer at an unrecognised generation. After a `rename_a` crash, where the live generation is absent, the subsequent install MUST republish a fresh generation from the pinned inputs or explicitly restore the retained `.prev/` generation before taking a no-op path; it MUST NOT accept an unavailable installation as an idempotent no-op. The sweep MUST also cover a resolution failure after `rename_a` and prove that the restored previous generation remains available for a later successful retry. A third `haex install` after recovery MUST be byte-identical. There is no separate recovery command or per-state refusal path.
+- **FR-014**: The crash-safety sweep MUST cover a scripted `SIGKILL` (or platform equivalent) at each rename-swap boundary — `pre_swap` (staged but before rename A), `rename_a` (between rename A and rename B), and `rename_b` (after rename B, before `.prev/` cleanup) — with and without a preexisting generation. Each case MUST show that a subsequent `haex install` removes stale `<root>.next/`, restores a retained `<root>.prev/` when the live root is absent before reading inputs, and either reinstalls the fresh generation from the pinned inputs or takes the idempotent no-op path. The mixed-root case MUST cover pointer state `P → C1` before `install.lock` publication, a retry failure, and a later successful retry that publishes `C2` without leaving a pointer at an unrecognised generation. After a `rename_a` crash, where the live generation is absent, the subsequent install MUST republish a fresh generation from the pinned inputs or explicitly restore the retained `.prev/` generation before taking a no-op path; it MUST NOT accept an unavailable installation as an idempotent no-op. The sweep MUST also cover a resolution failure after `rename_a` and prove that the restored previous generation remains available for a later successful retry. A third `haex install` after recovery MUST be byte-identical. There is no separate recovery command or per-state refusal path.
 
 - **FR-015**: The conformance suite MUST cover a coordinated mutation attempt of `.haex-hive.json` while install holds the exclusive lock and prove that the writer waits or is refused. The install MUST publish only the inputs it read while holding that lock. Out-of-band mutation that ignores the lock is outside Spec 008's trusted-writer threat model.
 
@@ -215,7 +222,7 @@ The functional requirements below are the direct spec-level statement of the inv
 
 ## Assumptions
 
-- **Spec 007 is the on-disk manifest contract**. `.haex-hive.json`, the atom-manifest schema, and the publisher-manifest schema from Spec 007 are consumed unchanged. Any evolution needed at the manifest layer belongs in Spec 007, not here.
+- **Spec 007 is the on-disk manifest contract**. `.haex-hive.json`, the atom-manifest schema, and the publisher-manifest schema from Spec 007 are consumed unchanged. Any evolution needed at the manifest layer belongs in Spec 007, not here. For the shared `InstallLock` entity, this Spec 008 amendment takes precedence over Spec 007's pre-amendment metadata shape; FR-005 is the migration boundary for legacy locks.
 - **Spec 009 is downstream**. `haex hook run` (Spec 009) plugs into this transaction as a publisher-hook execution mechanism. Spec 008 does not define what runs inside a hook — only that hook outputs are sealed before `install.lock`.
 - **Spec 010 is downstream**. Per-agent adapters (Claude Code `.claude/settings.json`, Codex `.codex/config.toml`, and the ≤24 platforms graphify targets today) emit their outputs under this transaction's staging + overlay contract. Spec 008 does not specify what the adapters emit — only that whatever they emit passes through FR-003 and FR-007.
 - **Nix envs (Phase 3), relay (Phase 4), mobile UI (Phase 5) are out of scope**. Nothing in this spec presumes or depends on them.

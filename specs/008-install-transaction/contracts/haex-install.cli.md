@@ -15,7 +15,7 @@ haex install [--repo-root PATH] [--verify-only]
 | Flag | Default | Purpose |
 |---|---|---|
 | `--repo-root PATH` | current working directory | Path to the project checkout. Inherited from the top-level `haex --repo-root` per Spec 007. |
-| `--verify-only` | off | Acquire the SHARED read lock, verify `install.lock` + `visibility.json` consistency, exit. Never mutates. Same shape as `haex verify` today. |
+| `--verify-only` | off | Acquire the SHARED read lock, validate the current `install.lock` schema/migration gate, verify recorded paths and generation agreement, then exit. Never mutates. Same shape as `haex verify` today. |
 | `--llm {stdio,file,none}` | default | Select the multi-source constitution merge workflow. `stdio` reads a framed candidate from the attached LLM and requires operator confirmation; `file` writes the pending merge inputs for an external editor/LLM and exits; `none` refuses because a multi-source constitution requires a merge method. |
 | `--accept-merged PATH` | unset | Accept a reviewed merged constitution candidate from `PATH` and publish it after validating it against the pending merge inputs. It is mutually exclusive with `--llm`. |
 
@@ -38,12 +38,12 @@ Uses the canonical set defined in [src/haex_hive/util/exit_codes.py](../../../sr
 
 | Code | Trigger | Example diagnostic |
 |---|---|---|
-| 0 | Success | `installed generation g_20260831T142011Z_a4c2 (2 atoms, 12 files)` |
+| 0 | Success | `installed generation g_20260831T142011Z_a4c2` |
 | 2 | Input refuse (FR-006 / Principle V) | `.haex-hive.json not found` / `.haex-hive.json.atoms is empty (Principle V opt-in required)` |
 | 3 | I/O refuse (FR-006) | `publisher clone for <source> not found under $HAEX_HIVE_STATE/repos/` |
 | 4 | Validation refuse (FR-006) | `plan snapshot digest does not match commit snapshot; source mutated during install` |
 | 5 | System refuse (FR-003) | `platform does not support required overlay primitive for <path> (Windows requires Developer Mode for file-scoped symlinks)` |
-| 6 | Post-write validation (FR-005 / FR-009) | `sealed .haex-hive/constitution.md digest does not match install.lock` |
+| 6 | Post-write validation (FR-005 / FR-009) | `install.lock schema or published generation validation failed` |
 | 8 | Constitution concealment (Principle VIII) | (from Spec 007's guard; unchanged) |
 | 9 | Writer busy (FR-001 / FR-010) | `lock held by <pid>@<hostname> since <acquired_at> (heartbeat <n>s ago, ttl <t>s)` |
 | 10 | Plaintext secret (Principle I) | (from Spec 007's guard; unchanged) |
@@ -73,17 +73,18 @@ error: exit=4 key=commit-snapshot-mismatch (FR-006)
 
 Third-party readers (agent CLIs, editors) do not invoke this CLI — they read the participating output roots directly. Per FR-005, correct readers:
 
-1. Load `.haex-hive/visibility.json` first.
-2. Verify that `install.lock.visibility_marker.generation_id` matches `visibility.json.generation_id` and that every named root is available.
-3. For mixed-ownership roots, verify that every active adapter pointer names the marker's generation.
-4. Treat a missing marker or generation mismatch as an unavailable installation, never as a partially-valid one.
+1. Load `.haex-hive/install.lock` and pass its `haex_hive_version` schema/migration gate first.
+2. Reject unsupported versions, retired fields, and required migrations; do not treat that lock as authoritative or rewrite it implicitly.
+3. Verify that every path in `install.lock.molecules[].paths[]` exists.
+4. For mixed-ownership roots, verify that every active adapter pointer names `install.lock.generation_id`.
+5. Treat a missing lock, missing path, or generation mismatch as an unavailable installation, never as a partially-valid one.
 
 The Spec 008 landing includes a reference reader-guide in [quickstart.md](../quickstart.md) for adapter authors.
 
 ## Deferred to later specs
 
 - **Publisher-hook invocations** (Spec 009 territory) — will surface as a new `entry_type` in the journal and matching CLI diagnostic; no change to this contract.
-- **Adapter-emitted outputs** (Spec 010 territory) — will surface as additional participating roots and per-atom `contributed_paths`; the CLI schema of THIS spec already accommodates them without change.
+- **Adapter-emitted outputs** (Spec 010 territory) — will surface as additional molecule `paths` under mixed-ownership roots; the CLI schema of THIS spec already accommodates them without change.
 
 ## Sibling subcommands
 

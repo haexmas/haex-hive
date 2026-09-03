@@ -10,7 +10,7 @@
 
 ### ~~PlanSnapshot / CommitSnapshot / PlanStep~~ (retired)
 
-**Retired by the trust-git amendment (2026-09-01) together with FR-006.** The digest-under-lock re-hash defence-in-depth these entities carried has no concrete threat model under the exclusive install lock + git-content-addressed publisher-clone delivery. The `install()` orchestration under this amendment reads `.haex-hive.json`, calls the existing constitution resolver, composes three files (`constitution.md`, `install.lock`, `visibility.json`), and hands them to `publish_generation` — no intermediate typed plan snapshot needed for a fixed-shape three-file publication.
+**Retired by the trust-git amendment (2026-09-01) together with FR-006.** The digest-under-lock re-hash defence-in-depth these entities carried has no concrete threat model under the exclusive install lock + git-content-addressed publisher-clone delivery. The `install()` orchestration under this amendment reads `.haex-hive.json`, calls the existing constitution resolver, composes the managed files (`constitution.md` and `install.lock`), and hands them to `publish_generation` — no intermediate typed plan snapshot is needed for this publication.
 
 If Spec 009 (hooks), Spec 010 (adapters), or a future requirement introduces a variable-shape multi-step publication, the plan structure is reinstated together with the requirement that motivates it. The dataclass code in `install/plan.py` is deleted by the follow-up code-cleanup PR.
 
@@ -24,7 +24,7 @@ live directory:
 
 | Directory | Meaning |
 |---|---|
-| `<root>/` | The currently-live generation. Its `visibility.json` names the published `generation_id`. |
+| `<root>/` | The currently-live generation. Its `install.lock` names the published `generation_id`. |
 | `<root>.next/` | Leftover staging directory from a crashed prior install; deleted before the next install builds its candidate. |
 | `<root>.prev/` | Previous published generation retained after a mid-swap crash; kept until a replacement is successfully published. |
 
@@ -86,91 +86,38 @@ under that lock, and requires the token and heartbeat to be unchanged and still
 expired before rewriting the record in place with a new owner token. A resumed
 process whose token was fenced MUST stop before its next mutation.
 
-### VisibilityMarker
-
-Sole publication event's on-disk representation: `.haex-hive/visibility.json`. See [contracts/visibility-marker.v1.schema.json](./contracts/visibility-marker.v1.schema.json).
-
-| Field | Type | Notes |
-|---|---|---|
-| `haex_hive_version` | `Literal["2"]` | Matches Spec 007. |
-| `generation_id` | `str` | Time-based and collision-checked; see R8. |
-| `participating_roots` | `list[str]` | One entry per participating output root, e.g. `[".haex-hive/"]`. |
-| `written_at` | `str` | UTC ISO 8601 for operator diagnostics; not used in verification. |
-
-Per-root and per-marker content-integrity fields are retired by the 2026-09-01
-trust-git amendment. Generated payload bytes come from pinned inputs and
-canonical deterministic serialization; `generation_id` and `written_at` are
-transaction metadata and may change only for a substantive publication.
-
 ### InstallLock
 
-Slimmed shape of `.haex-hive/install.lock`. See [contracts/install-lock.v2.schema.json](./contracts/install-lock.v2.schema.json). Records the resolved atom set — the constitution block from Spec 007 plus `atoms[]`, `participating_roots`, and a `visibility_marker` cross-reference. No `content_integrity` fields per the 2026-09-01 trust-git amendment; deterministic generation from pinned inputs provides byte identity for generated payloads. The reader migrates pre-amendment v2 locks by dropping retired integrity/ownership fields and normalising root records before current-schema validation, so crash recovery and install resume remain possible.
+The 2026-09-03 amendment is the authoritative Spec 008 definition of
+`.haex-hive/install.lock` and supersedes Spec 007's pre-amendment
+`generated_by`/`constitution` shape. See
+[contracts/install-lock.v2.schema.json](./contracts/install-lock.v2.schema.json).
+The lock records only the published generation and the molecules that wrote
+consumer-repository-root-relative paths. A legacy lock is non-authoritative:
+the FR-005 schema/migration gate rejects unsupported versions, retired fields,
+and required migrations before recovery or a reader uses its generation.
 
 | Field | Type | Notes |
 |---|---|---|
-| `haex_hive_version` | `Literal["2"]` | Unchanged from Spec 007. |
-| `generated_by` | `str` | e.g. `"haex 2.1.0"`. |
-| `constitution` | `ConstitutionBlock` | Spec 007 shape without `content_integrity`; the constitution's `sources` + `assembled_by` are recorded, and its committed/pinned candidate is serialized deterministically. |
-| `atoms` | `list[AtomInstallRecord]` | Per-atom install detail. |
-| `generation_inputs` | `list[GenerationInputIdentity]` | Immutable adapter and tool-configuration identities used for generated payloads, sorted by `(kind, id)` and validated before publication. |
-| `participating_roots` | `list[str]` | Output-root names, e.g. `[".haex-hive/"]`. Matches `VisibilityMarker.participating_roots` byte-identically. |
-| `visibility_marker` | `VisibilityMarkerRef` | `{ "generation_id": "..." }` — cross-reference by id only. |
+| `haex_hive_version` | `Literal["2"]` | Current install-lock schema version. Unsupported values fail the FR-005 schema/migration gate. |
+| `generation_id` | `str` | Unique, time-based `g_YYYYMMDDTHHMMSSZ_<4-hex>` generation identifier. |
+| `molecules` | `list[MoleculeInstallRecord]` | One record per resolved molecule; sorted by `(id, source, revision, paths)` and free of duplicate records. |
 
-### AtomInstallRecord
+### MoleculeInstallRecord
 
 | Field | Type | Notes |
 |---|---|---|
-| `id` | `str` | Reverse-DNS atom id. |
+| `id` | `str` | Reverse-DNS molecule id. |
 | `source` | `str` | Publisher repo URL. |
 | `revision` | `str` | Full 40-char SHA. |
-| `contributed_paths` | `list[str]` | Repo-relative paths this atom contributed under participating roots. |
+| `paths` | `list[str]` | Deterministically ordered, unique POSIX paths relative to the consumer repository root that this molecule wrote. |
 
-No `content_integrity` per the trust-git amendment; the `revision` git SHA is
-the input-byte anchor, and the adapter/tool configuration plus serialization
-must be deterministic.
-
-### GenerationInputIdentity
-
-Every generated payload has a sealed input identity in addition to the atom
-records above. This identity is recorded in the generation input envelope
-used by `install.lock` whenever adapter output participates in the
-publication; it is not an output `content_integrity` field.
-
-| Field | Type | Notes |
-|---|---|---|
-| `kind` | `Literal["adapter", "tool-config"]` | Which generator input is being pinned. |
-| `id` | `str` | Stable reverse-DNS adapter id or canonical tool-config id. |
-| `revision` | `str` | Immutable identity: `git:<40 lowercase hex SHA>` for adapter code, or `sha256:<64 lowercase hex>` of canonical tool-config bytes. |
-| `serialization` | `SerializationProfile` | Exact deterministic serialization settings used by the generator before its bytes are sealed. |
-
-The `generation_inputs` record is sorted by `(kind, id)` and validated before
-generation. The adapter revision, tool-config revision, atom revisions, and
-their canonical serialization settings used for a candidate MUST equal the
-identities recorded in the envelope; a mismatch refuses generation. The
-envelope, including these settings, MUST be constructed before
-`seal_install_lock_inside_next` and the exact validated envelope MUST be passed
-to T029; the seal step MUST NOT infer or rewrite it.
-No wall-clock value, random value, environment value, or filesystem ordering
-may be used to derive these identities.
-
-### SerializationProfile
-
-The canonical profile is explicit rather than an implicit tool default:
-
-| Field | Type | Notes |
-|---|---|---|
-| `format` | `Literal["json", "text", "toml"]` | Payload serialization format. |
-| `encoding` | `Literal["UTF-8"]` | No platform-default encoding. |
-| `newline` | `Literal["LF"]` | Line endings are normalized before bytes are sealed. |
-| `key_order` | `Literal["lexicographic-utf8", "not-applicable"]` | JSON uses bytewise UTF-8 order; text and TOML use `not-applicable`. |
-| `indent` | `int \| None` | JSON may use an integer width or `null`; text and TOML use `null`. |
-| `ensure_ascii` | `bool` | JSON, text, and TOML use explicit `false`; JSON-only escaping is not valid for the other formats. |
-
-For the shared JSON serializer used by `install.lock` and `visibility.json`,
-the profile is `{format: "json", encoding: "UTF-8", newline: "LF",
-key_order: "lexicographic-utf8", indent: 2, ensure_ascii: false}`. Any
-different profile is a different generation input and must be rejected unless
-the resulting profile is explicitly pinned in the envelope.
+The `molecules` array is canonically ordered by the lexicographic tuple
+`(id, source, revision, paths)`, with the already-canonical `paths` sequence as
+the final tie-breaker. Duplicate tuples are rejected rather than preserved in
+input order. The molecule revision is the immutable input-byte anchor under
+Principle IV; deterministic generation and canonical serialization provide
+byte identity without recording generation-input metadata in the lock.
 
 ---
 
@@ -188,7 +135,7 @@ START
 [resolve_and_hydrate]
   │
   ▼
-[validate_generation_inputs]  (construct and validate the complete envelope, including serialization profiles)
+[validate_install_lock_projection]  (validate the current schema and canonical molecule records)
   │
   ▼
 [materialise_haex_root_next]  (write haex-owned files into <root>.next/, fsync)
@@ -203,10 +150,7 @@ START
 [seal_install_lock_inside_next]  (write .haex-hive.next/install.lock)
   │
   ▼
-[write_visibility_marker_inside_next]  (write .haex-hive.next/visibility.json)
-  │
-  ▼
-[validate_staged_generation]  (schema-compatible marker/lock and available roots)
+[validate_staged_generation]  (schema-valid install.lock and available recorded paths)
   │
   ▼
 [publish_overlay_pointers]  (swap mixed-root pointers; preserve unowned siblings)
@@ -243,7 +187,7 @@ At any state above ↓
 **Invariants at every transition**:
 - The exclusive lock is held from `[acquire_lock]` through `[cleanup_prev]`.
 - Every rename that transitions between the three directory names is followed by a parent-directory fsync before the next state is entered.
-- `[validate_generation_inputs]` constructs the complete envelope before any lock seal and rejects any adapter revision, tool-configuration revision, atom revision, or canonical serialization profile that differs from it; T029 serializes the exact validated envelope.
+- `[validate_install_lock_projection]` validates the current install-lock schema and canonical molecule ordering before the lock is sealed; retired fields and required migrations refuse publication.
 - The `[rename_B]` step (`os.rename(<root>.next, <root>)`) is the sole publication event; `[cleanup_prev]` follows but cannot change the published generation and is idempotent under retry.
 
 ---
@@ -252,8 +196,8 @@ At any state above ↓
 
 - One install ⇌ one `install.mutex` file ⇌ one live `OwnerToken`.
 - One in-flight install ⇌ at most one `<root>.next/` and one `<root>.prev/` beside each haex-owned root; mixed-ownership roots use the retained overlay generations and pointers defined by R3 (see §In-flight recovery state).
-- One successful install ⇌ one `VisibilityMarker` ⇌ one `InstallLock` (cross-referenced by `generation_id`).
-- One `InstallLock` ⇌ many `AtomInstallRecord`s.
+- One successful install ⇌ one `InstallLock` whose `generation_id` is the publication boundary.
+- One `InstallLock` ⇌ many `MoleculeInstallRecord`s.
 - ~~`PlanSnapshot` / `CommitSnapshot` / `PlanStep` / `OwnershipSet` / `PathOwnershipRecord`~~ — retired by the 2026-09-01 trust-git amendment.
 
 ---
@@ -262,4 +206,4 @@ At any state above ↓
 
 - **Publisher-hook payloads** (Spec 009 territory): hook execution happens while `<root>.next/` is being materialised — whatever the hook produces lands in `.next/` and is committed atomically by the rename-swap. Spec 009 defines the hook-invocation surface; Spec 008 does not need a typed plan step to reserve it.
 - **Adapter output payloads** (Spec 010 territory): adapter-emitted files land in `.next/` alongside constitution.md; the rename-swap commits them atomically. Any per-adapter ownership or overlay-pointer bookkeeping is Spec 010's design decision.
-- **Cross-version migration** of `install.lock` and transaction state: **out of scope for Spec 008 under the project's pre-user policy.** A Spec 007-vintage `install.lock` fails Spec 008 schema validation (missing the amended atom/root shape) and the transaction refuses with `InstallLockSchemaInvalidError`. If a future adopter requires an in-place migration path, it lands under an explicit `haex migrate` verb per Principle VI v1.3.0, not as an implicit tool-side rewrite.
+- **Cross-version migration** of `install.lock` and transaction state: **out of scope for Spec 008 under the project's pre-user policy.** A Spec 007-vintage `install.lock` fails the FR-005 schema/migration gate because it uses retired fields instead of the amended molecule shape, and the transaction refuses with `InstallLockSchemaInvalidError`. If a future adopter requires an in-place migration path, it lands under an explicit `haex migrate` verb per Principle VI v1.3.0, not as an implicit tool-side rewrite.

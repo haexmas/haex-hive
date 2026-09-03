@@ -21,8 +21,7 @@ installed generation g_20260831T142011Z_a4c2
 On success, the following files exist:
 
 - `.haex-hive/constitution.md` — assembled constitution (from Spec 007's flow, now under the install transaction).
-- `.haex-hive/install.lock` — install manifest with resolved atom identities and generation metadata.
-- `.haex-hive/visibility.json` — the publication marker.
+- `.haex-hive/install.lock` — the sole publication record, with the generation ID and resolved molecule paths.
 - Additional per-adapter outputs under `.claude/`, `.codex/`, etc. as Spec 010 adapters land.
 
 `$HAEX_HIVE_STATE/locks/<repo-key>/` on the same satellite now contains. The
@@ -49,7 +48,7 @@ rewritten or fsynced. This is the SC-003 idempotence guarantee.
 
 ## 3. Verify without installing
 
-*Not yet available.* `--verify-only` and the shared-read lock land in the US2 fenced-lease block (task T037). Until then, verification against a running install is done by reading `.haex-hive/visibility.json` and `.haex-hive/install.lock` directly and comparing their `generation_id` fields (see step 7).
+*Not yet available.* `--verify-only` and the shared-read lock land in the US2 fenced-lease block (task T037). Until then, verification against a running install is done by reading `.haex-hive/install.lock`, passing its schema/migration gate, and checking its recorded paths (see step 7).
 
 ## 4. Concurrent install attempt
 
@@ -94,63 +93,47 @@ The transaction stages the reduced generation into `.haex-hive.next/` and swaps 
 
 ## 7. Reader consistency (for adapter authors)
 
-Any tool reading the participating output roots should follow this pattern to avoid observing a mid-install state:
+Any tool reading the participating output roots should follow this pattern to avoid observing a mid-install state. The real reader MUST use the current install-lock schema/migration gate before treating the lock as authoritative:
 
 ```python
 import json
 from pathlib import Path
 
-def load_consistent_metadata(repo_root: Path, attempts: int = 3) -> tuple[dict, dict]:
-    marker_path = repo_root / ".haex-hive" / "visibility.json"
+def load_consistent_metadata(repo_root: Path, attempts: int = 3) -> dict:
     install_lock_path = repo_root / ".haex-hive" / "install.lock"
     for _ in range(attempts):
         try:
-            marker_before = json.loads(marker_path.read_bytes())
             install_lock = json.loads(install_lock_path.read_bytes())
-            marker_after = json.loads(marker_path.read_bytes())
         except (FileNotFoundError, json.JSONDecodeError):
             # The live tree can be absent briefly during the rename swap.
             continue
-        if marker_before["generation_id"] != marker_after["generation_id"]:
-            # A publication happened while the metadata was being read.
-            continue
-        if (
-            marker_before["generation_id"]
-            != install_lock["visibility_marker"]["generation_id"]
-        ):
-            raise RuntimeError("install.lock does not match visibility marker")
-        return marker_after, install_lock
+        validate_against_current_schema(install_lock)
+        for molecule in install_lock["molecules"]:
+            for recorded_path in molecule["paths"]:
+                if not (repo_root / recorded_path).exists():
+                    raise RuntimeError("install.lock records a missing path")
+        return install_lock
     raise RuntimeError("could not read a stable installation generation")
 
-def verify_root(repo_root: Path, root_name: str, managed_paths: set[str]) -> None:
-    # Enumerate paths per FR-005: for haex-owned roots, all files under root
-    # except visibility.json; for mixed-ownership roots, only overlay_paths.
-    # See research §R5 for exact normalisation.
-    # For a mixed-ownership root, enumerate only managed_paths below root;
-    # never include unowned siblings. For .haex-hive/, enumerate every file
-    # except visibility.json and install.lock, per FR-005.
-    # ...
+def validate_against_current_schema(install_lock: dict) -> None:
+    # Call the implementation's FR-005 schema/migration gate here.
+    # Unsupported versions, retired fields, and required migrations are
+    # unavailable and must not be silently rewritten.
     pass
 
 project_checkout = Path.cwd()
-marker, install_lock = load_consistent_metadata(project_checkout)
-managed_paths = {
-    path
-    for atom in install_lock.get("atoms", [])
-    for path in atom["contributed_paths"]
-}
-for root_name in marker["participating_roots"]:
-    verify_root(project_checkout, root_name, managed_paths)
-# All roots match: safe to proceed.
+install_lock = load_consistent_metadata(project_checkout)
+# For mixed-root adapters, also require every active pointer to name
+# install_lock["generation_id"]. All roots now match: safe to proceed.
 ```
 
-**Never** read `.haex-hive/constitution.md` (or any other participating-root file) without first loading and verifying the marker. A read without verification can observe a mid-transaction state during a concurrent install.
+**Never** read `.haex-hive/constitution.md` (or any other participating-root file) without first loading and verifying `install.lock`. A read without verification can observe a mid-transaction state during a concurrent install.
 
 ## 8. Where things live (recap)
 
 - **In the repo checkout** (committed):
   - `.haex-hive.json` — adoption declarations (Spec 007).
-  - `.haex-hive/constitution.md`, `install.lock`, `visibility.json` — install outputs.
+  - `.haex-hive/constitution.md`, `install.lock` — install outputs; `install.lock` is the publication record.
   - `.claude/`, `.codex/`, other adapter roots — mixed-ownership; only overlay-owned paths are managed by `haex install`.
 - **Under `$HAEX_HIVE_STATE`** (device-local, NEVER shared across satellites, MUST NOT contain secrets per FR-022):
   - `~/.local/share/haex-hive/repos/<clone-hash>/` — publisher bare clones (Spec 007).
