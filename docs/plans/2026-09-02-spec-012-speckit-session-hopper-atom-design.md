@@ -5,7 +5,7 @@
 **Purpose**: define a first concrete `speckit-workflow` atom (Spec 011 atom-kind) that prompts the operator, before every `command:` step of a speckit workflow, to run that step in a new agent session (fresh context) rather than inline in the current session. The prompt is advisory: the operator picks new-session or inline for each step. The atom is fully declarative and portable across every LLM host, because the mechanism is Constitution rule plus a text-printing hook, with no client-specific subagent API.
 
 **Related**:
-- [Spec 011: Speckit Workflow Atom](2026-09-02-spec-011-speckit-workflow-atom-design.md): defines the `speckit-workflow` atom kind (`contributes.speckit_workflow`, `contributes.speckit_hooks`, `contributes.constitution`, hook publication under `.specify/extensions/workflow-atoms/<atom-id>/`, `workflow-registry.json.active_workflow` selection). This atom is an instance of that kind.
+- [Spec 011: Speckit Workflow Atom](2026-09-02-spec-011-speckit-workflow-atom-design.md): defines the `speckit-workflow` atom kind (`contributes.speckit_workflow`, `contributes.speckit_hooks`, `contributes.constitution`, hook publication under `.specify/extensions/workflow-molecules/<atom-id>/`, `workflow-registry.json.active_workflow` selection). This atom is an instance of that kind.
 - [Spec 007: Unified Manifest v2](2026-08-28-spec-007-unified-manifest-design.md): atom-manifest baseline; publisher-manifest shape.
 - [Spec 008: Install Transaction](../../specs/008-install-transaction/): multi-source constitution merge; delete-orphans on removal.
 - Constitution v1.4.0, "Declared speckit workflow adherence": the bullet this atom becomes binding under when selected via `active_workflow`.
@@ -122,7 +122,7 @@ steps:
     command: speckit.specify
     hooks:
       before:
-        - script: .specify/extensions/workflow-atoms/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh
+        - script: .specify/extensions/workflow-molecules/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh
           args: ["specify"]
     input:
       args: "{{ inputs.spec }}"
@@ -137,14 +137,14 @@ steps:
     command: speckit.clarify
     hooks:
       before:
-        - script: .specify/extensions/workflow-atoms/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh
+        - script: .specify/extensions/workflow-molecules/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh
           args: ["clarify"]
 
   - id: plan
     command: speckit.plan
     hooks:
       before:
-        - script: .specify/extensions/workflow-atoms/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh
+        - script: .specify/extensions/workflow-molecules/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh
           args: ["plan"]
 
   - id: review-plan
@@ -157,21 +157,21 @@ steps:
     command: speckit.tasks
     hooks:
       before:
-        - script: .specify/extensions/workflow-atoms/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh
+        - script: .specify/extensions/workflow-molecules/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh
           args: ["tasks"]
 
   - id: analyze
     command: speckit.analyze
     hooks:
       before:
-        - script: .specify/extensions/workflow-atoms/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh
+        - script: .specify/extensions/workflow-molecules/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh
           args: ["analyze"]
 
   - id: implement
     command: speckit.implement
     hooks:
       before:
-        - script: .specify/extensions/workflow-atoms/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh
+        - script: .specify/extensions/workflow-molecules/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh
           args: ["implement"]
 ```
 
@@ -297,13 +297,13 @@ Documented in `haexmas/atoms/README.md` and mirrored in this design for the plan
    }
    ```
 2. Run `haex install` without `--llm` or `--accept-merged` for this design's single constitution contribution. `run()` selects `assemble_single_source(...)`, which publishes deterministically and writes no pending merge state. If the consumer has two or more constitution contributions, use the separate multi-source path: run `haex install --llm=file`, review the pending candidate, then rerun `haex install --accept-merged <candidate>`.
-3. Before activation, inspect `.specify/workflows/workflow-registry.json` and verify all of the following: `workflows["com.github.haexmas.atoms.speckit-session-hopper"]` exists; its `source` is exactly `"atom"`; its `atom_id` is exactly `"com.github.haexmas.atoms.speckit-session-hopper"`; `.specify/workflows/com.github.haexmas.atoms.speckit-session-hopper/workflow.yml` exists and matches the published contribution; and `.specify/extensions/workflow-atoms/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh` is the expected regular file, has byte-identical published content, and is executable under the actual hook-runner semantics. Test these assertions against the actual post-install registry entry, workflow file, and hook: invoke the hook exactly as the runner does for a representative step, requiring successful exit and the expected prompt/marker output; when the runner executes scripts directly, also require the executable mode and a successful direct invocation. If any assertion fails, do not activate the atom because the resolver would correctly fall back to the bundled workflow. The corresponding `workflows` entry key and `atom_id` use the same full atom id; only `workflow.yml.workflow.id` remains `speckit-session-hopper`.
+3. Before activation, inspect `.specify/workflows/workflow-registry.json` and verify all of the following: `workflows["com.github.haexmas.atoms.speckit-session-hopper"]` exists; its `source` is exactly `"atom"`; its `atom_id` is exactly `"com.github.haexmas.atoms.speckit-session-hopper"`; `.specify/workflows/com.github.haexmas.atoms.speckit-session-hopper/workflow.yml` exists and matches the published contribution; and `.specify/extensions/workflow-molecules/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh` is the expected regular file, has byte-identical published content, and is executable under the actual hook-runner semantics. Test these assertions against the actual post-install registry entry, workflow file, and hook: invoke the hook exactly as the runner does for a representative step, requiring successful exit and the expected prompt/marker output; when the runner executes scripts directly, also require the executable mode and a successful direct invocation. If any assertion fails, do not activate the atom because the resolver would correctly fall back to the bundled workflow. The corresponding `workflows` entry key and `atom_id` use the same full atom id; only `workflow.yml.workflow.id` remains `speckit-session-hopper`.
 4. Only after all registry assertions pass, edit `.specify/workflows/workflow-registry.json` and set `active_workflow` to `com.github.haexmas.atoms.speckit-session-hopper`. (Spec 011 does not require a helper for this yet; a plain text edit suffices.)
 
 Post-adoption state:
 
 - `.specify/workflows/com.github.haexmas.atoms.speckit-session-hopper/workflow.yml` published.
-- `.specify/extensions/workflow-atoms/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh` published.
+- `.specify/extensions/workflow-molecules/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh` published.
 - `.haex-hive/constitution.md` contains the "Per-step session isolation" subsection under `## Workflow-Contributed Rules`.
 - Every subsequent agent session opened in this repo, reading its user-global CLAUDE.md, loads the constitution, sees the MUST rule, and consequently prompts before every command step unless it receives the valid one-shot handoff marker for that step.
 

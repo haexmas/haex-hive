@@ -7,7 +7,7 @@
       "version": "1.4.0"
     },
     "com.github.haexmas.haex-hive.graphify-first-authoring": {
-      "path": ".specify/atoms/graphify-first-authoring",
+      "path": ".specify/molecules/graphify-first-authoring",
       "version": "0.1.0"
     }
   }

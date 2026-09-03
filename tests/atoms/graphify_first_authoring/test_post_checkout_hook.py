@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_ATOM_HOOKS = _REPO_ROOT / ".specify" / "atoms" / "graphify-first-authoring" / "hooks"
+_MOLECULE_HOOKS = _REPO_ROOT / ".specify" / "molecules" / "graphify-first-authoring" / "hooks"
 
 
 def _git(repo: Path, *args: str, env: dict[str, str] | None = None) -> str:
@@ -57,11 +57,11 @@ def _install_post_checkout_hook_globally(parent_repo: Path, interpreter: str) ->
     hooks_dir = parent_repo / ".git" / "hooks"
     hooks_dir.mkdir(parents=True, exist_ok=True)
     target = hooks_dir / "post-checkout"
-    body = (_ATOM_HOOKS / "post-checkout").read_text(encoding="utf-8")
+    body = (_MOLECULE_HOOKS / "post-checkout").read_text(encoding="utf-8")
     target.write_text(f"#!{interpreter}\n{body}", encoding="utf-8")
     target.chmod(target.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     for name in ("_snapshot.py", "_tracked_branches.py", "_refresh.py"):
-        shutil.copy2(_ATOM_HOOKS / name, hooks_dir / name)
+        shutil.copy2(_MOLECULE_HOOKS / name, hooks_dir / name)
     return target
 
 

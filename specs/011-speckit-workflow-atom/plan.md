@@ -1,23 +1,23 @@
-# Implementation Plan: Speckit Workflow Atom (simplified)
+# Implementation Plan: Speckit workflow molecule (simplified)
 
 **Branch**: `011-plan-simplified` | **Date**: 2026-09-02 | **Spec**: [spec.md](./spec.md)
-**Input**: Feature specification from `/specs/011-speckit-workflow-atom/spec.md`
+**Input**: Feature specification from `/specs/011-speckit-workflow-molecule/spec.md`
 
 ## Summary
 
-Under the 2026-09-02 simplification amendment (PR #54 merged), Spec 011 delivers a `speckit-workflow` atom kind that a project pins via `.haex-hive.json` to bind a specific speckit workflow. On `haex install` the atom's `workflow.yml` publishes at `.specify/workflows/<atom-id>/workflow.yml`, its hook scripts publish under the reserved namespace `.specify/extensions/workflow-atoms/<atom-id>/`, its constitution fragment merges into the shared `## Workflow-Contributed Rules` section of `.haex-hive/constitution.md`, and its extensions fragment merges with the consumer-owned `.specify/extensions.local.yml` to regenerate the deterministic output `.specify/extensions.yml`. Binding is implicit from adoption: one workflow atom in `.haex-hive.json` -> that workflow is binding; none -> the bundled speckit workflow is binding. Adopting two `speckit-workflow` atoms refuses with `key=multiple-workflow-atoms-refused`. No registry file, no `active_workflow` selector, no provenance cache; the reader helper `resolve_active_workflow(repo_root)` inspects `.haex-hive.json` directly.
+Under the 2026-09-02 simplification amendment (PR #54 merged), Spec 011 delivers a `speckit-workflow` atom kind that a project pins via `.haex-hive.json` to bind a specific speckit workflow. On `haex install` the molecule's `workflow.yml` publishes at `.specify/workflows/<molecule-id>/workflow.yml`, its hook scripts publish under the reserved namespace `.specify/extensions/workflow-molecules/<molecule-id>/`, its constitution fragment merges into the shared `## Workflow-Contributed Rules` section of `.haex-hive/constitution.md`, and its extensions fragment merges with the consumer-owned `.specify/extensions.local.yml` to regenerate the deterministic output `.specify/extensions.yml`. Binding is implicit from adoption: one workflow molecule in `.haex-hive.json` -> that workflow is binding; none -> the bundled speckit workflow is binding. Adopting two `speckit-workflow` atoms refuses with `key=multiple-workflow-molecules-refused`. No registry file, no `active_workflow` selector, no provenance cache; the reader helper `resolve_active_workflow(repo_root)` inspects `.haex-hive.json` directly.
 
 ## Technical Context
 
 **Language/Version**: Python 3.12 (matches existing haex-hive baseline).
 **Primary Dependencies**: no new runtime dependencies. The workflow subpackage builds on `haex_hive.schema.validator` (JSON Schema), `haex_hive.model.consumer_manifest` (atom resolution), `haex_hive.model.version_constraint.VersionConstraint` (Spec 007 grammar), `haex_hive.constitution.assemble` (multi-source merge), `haex_hive.io.transaction` (rename-swap), and PyYAML (already vendored transitively for the bundled speckit workflow.yml).
-**Storage**: filesystem only. Committed content lands under `.specify/workflows/<atom-id>/` (atom-owned), `.specify/extensions/workflow-atoms/<atom-id>/` (reserved atom namespace), `.specify/extensions.yml` (generated output), and `.haex-hive/constitution.md` (via merge). The consumer-owned `.specify/extensions.local.yml` is the local source and is never touched by the runtime. Device-local state (publisher clones) lives under `$HAEX_HIVE_STATE/`.
+**Storage**: filesystem only. Committed content lands under `.specify/workflows/<molecule-id>/` (molecule-owned), `.specify/extensions/workflow-molecules/<molecule-id>/` (reserved atom namespace), `.specify/extensions.yml` (generated output), and `.haex-hive/constitution.md` (via merge). The consumer-owned `.specify/extensions.local.yml` is the local source and is never touched by the runtime. Device-local state (publisher clones) lives under `$HAEX_HIVE_STATE/`.
 **Testing**: pytest (unit + contract + integration) and ruff (with `--select F401,F841` for dead-symbol prune). New tree `tests/workflow/` mirrors `tests/install/`; integration coverage includes cross-root crash/retry points, the mixed-generation reader interval, immutable local-source snapshots, and downgrade convergence.
 **Target Platform**: Linux, macOS, Windows CLI (single-project Python CLI baseline).
 **Project Type**: single-project Python CLI (Spec 007 baseline).
-**Performance Goals**: `haex install` latency unchanged. Workflow pipeline adds at most one YAML parse for the adopted atom's fragment (FR-006 forbids multiple) plus one parse for `.specify/extensions.local.yml` when present. Sub-100ms on typical adoption.
+**Performance Goals**: `haex install` latency unchanged. Workflow pipeline adds at most one YAML parse for the adopted molecule's fragment (FR-006 forbids multiple) plus one parse for `.specify/extensions.local.yml` when present. Sub-100ms on typical adoption.
 **Constraints**: no absolute paths (Principle II, critical because workflow.yml payload's own `steps[].script` fields must be containment-checked); no secrets (Principle I); SHA-pinning (Principle IV, inherited); constitution-merge review gate (Principle VI, reused via `--accept-merged`); concealment guard (Principle VIII, reused).
-**Scale/Scope**: at most one workflow atom per project (FR-006 enforced). No hard cap on `required_extensions[]` or `hooks.<stage>[]` entries.
+**Scale/Scope**: at most one workflow molecule per project (FR-006 enforced). No hard cap on `required_extensions[]` or `hooks.<stage>[]` entries.
 
 ## Constitution Check
 
@@ -30,11 +30,11 @@ Constitution v1.4.0. Every principle evaluated:
 | I. No Secrets in Git (NON-NEGOTIABLE) | PASS | `validate_no_plaintext_secrets` runs on workflow.yml + extensions fragment + local source before publication. |
 | II. No Local Absolute Paths in Versioned Config (NON-NEGOTIABLE) | PASS | FR-001 mandates path containment via `RepoRelativePath.validate`; the plan additionally validates workflow.yml's own `steps[].script` fields and every hook mapping destination. |
 | III. Project Identity Is Device-Independent (NON-NEGOTIABLE) | PASS | Nothing in this spec touches the identity layer. |
-| IV. Cross-Repo References Pin Immutable Revisions (NON-NEGOTIABLE) | PASS | Workflow atoms adopted via `.haex-hive.json` `atoms[].revision` (40-char SHA). No branch/HEAD. |
-| V. Constitution Is a Contract, Not a Vibe (NON-NEGOTIABLE) | PASS | FR-004 designates a single `## Workflow-Contributed Rules` section with atom-id byline. |
+| IV. Cross-Repo References Pin Immutable Revisions (NON-NEGOTIABLE) | PASS | workflow molecules adopted via `.haex-hive.json` `atoms[].revision` (40-char SHA). No branch/HEAD. |
+| V. Constitution Is a Contract, Not a Vibe (NON-NEGOTIABLE) | PASS | FR-004 designates a single `## Workflow-Contributed Rules` section with molecule-id byline. |
 | VI. Self-Modifying Instructions Are Always Review-Gated (NON-NEGOTIABLE) | PASS | Constitution merge remains two-phase (`--llm=file` + `--accept-merged`). |
 | VII. Trust Boundaries Are Enforced Between Devices | N/A | This spec has no cross-device flow. |
-| VIII. Reviewability Is the Only Trustworthy Base | PASS | `validate_no_concealment_instructions` runs on the workflow atom's constitution fragment (FR-010). |
+| VIII. Reviewability Is the Only Trustworthy Base | PASS | `validate_no_concealment_instructions` runs on the workflow molecule's constitution fragment (FR-010). |
 | § Development Workflow: Declared speckit workflow adherence | PASS | This plan is produced through `/speckit-plan`. Next: `review-plan` -> `/speckit-tasks`. |
 | § Development Workflow: phasing discipline | PASS | Spec 011 runtime dependencies (Spec 007, Spec 008) are landed. |
 | § Governance: Conventional Commits | PASS | Every commit uses `feat/fix/docs/refactor/test/plan/spec(...)` prefixes. |
@@ -46,7 +46,7 @@ Constitution v1.4.0. Every principle evaluated:
 ### Documentation (this feature)
 
 ```text
-specs/011-speckit-workflow-atom/
+specs/011-speckit-workflow-molecule/
 ├── spec.md
 ├── plan.md                                     # THIS file
 ├── research.md                                 # Phase 0 output
@@ -76,7 +76,7 @@ src/haex_hive/
 │   ├── publisher.py                            # publish_workflow_atom + cross-root generation coordinator + delete-orphans hook
 │   └── errors.py                               # 9 diagnostic subclasses
 ├── model/consumer_manifest.py                  # EXTENDED: parses the consumer manifest; workflow multiplicity is checked after atom resolution
-├── constitution/assemble.py                    # EXTENDED: integrates workflow atom fragment into ## Workflow-Contributed Rules
+├── constitution/assemble.py                    # EXTENDED: integrates workflow molecule fragment into ## Workflow-Contributed Rules
 ├── install/errors.py                           # STILL empty (workflow errors live in workflow/errors.py)
 ├── util/exit_codes.py                          # EXTENDED: comment-only, reuses existing categories
 └── cli/install.py                              # EXTENDED: install() calls the workflow pipeline before constitution merge
@@ -97,14 +97,14 @@ Nine diagnostic keys reserved. Category-reuse per Spec 008 practice:
 | Diagnostic key | Category | Exit code | Trigger |
 |---|---|---|---|
 | `required-workflow-extension-missing` | Validation | `VALIDATION_REFUSE` (4) | `required_extensions[i].id` has no local `.specify/extensions/<id>/` |
-| `required-workflow-extension-incompatible` | Validation | `VALIDATION_REFUSE` (4) | Installed extension's `extension.yml` version fails the atom's constraint |
+| `required-workflow-extension-incompatible` | Validation | `VALIDATION_REFUSE` (4) | Installed extension's `extension.yml` version fails the molecule's constraint |
 | `invalid-constraint` | Input | `INPUT_REFUSE` (2) | Fragment or local source declares an unparseable `version_constraint` |
 | `conflicting-constraint` | Validation | `VALIDATION_REFUSE` (4) | Atom and local declare same extension id with incompatible constraints |
 | `optional-workflow-extension-conflict` | Warning (stderr) | 0 | Atom-vs-local optional mismatch; incompatible optional dropped |
 | `conflicting-extension-metadata` | Validation | `VALIDATION_REFUSE` (4) | Non-constraint metadata (`homepage`) disagrees for same id |
 | `workflow-hook-mapping-invalid` | Input | `INPUT_REFUSE` (2) | Hook mapping references missing/non-regular/duplicate/out-of-namespace source |
-| `workflow-atom-extension-id-collision` | Input | `INPUT_REFUSE` (2) | Reserved `workflow-atoms/` namespace occupied by community extension, or same id declared twice within a single fragment list |
-| `multiple-workflow-atoms-refused` | Input | `INPUT_REFUSE` (2) | `.haex-hive.json` adopted set has 2+ atoms with `contributes.speckit_workflow` |
+| `workflow-molecule-extension-id-collision` | Input | `INPUT_REFUSE` (2) | Reserved `workflow-molecules/` namespace occupied by community extension, or same id declared twice within a single fragment list |
+| `multiple-workflow-molecules-refused` | Input | `INPUT_REFUSE` (2) | `.haex-hive.json` adopted set has 2+ atoms with `contributes.speckit_workflow` |
 
 ## Phases
 
@@ -114,11 +114,11 @@ Eight research decisions:
 
 1. **R1 registry-alternative**: no registry file needed under one-active-per-repo; adoption alone signals binding.
 2. **R2 extensions ownership boundary**: `.specify/extensions.local.yml` (consumer input) disjoint from `.specify/extensions.yml` (generated output).
-3. **R3 multi-workflow refusal placement**: after publisher and atom manifests are resolved and validated, the workflow pipeline counts `contributes.speckit_workflow` fields and refuses before fragments or publication; `ConsumerManifest.from_json` only validates consumer-owned data.
+3. **R3 multi-workflow refusal placement**: after publisher and molecule manifests are resolved and validated, the workflow pipeline counts `contributes.speckit_workflow` fields and refuses before fragments or publication; `ConsumerManifest.from_json` only validates consumer-owned data.
 4. **R4 constraint-merge algorithm**: simplified to atom-vs-local reduction (no cross-atom).
 5. **R5 reader resolution fallback**: typed `WorkflowResolution` with `source: atom|bundled` and diagnostics field.
 6. **R6 workflow.yml payload safety**: path containment + no-secrets + no-concealment on the payload body.
-7. **R7 publisher-side atom directory shape**: reference structure a workflow-atom publisher must produce.
+7. **R7 publisher-side atom directory shape**: reference structure a workflow-molecule publisher must produce.
 8. **R8 hook identity for replace-by-identity**: identity = `(stage, extension, command, script)` tuple (load-bearing detail from PR #54 hardening).
 
 ### Phase 1: Design & Contracts (produces `data-model.md`, `contracts/`, `quickstart.md`)
@@ -129,7 +129,7 @@ Prerequisites: research.md complete.
 
 **contracts/**:
 - `atom-manifest.v2.speckit-workflow.md`: three new `contributes.*` fields + orphan-refusal cases.
-- `extensions-fragment.v1.md`: atom-contributed extensions.yml fragment shape.
+- `extensions-fragment.v1.md`: molecule-contributed extensions.yml fragment shape.
 - `extensions-local.v1.md` (NEW from PR #54): consumer-owned `.specify/extensions.local.yml` shape + ownership boundary.
 - `extensions-generated.v1.md` (NEW): generated output shape + deterministic serialisation.
 

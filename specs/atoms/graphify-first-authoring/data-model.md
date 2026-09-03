@@ -66,7 +66,7 @@ the completed output reflects.
 
 Two existing Spec 007 structures, each gaining one entry — no new schema:
 
-- Root `manifest.json`'s `atoms` map gains `com.github.haexmas.haex-hive.graphify-first-authoring → { path: ".specify/atoms/graphify-first-authoring", version: "0.1.0" }`.
+- Root `manifest.json`'s `atoms` map gains `com.github.haexmas.haex-hive.graphify-first-authoring → { path: ".specify/molecules/graphify-first-authoring", version: "0.1.0" }`.
 - `.haex-hive.json`'s `atoms[]` array gains one entry `{ includes: ["com.github.haexmas.haex-hive.graphify-first-authoring"], revision: <pinned SHA>, source: "https://github.com/haexmas/haex-hive" }`, alongside the existing constitution-atom entry.
 
 **Lifecycle**: both are committed, versioned config, updated once during this feature's implementation and thereafter only on version bumps of the atom itself.

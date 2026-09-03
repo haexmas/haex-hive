@@ -65,7 +65,7 @@ specs/atoms/graphify-first-authoring/
 This feature does not fit the generic src/tests application template — its primary deliverable is a **content/config package** (a Spec 007 atom) consumed through haex-hive's existing atom mechanism, not new code added to the `haex_hive` CLI package itself.
 
 ```text
-.specify/atoms/graphify-first-authoring/     # the atom package — this feature's primary deliverable
+.specify/molecules/graphify-first-authoring/     # the atom package — this feature's primary deliverable
 ├── manifest.json                            # atom manifest: contributes.constitution: "constitution.md"
 ├── constitution.md                          # the contributed principle text
 ├── hooks/
@@ -88,4 +88,4 @@ tests/
         └── test_install.py                  # shebang resolution, hook-collision refusal, tracked-branch refusal, dependency check
 ```
 
-**Structure Decision**: The atom lives under `.specify/atoms/graphify-first-authoring/`, matching the layout already established for haex-hive's own core constitution atom (`.specify/memory/`) and consistent with the design doc's file layout. Its logic (`_refresh.py`, `_snapshot.py`, `install.py`) is plain, importable Python so it can be unit-tested under the repo's existing `tests/` tree without needing to actually invoke git or graphify in most tests — only a thin end-to-end smoke test needs real subprocess calls.
+**Structure Decision**: The atom lives under `.specify/molecules/graphify-first-authoring/`, matching the layout already established for haex-hive's own core constitution atom (`.specify/memory/`) and consistent with the design doc's file layout. Its logic (`_refresh.py`, `_snapshot.py`, `install.py`) is plain, importable Python so it can be unit-tested under the repo's existing `tests/` tree without needing to actually invoke git or graphify in most tests — only a thin end-to-end smoke test needs real subprocess calls.

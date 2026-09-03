@@ -8,13 +8,13 @@
 
 ```console
 # Linux / WSL2
-python3 .specify/atoms/graphify-first-authoring/install.py
+python3 .specify/molecules/graphify-first-authoring/install.py
 
 # macOS (use python if that is the command provided by your installation)
-python3 .specify/atoms/graphify-first-authoring/install.py
+python3 .specify/molecules/graphify-first-authoring/install.py
 
 # Windows
-python .specify/atoms/graphify-first-authoring/install.py
+python .specify/molecules/graphify-first-authoring/install.py
 ```
 
 No flags in v0.1 — every decision point that could plausibly be a flag (skip confirmation, force-overwrite an existing hook) is deliberately absent; see "Non-goals" below.

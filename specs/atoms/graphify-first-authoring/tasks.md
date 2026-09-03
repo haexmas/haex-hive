@@ -20,7 +20,7 @@ description: "Task list for feature implementation"
 
 ## Path Conventions
 
-Per plan.md's Structure Decision — not the generic `src/`/`tests/` application template. This feature's primary deliverable is a content/config package under `.specify/atoms/graphify-first-authoring/`, plus small edits to two existing root files (`manifest.json`, `.haex-hive.json`) and this repo's own `.gitignore`. Tests live under this repo's existing `tests/` tree.
+Per plan.md's Structure Decision — not the generic `src/`/`tests/` application template. This feature's primary deliverable is a content/config package under `.specify/molecules/graphify-first-authoring/`, plus small edits to two existing root files (`manifest.json`, `.haex-hive.json`) and this repo's own `.gitignore`. Tests live under this repo's existing `tests/` tree.
 
 ---
 
@@ -28,8 +28,8 @@ Per plan.md's Structure Decision — not the generic `src/`/`tests/` application
 
 **Purpose**: Create the atom package skeleton and the test package skeleton that every later phase writes into.
 
-- [X] T001 Create the atom package skeleton: `.specify/atoms/graphify-first-authoring/` with a `hooks/` subdirectory (empty save for a `.gitkeep`, filled in by later phases)
-- [X] T002 Create the test package skeleton: `tests/atoms/graphify_first_authoring/__init__.py` and `tests/atoms/graphify_first_authoring/conftest.py`, where `conftest.py` inserts `.specify/atoms/graphify-first-authoring/` and its `hooks/` subdirectory onto `sys.path` so the atom's scripts (`install.py`, `_refresh.py`, `_snapshot.py`, `_tracked_branches.py`) are importable as plain modules from tests without packaging them into `haex_hive`
+- [X] T001 Create the atom package skeleton: `.specify/molecules/graphify-first-authoring/` with a `hooks/` subdirectory (empty save for a `.gitkeep`, filled in by later phases)
+- [X] T002 Create the test package skeleton: `tests/atoms/graphify_first_authoring/__init__.py` and `tests/atoms/graphify_first_authoring/conftest.py`, where `conftest.py` inserts `.specify/molecules/graphify-first-authoring/` and its `hooks/` subdirectory onto `sys.path` so the atom's scripts (`install.py`, `_refresh.py`, `_snapshot.py`, `_tracked_branches.py`) are importable as plain modules from tests without packaging them into `haex_hive`
 
 **Checkpoint**: directories exist; nothing yet to test.
 
@@ -41,7 +41,7 @@ Per plan.md's Structure Decision — not the generic `src/`/`tests/` application
 
 **⚠️ CRITICAL**: US2, US3, US4 cannot begin until this phase is complete. US1 is unaffected.
 
-- [X] T003 Implement tracked-branch detection in `.specify/atoms/graphify-first-authoring/hooks/_tracked_branches.py`: auto-detect the default branch via `git symbolic-ref refs/remotes/origin/HEAD`, merge with `.haex-hive.json`'s optional `tracked_branches[]` array, expose a single `is_tracked(branch: str) -> bool` (research.md D4)
+- [X] T003 Implement tracked-branch detection in `.specify/molecules/graphify-first-authoring/hooks/_tracked_branches.py`: auto-detect the default branch via `git symbolic-ref refs/remotes/origin/HEAD`, merge with `.haex-hive.json`'s optional `tracked_branches[]` array, expose a single `is_tracked(branch: str) -> bool` (research.md D4)
 - [X] T004 Unit tests for tracked-branch detection in `tests/atoms/graphify_first_authoring/test_tracked_branches.py`: default-branch-only case, `tracked_branches[]` merge case, non-tracked branch returns `False`, missing `.haex-hive.json` handled gracefully
 
 **Checkpoint**: `_tracked_branches.is_tracked()` is available and tested — US2 and US4 can now proceed.
@@ -54,9 +54,9 @@ Per plan.md's Structure Decision — not the generic `src/`/`tests/` application
 
 **Independent Test**: Merge this atom's `constitution.md` into a test repo's `.haex-hive/constitution.md` (manually, or via `haex constitution assemble`). With a knowledge graph containing one relevant existing artifact, ask an agent to author a function duplicating it. Verify the agent names the candidate, states the delta, and proposes extending it — no code from Phase 2 is required for this to hold.
 
-- [X] T005 [US1] Write the atom manifest in `.specify/atoms/graphify-first-authoring/manifest.json` declaring `contributes.constitution: "constitution.md"`, conforming to `specs/007-unified-manifest-v2/contracts/atom-manifest.v2.schema.json`
-- [X] T006 [US1] Write the contributed constitution text in `.specify/atoms/graphify-first-authoring/constitution.md` covering: consult-before-author (FR-002), prefer-extend-over-duplicate including unexported/incomplete candidates (FR-003), refuse-then-propose with warn-and-proceed on consult failure and **ask-when-uncertain on borderline similarity or scope-creep risk** (FR-004), single-session escape hatch responsive to any natural-language operator request to skip (FR-005), bootstrap-when-absent/refresh-when-stale holding independent of hooks (FR-010), plain `graphify` CLI invocations rather than any one harness's slash-command syntax (FR-016). Additionally include (adapted from the Claude Code `prevent-redundancy` skill, kept harness-agnostic): (a) **Refactor Proposal Format** — 4-point checklist (candidate location as `file:line`; proposed helper signature; estimated lines saved; ONE concrete call-site rewritten as proof-of-concept before touching others); (b) **Red Flags self-detection** — new function name close to an existing one (`formatDate` vs `formatDateString`), third date/retry/validation utility in the codebase, 10-line block copied "just to adapt slightly", the thought "similar but different enough" (usually isn't), starting `function helper(…)` without checking; (c) **Test-fixture nuance** — duplicated arrange/assert/setup blocks are often intentional signal (don't touch), but helper functions in tests remain fully under this rule; (d) **Optional interpreting-output thresholds** — ≥6 identical lines with same logic → extract; <5 lines that are structural (setup, error-wrapping) → often OK, don't over-extract; hits inside test files → usually leave alone unless they are helpers per (c)
-- [X] T007 [P] [US1] Validate `.specify/atoms/graphify-first-authoring/manifest.json` against `specs/007-unified-manifest-v2/contracts/atom-manifest.v2.schema.json` using the repo's existing `jsonschema` dependency, in `tests/atoms/graphify_first_authoring/test_manifest_schema.py`
+- [X] T005 [US1] Write the atom manifest in `.specify/molecules/graphify-first-authoring/manifest.json` declaring `contributes.constitution: "constitution.md"`, conforming to `specs/007-unified-manifest-v2/contracts/atom-manifest.v2.schema.json`
+- [X] T006 [US1] Write the contributed constitution text in `.specify/molecules/graphify-first-authoring/constitution.md` covering: consult-before-author (FR-002), prefer-extend-over-duplicate including unexported/incomplete candidates (FR-003), refuse-then-propose with warn-and-proceed on consult failure and **ask-when-uncertain on borderline similarity or scope-creep risk** (FR-004), single-session escape hatch responsive to any natural-language operator request to skip (FR-005), bootstrap-when-absent/refresh-when-stale holding independent of hooks (FR-010), plain `graphify` CLI invocations rather than any one harness's slash-command syntax (FR-016). Additionally include (adapted from the Claude Code `prevent-redundancy` skill, kept harness-agnostic): (a) **Refactor Proposal Format** — 4-point checklist (candidate location as `file:line`; proposed helper signature; estimated lines saved; ONE concrete call-site rewritten as proof-of-concept before touching others); (b) **Red Flags self-detection** — new function name close to an existing one (`formatDate` vs `formatDateString`), third date/retry/validation utility in the codebase, 10-line block copied "just to adapt slightly", the thought "similar but different enough" (usually isn't), starting `function helper(…)` without checking; (c) **Test-fixture nuance** — duplicated arrange/assert/setup blocks are often intentional signal (don't touch), but helper functions in tests remain fully under this rule; (d) **Optional interpreting-output thresholds** — ≥6 identical lines with same logic → extract; <5 lines that are structural (setup, error-wrapping) → often OK, don't over-extract; hits inside test files → usually leave alone unless they are helpers per (c)
+- [X] T007 [P] [US1] Validate `.specify/molecules/graphify-first-authoring/manifest.json` against `specs/007-unified-manifest-v2/contracts/atom-manifest.v2.schema.json` using the repo's existing `jsonschema` dependency, in `tests/atoms/graphify_first_authoring/test_manifest_schema.py`
 - [ ] T008 [US1] Manually verify via [quickstart.md](quickstart.md) steps 3–5 (adopt in `.haex-hive.json`, `haex constitution assemble`, `haex constitution show`) that an agent follows the contributed authoring behavior — this is an agent-behavior check, not a unit test. T024/T025 verify assembly and source attribution only; they do not satisfy this task.
 
 **Checkpoint**: User Story 1 is independently complete — the rule exists and is adoptable, with no dependency on US2/US3/US4.
@@ -69,8 +69,8 @@ Per plan.md's Structure Decision — not the generic `src/`/`tests/` application
 
 **Independent Test**: Commit a change on the tracked branch through plain `git commit` (no agent involved). Verify `graphify-out/` reflects the new commit afterward.
 
-- [X] T009 [P] [US2] Implement refresh logic in `.specify/atoms/graphify-first-authoring/hooks/_refresh.py`: invoke `graphify update <repo-root>`, verify it produces `graphify-out/graph.json`, and record the current `HEAD` in `graphify-out/.meta.json`; on failure, warn to stderr and return normally rather than raising (contracts/git-hooks.md, FR-006)
-- [X] T010 [US2] Implement the `post-commit` hook entrypoint in `.specify/atoms/graphify-first-authoring/hooks/post-commit`: check `_tracked_branches.is_tracked()` (no-op if false), call `_refresh.py`, always exit 0 regardless of outcome (depends on T003, T009)
+- [X] T009 [P] [US2] Implement refresh logic in `.specify/molecules/graphify-first-authoring/hooks/_refresh.py`: invoke `graphify update <repo-root>`, verify it produces `graphify-out/graph.json`, and record the current `HEAD` in `graphify-out/.meta.json`; on failure, warn to stderr and return normally rather than raising (contracts/git-hooks.md, FR-006)
+- [X] T010 [US2] Implement the `post-commit` hook entrypoint in `.specify/molecules/graphify-first-authoring/hooks/post-commit`: check `_tracked_branches.is_tracked()` (no-op if false), call `_refresh.py`, always exit 0 regardless of outcome (depends on T003, T009)
 - [X] T011 [P] [US2] Unit tests for refresh logic in `tests/atoms/graphify_first_authoring/test_refresh.py`: the simulated graphify process writes only the graph output, and the real refresh path records the freshness marker; simulated `graphify` failure warns without raising (depends on T009)
 - [X] T012 [US2] Integration test in `tests/atoms/graphify_first_authoring/test_post_commit_hook.py`: real `git commit` on a tracked branch triggers the installed hook and the real `_refresh.py` path records `graphify-out/.meta.json`'s `indexed_at_sha`, matching the new `HEAD` (depends on T010)
 
@@ -84,8 +84,8 @@ Per plan.md's Structure Decision — not the generic `src/`/`tests/` application
 
 **Independent Test**: On a repo with an existing tracked-branch graph, create a new worktree off it. Verify the new worktree's `graphify-out/` is populated immediately, matching the parent's graph.
 
-- [X] T013 [P] [US3] Implement snapshot logic in `.specify/atoms/graphify-first-authoring/hooks/_snapshot.py`: read and validate the explicit `GRAPHIFY_PARENT_WORKTREE` source against `git worktree list --porcelain`, copy a complete parent `graphify-out/` containing `graph.json` recursively if no complete graph exists locally, replace an incomplete destination directory, and no-op for an absent/incomplete parent graph or complete destination (contracts/git-hooks.md, FR-008)
-- [X] T014 [US3] Implement the `post-checkout` hook entrypoint in `.specify/atoms/graphify-first-authoring/hooks/post-checkout`: check the third argument is `1` (branch checkout), call `_snapshot.py`, always exit 0 regardless of outcome (depends on T013)
+- [X] T013 [P] [US3] Implement snapshot logic in `.specify/molecules/graphify-first-authoring/hooks/_snapshot.py`: read and validate the explicit `GRAPHIFY_PARENT_WORKTREE` source against `git worktree list --porcelain`, copy a complete parent `graphify-out/` containing `graph.json` recursively if no complete graph exists locally, replace an incomplete destination directory, and no-op for an absent/incomplete parent graph or complete destination (contracts/git-hooks.md, FR-008)
+- [X] T014 [US3] Implement the `post-checkout` hook entrypoint in `.specify/molecules/graphify-first-authoring/hooks/post-checkout`: check the third argument is `1` (branch checkout), call `_snapshot.py`, always exit 0 regardless of outcome (depends on T013)
 - [X] T015 [P] [US3] Unit tests for snapshot logic in `tests/atoms/graphify_first_authoring/test_snapshot.py`: copies when absent locally, no-op when already present, no-op when parent has none (depends on T013)
 - [X] T016 [US3] Integration test in `tests/atoms/graphify_first_authoring/test_post_checkout_hook.py`: real `git worktree add` from a repo with an existing `graphify-out/` produces a populated copy in the new worktree (depends on T014)
 
@@ -99,7 +99,7 @@ Per plan.md's Structure Decision — not the generic `src/`/`tests/` application
 
 **Independent Test**: Run the installer in a fresh clone with `graphify` on PATH but no hooks installed. Verify hooks appear with a working shebang, `.gitignore` is updated, and the harness-registration step prompts rather than runs silently.
 
-- [X] T017 [US4] Implement shebang resolution in `.specify/atoms/graphify-first-authoring/install.py`: resolve `shutil.which("python3") or shutil.which("python")`, refuse with a clear diagnostic if neither is found (research.md D1, FR-015)
+- [X] T017 [US4] Implement shebang resolution in `.specify/molecules/graphify-first-authoring/install.py`: resolve `shutil.which("python3") or shutil.which("python")`, refuse with a clear diagnostic if neither is found (research.md D1, FR-015)
 - [X] T018 [US4] Implement installer preconditions in `install.py`, in this order: tracked-branch check via `_tracked_branches.is_tracked()` (FR-013), offer a default-Yes `pip install graphifyy` prompt when `graphify` is absent (FR-011), then hook-collision check for both target hook paths (FR-014) — declining or failing package installation refuses with no partial changes (depends on T003, T017)
 - [X] T019 [US4] Implement installer actions in `install.py`: write both hooks with the resolved shebang, add a `graphify-out/` line to `.gitignore` if absent (FR-017), prompt before invoking `graphify install` only when the explicit local registration marker is absent, record successful registration in local git config, and print manual follow-up when declined (FR-012) (depends on T018)
 - [X] T020 [P] [US4] Unit tests for the installer in `tests/atoms/graphify_first_authoring/test_install.py`: each precondition's refusal path leaves no partial changes, a successful run writes both hooks plus the `.gitignore` line, the default-Yes package prompt/refusal is covered, and the `graphify install` prompt is gated by the explicit registration marker, including graph-cache-present/unmarked and marker-present cases (depends on T019)
@@ -112,7 +112,7 @@ Per plan.md's Structure Decision — not the generic `src/`/`tests/` application
 
 **Purpose**: Wire the atom into haex-hive's own repo as its first self-adopting consumer, and validate the whole pipeline end-to-end.
 
-- [X] T021 [P] Write `.specify/atoms/graphify-first-authoring/README.md` (operator adoption docs, mirroring [quickstart.md](quickstart.md))
+- [X] T021 [P] Write `.specify/molecules/graphify-first-authoring/README.md` (operator adoption docs, mirroring [quickstart.md](quickstart.md))
 - [X] T022 Add the new atom entry to the repo-root `manifest.json` (data-model.md §RootManifestEntry) — depends on T005. **This lands as Commit 1 of the two-commit self-adoption convention**: Spec 007's `haex-hive.v2.schema.json` requires a full 40-char SHA in `atoms[]`'s `revision` field and has no in-tree self-reference form, so the pin can only reference a commit that already exists — T023 supplies that pin in Commit 2 once T022's SHA is known
 - [X] T023 Add the new `atoms[]` entry to the repo-root `.haex-hive.json` for haex-hive's own self-adoption (data-model.md §ConsumerManifestEntry) — depends on T022. **This is Commit 2 of the two-commit self-adoption convention**: its `revision` field pins the exact SHA of T022's Commit 1, which is already in git history at this point (pinned to `4425c76097576fcdf93cefb407bf16d4c13dc781`)
 - [X] T024 Run `haex constitution assemble` and review the merged `.haex-hive/constitution.md` (this exercises the multi-source LLM-merge path, since haex-hive now has two constitution-contributing atoms) — depends on T023. **Verified in this session** against a materialized publisher clone (`HAEX_HIVE_STATE=<scratchpad>` + self-clone at the expected repo digest), first with `--llm file` to produce the pending merge JSON (both sources correctly listed with their pinned revisions), then with `--accept-merged <merged.md>` to publish the merged constitution
@@ -154,8 +154,8 @@ Per plan.md's Structure Decision — not the generic `src/`/`tests/` application
 
 ```bash
 # Once Phase 2 (Foundational) is complete, these can run concurrently:
-Task: "Implement refresh logic in .specify/atoms/graphify-first-authoring/hooks/_refresh.py"
-Task: "Implement snapshot logic in .specify/atoms/graphify-first-authoring/hooks/_snapshot.py"
+Task: "Implement refresh logic in .specify/molecules/graphify-first-authoring/hooks/_refresh.py"
+Task: "Implement snapshot logic in .specify/molecules/graphify-first-authoring/hooks/_snapshot.py"
 ```
 
 ---

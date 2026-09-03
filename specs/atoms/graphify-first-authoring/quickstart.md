@@ -19,13 +19,13 @@ From the repo root, on a tracked branch (the default branch, or one declared in 
 
 ```console
 # Linux / WSL2
-$ python3 .specify/atoms/graphify-first-authoring/install.py
+$ python3 .specify/molecules/graphify-first-authoring/install.py
 
 # macOS (use python if that is the command provided by your installation)
-$ python3 .specify/atoms/graphify-first-authoring/install.py
+$ python3 .specify/molecules/graphify-first-authoring/install.py
 
 # Windows
-$ python .specify/atoms/graphify-first-authoring/install.py
+$ python .specify/molecules/graphify-first-authoring/install.py
 graphify-first-authoring needs graphify registered for your agent harness. Run `graphify install` now? [Y/n]
 ```
 
