@@ -146,9 +146,10 @@ forbidden. It generates the `SessionStart` hook only for a target that supports
 hooks. If `exec_prefix` is present, the hook runs `requires` outside the
 provider, then runs `verify` through the active environment prefix. If
 `exec_prefix` is absent, it skips the outside-provider checks and runs
-`verify` directly in the current environment. A failed check has the declared
-warning-or-refusal outcome; a target without hooks gets the prose instruction
-and an explicit degradation report instead of a silently implied check.
+`verify` directly in the current environment. A failed `requires` or `verify`
+check is a system refusal with exit 5 and an explicit diagnostic; it is not a
+degradation. A target without hooks gets the prose instruction and an explicit
+degradation report instead of a silently implied check.
 
 **haex-hive never installs a provider.** Installing Docker or podman means root, a daemon, groups and kernel modules. That is categorically different from writing files into a repository and would break the project's own model (Principle II, and the sidecar/review-gate philosophy). Every package manager has this boundary: npm needs node, cargo needs rustup, nix needs the Nix installer. haex-hive's boundary is `requires`.
 
@@ -190,7 +191,9 @@ The manifestless adoption algorithm is deliberately narrow and reproducible:
    are deterministic refusals.
 3. Set `selected_path` to the POSIX path of the discovered entry and preserve
    it in the lockfile. Set `kind` to `prose` for `SKILL.md` and `extension` for
-   `extension.yml`.
+   `extension.yml`. `extension` is an ingress-only foreign-format discriminator;
+   it is normalized before compilation and is never a fifth internal payload
+   kind.
 4. Derive `molecule_id` as
    `com.haex.adopted.<lowercase-sha256(canonical-source)[:24]>` and
    `atom_id` as
@@ -245,6 +248,14 @@ then maps those internal records to target-specific files; it does not pretend
 that the four kinds are existing `contributes.*` fields in the Spec-007 v2
 schema. The next schema revision must define the publisher-side representation
 and a migration from this molecule-local v1 before implementation.
+
+Manifestless Spec Kit adoption performs the same normalization before the
+compiler: the `extension.yml` record is an ingress record with `kind: extension`,
+its instruction and documentation entries become internal `prose` records, and
+each explicitly declared lifecycle hook becomes an internal `hooks` record.
+The compiler consumes only those normalized records; an extension field with no
+defined mapping is a deterministic refusal rather than an unconsumable lock
+record.
 
 The constitution stops being a magic category name and becomes what it actually is: prose that always applies with non-negotiable binding. The review gate attaches to `binding: non-negotiable`, which states the reason it exists.
 
@@ -392,5 +403,4 @@ Recommendation: retain subprocess isolation, the timeout contract and the enviro
 1. Does "workflow" remain a payload kind after Decision 6, or become an attribute on a prose contribution?
 2. Where does the Spec Kit extension format sit: a fifth payload kind, or a foreign format the installer translates into the four existing ones?
 3. What is the minimum viable adapter set, given that skills are portable by format and only hooks, structured config and `agent` payloads remain per-tool?
-4. Should `requires` failures refuse the install outright, or warn and let the compiled prose carry the instruction? Refusal is safer; warning keeps `haex install` usable on a machine that only edits configuration.
-5. Does the handoff manifest (Decision 1) warrant its own spec slot, or does it belong inside Spec 010's compiler output?
+4. Does the handoff manifest (Decision 1) warrant its own spec slot, or does it belong inside Spec 010's compiler output?
