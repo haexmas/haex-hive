@@ -55,7 +55,7 @@ hooks:
 Under one-active-per-repo, the fragment is merged with the consumer-owned [extensions-local.v1.md](./extensions-local.v1.md) to produce [extensions-generated.v1.md](./extensions-generated.v1.md). Merge rules:
 
 - **Requirements per id**: canonical constraint reduction (research.md § R4). Compatible molecule-vs-local pair -> merged effective constraint. Incompatible required -> refuse (`key=conflicting-constraint`). Incompatible optional -> drop with warning (`key=optional-workflow-extension-conflict`). Required wins over optional for effective kind.
-- **Hooks per stage**: molecule entries first (in declaration order), local entries after. Identity match `(stage, extension, command, script)` triggers local-replace-per-position semantics per research.md § R8.
+- **Hooks per stage**: molecule entries first (in declaration order), local entries after. Identity match `(stage, extension, command, normalized script_path)` triggers local-replace-per-position semantics per research.md § R8.
 
 ## Load-time refusal errors
 
@@ -63,7 +63,7 @@ Under one-active-per-repo, the fragment is merged with the consumer-owned [exten
 |---|---|---|
 | YAML parse fails | `workflow-fragment-parse-failed` | `INPUT_REFUSE` |
 | Unknown stage name | `workflow-hook-mapping-invalid` | `INPUT_REFUSE` |
-| Duplicate `(stage, extension, command, script)` in fragment | `workflow-hook-mapping-invalid` | `INPUT_REFUSE` |
+| Duplicate `(stage, extension, command, normalized script_path)` in fragment | `workflow-hook-mapping-invalid` | `INPUT_REFUSE` |
 | Unparseable `version_constraint` | `invalid-constraint` | `INPUT_REFUSE` |
 | Same id declared twice in one list | `workflow-molecule-extension-id-collision` | `INPUT_REFUSE` |
 | Hook `script` path escapes molecule root | Principle II | `INPUT_REFUSE` |

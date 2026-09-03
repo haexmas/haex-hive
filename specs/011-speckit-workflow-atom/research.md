@@ -159,6 +159,6 @@ Two molecule-contributed entries with the same identity refuse with `key=workflo
 - R5 reader resolution fallback: typed `WorkflowResolution` with `source` field
 - R6 workflow.yml payload safety guards
 - R7 publisher-side atom directory shape
-- R8 hook identity for replace-by-identity: `(stage, extension, command, script)` tuple
+- R8 hook identity for replace-by-identity: `(stage, extension, command, normalized script_path)` tuple
 
 Phase 1 (data-model + contracts + quickstart) consumes these decisions.

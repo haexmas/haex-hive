@@ -18,7 +18,7 @@ import os
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 _ATOM_DIR = Path(__file__).resolve().parent
 _HOOKS_SRC = _ATOM_DIR / "hooks"
@@ -56,6 +56,7 @@ def _resolve_interpreter() -> str:
 
 
 def _repo_root() -> Path:
+    """Return the current Git worktree root or refuse outside a repository."""
     root = _tracked_branches._repo_root(Path.cwd())
     if root is None:
         raise InstallError("Not inside a git working tree — run this from a clone.")
@@ -63,6 +64,7 @@ def _repo_root() -> Path:
 
 
 def _check_current_branch_tracked(repo_root: Path) -> None:
+    """Refuse installation when HEAD is detached or absent from tracked branches."""
     branch = _tracked_branches.current_branch(repo_root)
     tracked = _tracked_branches.tracked_branches(repo_root)
     if branch is None:
@@ -120,6 +122,7 @@ def _ensure_graphify_on_path() -> None:
 
 
 def _check_hook_collisions(hooks_dir: Path) -> None:
+    """Refuse to overwrite either Git hook managed by another tool."""
     for name in _HOOK_NAMES:
         target = hooks_dir / name
         if target.exists():
@@ -151,7 +154,27 @@ def _check_hooks_directory(hooks_dir: Path) -> None:
         )
 
 
+def _resolve_hooks_directory(repo_root: Path, raw_path: str) -> Path:
+    """Resolve Git's effective hooks path without accepting foreign path syntax."""
+    if os.name != "nt" and PureWindowsPath(raw_path).drive:
+        raise InstallError(
+            "Git returned a Windows-format hooks path on a POSIX runtime; "
+            "configure core.hooksPath with a POSIX path before installing."
+        )
+
+    hooks_dir = Path(raw_path)
+    if not hooks_dir.is_absolute():
+        hooks_dir = repo_root / hooks_dir
+    try:
+        return hooks_dir.resolve()
+    except OSError as exc:
+        raise InstallError(
+            f"Could not resolve Git's effective hooks directory '{raw_path}': {exc}"
+        ) from exc
+
+
 def _write_hook(hooks_dir: Path, name: str, interpreter: str) -> None:
+    """Write one executable entrypoint with the selected interpreter shebang."""
     source = _HOOKS_SRC / name
     body = source.read_text(encoding="utf-8")
     target = hooks_dir / name
@@ -160,6 +183,7 @@ def _write_hook(hooks_dir: Path, name: str, interpreter: str) -> None:
 
 
 def _copy_helpers(hooks_dir: Path) -> None:
+    """Copy helper modules next to the installed hook entrypoints."""
     for name in _HELPER_MODULES:
         shutil.copy2(_HOOKS_SRC / name, hooks_dir / name)
 
@@ -261,6 +285,7 @@ def _maybe_run_graphify_install(repo_root: Path) -> None:
 
 
 def install() -> int:
+    """Validate prerequisites, install the hooks, and return a CLI exit code."""
     try:
         interpreter = _resolve_interpreter()
         repo_root = _repo_root()
@@ -276,10 +301,7 @@ def install() -> int:
             raise InstallError(
                 f"Could not resolve Git's effective hooks directory: {detail}"
             )
-        hooks_dir = Path(hooks_result.stdout.strip())
-        if not hooks_dir.is_absolute():
-            hooks_dir = repo_root / hooks_dir
-        hooks_dir = hooks_dir.resolve()
+        hooks_dir = _resolve_hooks_directory(repo_root, hooks_result.stdout.strip())
         _check_hooks_directory(hooks_dir)
         _check_hook_collisions(hooks_dir)
         _ensure_graphify_on_path()

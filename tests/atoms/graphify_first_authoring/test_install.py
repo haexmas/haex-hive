@@ -161,6 +161,46 @@ def test_refuses_when_effective_hooks_path_is_a_file(
     assert provisioned == [], "invalid hooks paths must be checked before provisioning"
 
 
+@pytest.mark.parametrize(
+    "foreign_hooks_path",
+    [r"C:\Users\user\repo\.git\hooks", r"\\server\share\repo\.git\hooks"],
+)
+@pytest.mark.skipif(os.name == "nt", reason="covers a POSIX runtime receiving a Windows path")
+def test_refuses_windows_hooks_path_on_posix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    foreign_hooks_path: str,
+) -> None:
+    """Do not provision when native Windows Git returns a foreign path to WSL."""
+    repo = _make_tracked_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(installer, "_repo_root", lambda: repo)
+    monkeypatch.setattr(installer, "_check_current_branch_tracked", lambda _root: None)
+    monkeypatch.setattr(installer, "_resolve_interpreter", lambda: "/usr/bin/python3")
+    monkeypatch.setattr(
+        installer.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=["git", "rev-parse", "--git-path", "hooks"],
+            returncode=0,
+            stdout=f"{foreign_hooks_path}\n",
+            stderr="",
+        ),
+    )
+    provisioned: list[bool] = []
+    monkeypatch.setattr(
+        installer,
+        "_ensure_graphify_on_path",
+        lambda: provisioned.append(True),
+    )
+
+    assert installer.install() != 0
+    captured = capsys.readouterr()
+    assert "Windows-format hooks path" in captured.err
+    assert provisioned == [], "foreign hooks paths must be rejected before provisioning"
+
+
 def test_refuses_when_graphify_absent_and_prompt_declined(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

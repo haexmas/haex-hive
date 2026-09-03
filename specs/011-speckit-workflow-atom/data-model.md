@@ -21,7 +21,7 @@ Runtime representation of a workflow molecule's v3 `atoms` map. Specialises `Mol
 | `extensions_path` | `str \| None` | The optional single repo-relative path from `atoms.extensions`. |
 | `hook_paths` | `tuple[str, ...]` | Optional hook file paths. |
 
-**Construction rules**: invalid path fields raise `WorkflowMoleculeManifestPathError` (Principle II diagnostic). A molecule carrying `extensions_path` or `hook_paths` without `workflow_path` refuses at consumer-manifest load time via `ConsumerManifest.from_json`.
+**Construction rules**: invalid path fields raise `WorkflowMoleculeManifestPathError` (Principle II diagnostic). `ConsumerManifest.from_json` validates only consumer-owned fields and does not inspect publisher content. After molecule resolution, `WorkflowMoleculeManifest` loading/validation MUST reject a molecule carrying `extensions_path` or `hook_paths` without `workflow_path`, with the same path diagnostic, before fragment loading or staging.
 
 ### WorkflowFragment
 

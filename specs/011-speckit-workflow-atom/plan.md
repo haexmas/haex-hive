@@ -119,7 +119,7 @@ Eight research decisions:
 5. **R5 reader resolution fallback**: typed `WorkflowResolution` with `source: molecule|bundled` and diagnostics field.
 6. **R6 workflow.yml payload safety**: path containment + no-secrets + no-concealment on the payload body.
 7. **R7 publisher-side molecule directory shape**: reference structure a workflow-molecule publisher must produce.
-8. **R8 hook identity for replace-by-identity**: identity = `(stage, extension, command, script)` tuple (load-bearing detail from PR #54 hardening).
+8. **R8 hook identity for replace-by-identity**: identity = `(stage, extension, command, normalized script_path)` tuple (load-bearing detail from PR #54 hardening).
 
 ### Phase 1: Design & Contracts (produces `data-model.md`, `contracts/`, `quickstart.md`)
 
