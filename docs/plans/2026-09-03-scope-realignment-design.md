@@ -94,8 +94,11 @@ repository-relative paths; neither may contain a local absolute path. The
 lockfile hash is the SHA-256 of the exact lockfile bytes, while any
 `constitution.content_integrity` inside that lockfile remains the content
 hash for the generated constitution. The receiver validates the manifest,
-resolves the harness at the pinned SHA, installs into the target path, and
-verifies the lockfile hash before starting the execution-plane session.
+materializes the publisher clone locally at the pinned SHA before invoking
+`haex install`, installs into the target path, and verifies the lockfile hash
+before starting the execution-plane session. If the pinned source or its
+selected local content is unavailable, `haex install` refuses with exit 3;
+the execution plane must report that failure and must not start the agent.
 
 Validation, resolution, installation, or hash failure aborts the handoff and
 must not start the agent or claim that the task was accepted. The receiver
@@ -320,7 +323,11 @@ document written as one LF-terminated UTF-8 object to stdout when
 `status` is one of `installed`, `no_changes`, or `refused`; `generation` is
 the published generation ID for the first two and `null` for `refused`.
 `degradations` is always present, sorted by `(target, kind, id, event)`, and
-contains only observable capability losses. `error` is `null` on success and
+contains only observable capability losses. Each degradation entry is an
+object with exactly these non-empty string fields: `target`, `kind`, `id`,
+`event`, `fallback`, and `reason`. `fallback` names the weaker mechanism that
+was installed, and `reason` explains the unsupported capability; neither may
+contain secret values. `error` is `null` on success and
 is `{ "key": <diagnostic-key>, "message": <safe-message> }` on refusal;
 messages never contain secret values. Unknown fields are rejected by the
 versioned result schema, so a future incompatible shape requires a new schema
