@@ -197,8 +197,13 @@ coordinator MUST hold the exclusive install lock and follow this protocol:
    event and is retry-safe.
 
 Recovery runs under the same lock before a retry reads inputs. It first reads
-and validates each `.next/` sibling and its generation record, then classifies
-it against the live install lock, the matching
+and validates each `.next/` sibling and its generation record. Before the live
+`install.lock` participates in classification, recovery MUST apply the Spec
+008 FR-005 schema/migration gate to it. An unsupported version, retired field,
+or required migration makes the lock non-authoritative; recovery MUST refuse
+without using its generation for classification or deleting evidence. Only
+after that gate passes does recovery classify a sibling against the live
+install lock, the matching
 `.prev/` record, and the other root's sibling. A sibling is deleted only when
 its well-formed generation is attributable as stale (for example, an
 unpublished candidate older than the live generation). A missing, malformed, or
@@ -218,8 +223,11 @@ while unrelated consumer files and `.specify/extensions.local.yml` survive
 verbatim.
 
 Readers enforce the same visibility boundary. After loading
-`.haex-hive/install.lock`, a reader MUST require its `generation_id` and every
-path in its molecules to be present, and require the live
+`.haex-hive/install.lock`, a reader MUST first apply the Spec 008 FR-005
+schema/migration gate. An unsupported version, retired field, or required
+migration makes the lock non-authoritative and unavailable. Only after that
+gate passes may a reader require its `generation_id` and every path in its
+molecules to be present, and require the live
 `.specify/.haex-hive-generation.json` record and every active adapter pointer
 to name the same generation. The effective participating roots are the root
 prefixes of those molecule paths; there is no separate root list to compare.
