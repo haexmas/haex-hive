@@ -72,3 +72,9 @@ rm "$hooks_dir"/_refresh.py "$hooks_dir"/_snapshot.py "$hooks_dir"/_tracked_bran
 ```
 
 `graphify uninstall` handles the graphify side (harness registration) separately.
+Clear the installer’s local registration marker as part of uninstall so a later
+install performs registration again:
+
+```bash
+git config --local --unset graphify-first-authoring.registration || true
+```

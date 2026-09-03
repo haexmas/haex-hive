@@ -138,6 +138,29 @@ def test_refuses_when_hook_already_exists(
     assert provisioned == [], "hook collisions must be checked before provisioning"
 
 
+def test_refuses_when_effective_hooks_path_is_a_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = _make_tracked_repo(tmp_path)
+    hooks_path = repo / "hooks-file"
+    hooks_path.write_text("not a directory\n")
+    _git(repo, "config", "core.hooksPath", str(hooks_path))
+    monkeypatch.chdir(repo)
+    provisioned: list[bool] = []
+    monkeypatch.setattr(
+        installer,
+        "_ensure_graphify_on_path",
+        lambda: provisioned.append(True),
+    )
+
+    assert installer.install() != 0
+    captured = capsys.readouterr()
+    assert "not a directory" in captured.err
+    assert provisioned == [], "invalid hooks paths must be checked before provisioning"
+
+
 def test_refuses_when_graphify_absent_and_prompt_declined(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -16,12 +16,12 @@ Runtime representation of a workflow molecule's v3 `atoms` map. Specialises `Mol
 |---|---|---|
 | `molecule_id` | `str` | Reverse-DNS id per Spec 007. |
 | `molecule_revision` | `str` | Full 40-char SHA (Principle IV). |
-| `workflow_paths` | `tuple[str, ...]` | Repo-relative paths from `atoms.workflow`; exactly one path is required for a workflow molecule. |
+| `workflow_path` | `str` | The single repo-relative path from `atoms.workflow`; exactly one path is required for a workflow molecule. |
 | `constitution_paths` | `tuple[str, ...]` | Optional constitution fragment paths. |
-| `extensions_paths` | `tuple[str, ...]` | Optional extensions fragment paths. |
+| `extensions_path` | `str \| None` | The optional single repo-relative path from `atoms.extensions`. |
 | `hook_paths` | `tuple[str, ...]` | Optional hook file paths. |
 
-**Construction rules**: invalid path fields raise `WorkflowMoleculeManifestPathError` (Principle II diagnostic). A molecule carrying `extensions_paths` or `hook_paths` without `workflow_paths` refuses at consumer-manifest load time via `ConsumerManifest.from_json`.
+**Construction rules**: invalid path fields raise `WorkflowMoleculeManifestPathError` (Principle II diagnostic). A molecule carrying `extensions_path` or `hook_paths` without `workflow_path` refuses at consumer-manifest load time via `ConsumerManifest.from_json`.
 
 ### WorkflowFragment
 
@@ -53,14 +53,18 @@ Duplicate `(id,)` within `required_extensions` or `optional_extensions` raises `
 | `stage` | `str` | Enum of legal stages (`before_specify` etc.). |
 | `extension` | `str \| None` | Extension id that owns the hook; nullable for local-only hooks. |
 | `command` | `str` | Dotted command name. |
-| `script_path` | `str` | Repo-relative under `.specify/extensions/workflow-molecules/<molecule-id>/` for molecule-contributed hooks, or below the consumer-owned local hook base for local hooks. |
+| `script_path` | `str` | Canonical published repo-relative path. For molecule hooks, the loader converts the fragment's molecule-root-relative `script` to `.specify/extensions/workflow-molecules/<molecule-id>/<script>`; for local hooks, it normalizes the consumer-root-relative path against the local hook base. |
 | `origin` | `Literal["molecule", "local"]` | Provenance required for generated hook entries. |
 | `enabled` | `bool` | Defaults true. |
 | `optional` | `bool` | Defaults true for molecule-contributed hooks. |
 | `description` | `str` | Operator-facing description. |
 | `prompt` | `str \| None` | Optional confirmation prompt. |
 
-Identity is `(stage, extension, command, script_path)` per R8.
+The normalization happens before a `WorkflowFragment` becomes a `HookEntry`.
+Local entries are normalized by the same loader boundary. The generated YAML
+serializes `script_path` as its `script` value, so fragment/local replacement
+and generated output all use the same canonical path. Identity is
+`(stage, extension, command, script_path)` after normalization, per R8.
 
 ### LocalExtensionsSource
 
