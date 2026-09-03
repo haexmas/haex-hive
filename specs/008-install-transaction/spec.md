@@ -7,6 +7,36 @@
 
 **Authoritative requirements source**: This spec's transaction invariants are extracted from [docs/plans/2026-08-29-spec-008-install-transaction-requirements.md](../../docs/plans/2026-08-29-spec-008-install-transaction-requirements.md). Where the source doc's phrasing carries the load-bearing detail, this spec references it rather than restating it verbatim, so a change to one does not silently diverge from the other. The source doc's phrases (e.g. "repository lock ordering" and "repository-wide visibility commit") are the anchor names used below.
 
+## 2026-09-03 amendment: retire `visibility.json`
+
+Operator-driven simplification: the separate `.haex-hive/visibility.json` file is retired in favour of folding its three fields (`generation_id`, `participating_roots`, `haex_hive_version`) into `install.lock`. Rationale: both files live inside `.haex-hive/` and are published atomically together via the same `.haex-hive.next/` → `.haex-hive/` rename-swap (FR-003). Two files for the same publication event is duplication; `install.lock`'s own atomic landing IS the publication event.
+
+**Retired by this amendment**:
+
+- **`.haex-hive/visibility.json` file**: retired. Its content is folded into `install.lock`.
+- **`contracts/visibility-marker.v1.schema.json`**: retired.
+- **`VisibilityMarker` dataclass and its serialiser** in `src/haex_hive/install/visibility.py`: retired. Its fields move to `InstallLock`.
+- **The `install.lock` cross-reference field `visibility_marker.generation_id`**: retired (redundant self-reference under the fold).
+- **The "visibility.json matches install.lock byte-identically" check** in `constitution/assemble.py`: retired (single source of truth).
+- **The install-lock-schema constraint "`participating_roots[]` MUST match `visibility.json.participating_roots` byte-identically"**: retired (single source).
+
+**Superseded by this amendment**:
+
+- **FR-004** ("Marker as sole publication event"): the sole publication event is now the rename-swap of `.haex-hive.next/` → `.haex-hive/` per FR-003, with `install.lock` (containing `generation_id` + `participating_roots`) as its authoritative content. No separate marker file is written.
+- **FR-005** (Reader visibility invariant): readers MUST first load `.haex-hive/install.lock` (not `visibility.json`) to determine the currently-published `generation_id`. A missing `install.lock`, or one whose named `participating_roots` are not fully in place, MUST be treated as an unavailable installation.
+- **FR-002a** (Mixed-root publication ordering): readers observing mixed-root pointers still refuse mixed-generation states, but the ordering trigger is now "publish `install.lock` last, atomic with the `.haex-hive/` rename-swap", not "publish `visibility.json` last".
+- **FR-007** (Every side effect through the transaction): `install.lock` is the single last file inside `.haex-hive.next/`; no separate `visibility.json` written.
+- **FR-009** (`install.lock` content): `install.lock` MUST now carry top-level `generation_id: str` (unique, time-based; format `g_YYYYMMDDTHHMMSSZ_<4-hex>` unchanged from the retired marker) and `participating_roots: [<name>...]` (list of participating output-root names). The `visibility_marker.generation_id` cross-reference field is retired.
+
+**Preserved unchanged**:
+
+- Atomic-swap primitives (R1 for `.haex-hive/`, R3 for mixed-root overlays).
+- Generation-ID format and semantics.
+- Trust-git model (2026-09-01 amendment): no per-file/per-root content_integrity.
+- Every other FR (transaction invariants, recovery contract, conformance suite).
+
+**Consumer-side migration**: pre-user policy applies (no external adopters). Consumers running `haex install` after this amendment lands regenerate `install.lock` with the new fields on their next install; the retired `visibility.json` (if it exists locally) is silently ignored and NOT re-created. A post-amendment `haex install` MAY delete a stale `visibility.json` during `.haex-hive/` rename-swap staging, but MUST NOT refuse an install that finds one locally.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — Operator installs adopted atoms with byte-perfect, atomic results (Priority: P1) 🎯 MVP
