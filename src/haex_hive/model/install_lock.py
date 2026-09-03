@@ -21,6 +21,7 @@ from typing import Any, Literal
 
 from haex_hive.io import json_deterministic
 from haex_hive.model._immutable import freeze_json, thaw_json
+from haex_hive.model.source_url import CanonicalSourceUrl
 from haex_hive.schema import validator as schema_validator
 from haex_hive.util.errors import (
     InstallLockSchemaInvalidError,
@@ -242,7 +243,11 @@ def _parse_constitution(section: Any) -> ConstitutionLockSection | None:
     if section is None:
         return None
     sources = tuple(
-        ConstitutionSource(id=s["id"], revision=s["revision"], source=s["source"])
+        ConstitutionSource(
+            id=s["id"],
+            revision=s["revision"],
+            source=CanonicalSourceUrl.validate(s["source"]),
+        )
         for s in section["sources"]
     )
     _semantic_check_sources(sources)
@@ -261,7 +266,7 @@ def _parse_atoms(raw: Any) -> tuple[AtomInstallRecord, ...] | None:
     return tuple(
         AtomInstallRecord(
             id=item["id"],
-            source=item["source"],
+            source=CanonicalSourceUrl.validate(item["source"]),
             revision=item["revision"],
             contributed_paths=tuple(item["contributed_paths"]),
         )

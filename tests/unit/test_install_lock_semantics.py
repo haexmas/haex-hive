@@ -7,7 +7,7 @@ import json
 import pytest
 
 from haex_hive.model.install_lock import InstallLock
-from haex_hive.util.errors import InstallLockSourcesNotCanonicalError
+from haex_hive.util.errors import CredentialInUrlError, InstallLockSourcesNotCanonicalError
 
 _BASE = {
     "haex_hive_version": "2",
@@ -44,3 +44,33 @@ def test_rejects_wrong_sort_order() -> None:
     ]
     with pytest.raises(InstallLockSourcesNotCanonicalError):
         InstallLock.from_json(_payload(sources))
+
+
+def test_rejects_credentials_in_constitution_source() -> None:
+    """Reject source URL userinfo before it can be stored or serialized."""
+    sources = [
+        {
+            "id": "com.a.b",
+            "revision": "0" * 40,
+            "source": "https://user:pass@example.com/publisher",
+        }
+    ]
+    with pytest.raises(CredentialInUrlError):
+        InstallLock.from_json(_payload(sources))
+
+
+def test_rejects_credentials_in_atom_source() -> None:
+    """Reject credentials in an installed atom source before serialization."""
+    data = {
+        **_BASE,
+        "atoms": [
+            {
+                "id": "com.a.b",
+                "revision": "0" * 40,
+                "source": "https://user:pass@example.com/publisher",
+                "contributed_paths": [".haex-hive/constitution.md"],
+            }
+        ],
+    }
+    with pytest.raises(CredentialInUrlError):
+        InstallLock.from_json(json.dumps(data).encode())

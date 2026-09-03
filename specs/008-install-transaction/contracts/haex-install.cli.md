@@ -73,11 +73,12 @@ error: exit=4 key=commit-snapshot-mismatch (FR-006)
 
 Third-party readers (agent CLIs, editors) do not invoke this CLI — they read the participating output roots directly. Per FR-005, correct readers:
 
-1. Load `.haex-hive/install.lock` and pass its `haex_hive_version` schema/migration gate first.
-2. Reject unsupported versions, retired fields, and required migrations; do not treat that lock as authoritative or rewrite it implicitly.
-3. Verify that every path in `install.lock.molecules[].paths[]` exists.
-4. For mixed-ownership roots, verify that every active adapter pointer names `install.lock.generation_id`.
-5. Treat a missing lock, missing path, or generation mismatch as an unavailable installation, never as a partially-valid one.
+1. Acquire the shared/read lock before the initial `.haex-hive/install.lock` read and retain it through validation and consumption.
+2. Pass the lock's `haex_hive_version` schema/migration gate first.
+3. Reject unsupported versions, retired fields, and required migrations; do not treat that lock as authoritative or rewrite it implicitly.
+4. Verify that every path in `install.lock.molecules[].paths[]` exists.
+5. For mixed-ownership roots, verify that every active adapter pointer names `install.lock.generation_id`.
+6. Treat a missing lock, missing path, or generation mismatch as an unavailable installation, never as a partially-valid one.
 
 The Spec 008 landing includes a reference reader-guide in [quickstart.md](../quickstart.md) for adapter authors.
 

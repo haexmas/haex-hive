@@ -10,7 +10,7 @@
 
 ### ~~PlanSnapshot / CommitSnapshot / PlanStep~~ (retired)
 
-**Retired by the trust-git amendment (2026-09-01) together with FR-006.** The digest-under-lock re-hash defence-in-depth these entities carried has no concrete threat model under the exclusive install lock + git-content-addressed publisher-clone delivery. The `install()` orchestration under this amendment reads `.haex-hive.json`, calls the existing constitution resolver, composes the managed files (`constitution.md` and `install.lock`), and hands them to `publish_generation` — no intermediate typed plan snapshot is needed for this publication.
+**Retired by the trust-git amendment (2026-09-01) together with FR-006.** The digest-under-lock re-hash defence-in-depth these entities carried has no concrete threat model under the exclusive install lock + git-content-addressed publisher-clone delivery. The `install()` orchestration under this amendment reads `.haex-hive.json`, resolves the complete output set (including configuration, generated molecule files, adapter files, and `constitution.md`), stages every caller-supplied file before writing `install.lock` last, and hands the staged view to `publish_generation` — no intermediate typed plan snapshot is needed for this publication.
 
 If Spec 009 (hooks), Spec 010 (adapters), or a future requirement introduces a variable-shape multi-step publication, the plan structure is reinstated together with the requirement that motivates it. The dataclass code in `install/plan.py` is deleted by the follow-up code-cleanup PR.
 
