@@ -65,11 +65,12 @@ def test_successful_install_writes_hooks_and_gitignore(
     bin_dir = tmp_path / "bin"
     _put_graphify_stub(bin_dir)
     _prepend_path(monkeypatch, bin_dir)
+    _git(repo, "config", "core.hooksPath", "custom-hooks")
     monkeypatch.chdir(repo)
 
     assert installer.install() == 0
 
-    hooks_dir = repo / ".git" / "hooks"
+    hooks_dir = repo / "custom-hooks"
     for name in ("post-commit", "post-checkout"):
         target = hooks_dir / name
         assert target.exists(), name
@@ -95,6 +96,12 @@ def test_refuses_when_branch_not_tracked(
     _put_graphify_stub(bin_dir)
     _prepend_path(monkeypatch, bin_dir)
     monkeypatch.chdir(repo)
+    provisioned: list[bool] = []
+    monkeypatch.setattr(
+        installer,
+        "_ensure_graphify_on_path",
+        lambda: provisioned.append(True),
+    )
 
     assert installer.install() != 0
     captured = capsys.readouterr()
@@ -122,6 +129,7 @@ def test_refuses_when_hook_already_exists(
     assert existing.read_text() == "# from some other tool\n"
     assert not (repo / ".git" / "hooks" / "post-checkout").exists()
     assert not (repo / ".gitignore").exists()
+    assert provisioned == [], "hook collisions must be checked before provisioning"
 
 
 def test_refuses_when_graphify_absent_and_prompt_declined(

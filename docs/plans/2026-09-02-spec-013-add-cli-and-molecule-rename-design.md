@@ -5,9 +5,9 @@
 **Purpose**: two co-shipping changes.
 
 1. Add `haex add` and `haex remove` subcommands so that adopting an atom is a one-line operation, not a manual edit of `.haex-hive.json` followed by manual `haex install`. Under the Spec 011 simplification amendment (2026-09-02), a single workflow molecule's adoption in `.haex-hive.json` alone determines binding, so no separate `activate` step is needed.
-2. Rename the consumer-manifest and atom-manifest fields so the schema vocabulary matches the prose one that Spec 010 and the graphify-first-authoring design already use.
-   - `.haex-hive.json`: outer `atoms[]` becomes `molecules[]`; per-entry `includes[]` becomes `atoms[]`.
-   - molecule manifests: `contributes`-siblings unchanged, but `includes[]` (profile-atom composition) becomes `atoms[]`.
+2. Rename the consumer-manifest and molecule-manifest fields so the schema vocabulary matches Spec 007 v3.
+   - `.haex-hive.json`: outer `atoms[]` becomes `compounds[]`; per-entry `includes[]` becomes `molecules[]`.
+   - molecule manifests: the v2 scalar `contributes` entries become the v3 `atoms` category map, whose values are lists of delivered paths.
 
 These two changes ship together because `haex add` writes the new schema shape directly, and shipping the CLI on top of the old `includes[]` name would freeze bad vocabulary at the exact moment we get a chance to fix it.
 
@@ -25,15 +25,15 @@ These two changes ship together because `haex add` writes the new schema shape d
 
 ### 1. CLI subcommands
 
-- **`haex add <source-url> [<molecule-id>[,<molecule-id>...]] [--revision=<SHA>]`**
+- **`haex add <source-url> [<molecule-id>[,<molecule-id>...]] [--revision=<SHA>] [--all]`**
   - Adds a molecule entry to `.haex-hive.json` and then runs the existing `haex install` in the same invocation. Analogous to `pnpm add <pkg>`.
-  - `<molecule-id>` positional list is optional; when omitted, the command fetches the publisher-manifest of `<source-url>` at `<revision>` and prompts the operator interactively to pick one or more atoms (or takes all with `--all`).
+  - `<molecule-id>` positional list is optional; when omitted, the command fetches the publisher-manifest of `<source-url>` at `<revision>` and prompts the operator interactively to pick one or more molecule IDs. `--all` selects every molecule ID in that publisher manifest and is mutually exclusive with positional IDs.
   - `<revision>` is optional; when omitted, the command runs `git ls-remote <source-url> HEAD` and uses the resulting full SHA. Principle IV (immutable revisions) still applies: whatever SHA is resolved is written verbatim into `.haex-hive.json`. A user-supplied `--revision=<SHA>` short-circuits the lookup.
-  - Merging: if a molecule with the same `source` and `revision` already exists in `.haex-hive.json`, `haex add` merges the new molecule-ids into that entry's `atoms[]` instead of appending a second entry. Same source with a different revision remains a separate entry (Spec 010 already allows this).
-  - workflow molecules: the Spec 011 amendment forbids more than one adopted workflow molecule per repository. If the new molecule's molecule-ids include a workflow molecule and `.haex-hive.json` already resolves to a different workflow molecule (bundled or adopted), `haex add` refuses with `key=workflow-molecule-already-adopted` naming the currently-bound one. The operator must `haex remove <current-id>` first, then `haex add` the new one. No activation step is involved on either side of that swap.
+  - Merging: if a compound with the same `source` and `revision` already exists, `haex add` merges the new molecule IDs into that entry's `molecules[]` instead of appending a duplicate. There is at most one compound per source: adding the same source at a different resolved revision replaces that source's existing compound atomically, after the new publisher manifest has validated. This replacement rule is also used when re-running `haex add <source-url>` without `--revision`.
+  - workflow molecules: the Spec 011 amendment forbids more than one adopted workflow molecule per repository. A first adopted workflow molecule replaces the bundled `speckit` fallback. `haex add` refuses with `key=workflow-molecule-already-adopted` only when the current `compounds[]` already adopts a different workflow molecule; it names the current one and asks the operator to `haex remove <current-id>` first. No activation step is involved.
 
 - **`haex remove <molecule-id>[,<molecule-id>...]`**
-  - Removes the named molecule-id(s) from every molecule entry in `.haex-hive.json`. If a molecule becomes empty (`atoms: []`), the whole entry is dropped. Runs the existing `haex install` afterwards, so Spec 011 US3 delete-orphans applies to whatever the removed atoms contributed. When the removed atom is the adopted workflow molecule, the reader falls back to the bundled `speckit` workflow on the next resolve (Spec 011 amendment FR-008).
+  - Removes the named molecule-id(s) from every compound in `.haex-hive.json`. If a compound becomes empty (`molecules: []`), the whole entry is dropped. Runs the existing `haex install` afterwards, so Spec 011 US3 delete-orphans applies to whatever the removed molecules contributed. When the removed molecule is the adopted workflow molecule, the reader falls back to the bundled `speckit` workflow on the next resolve (Spec 011 amendment FR-008).
   - Refuses with `key=unknown-molecule-id` if a molecule-id is not present in any current molecule entry.
 
 - **`haex install`** stays unchanged: still resolves every molecule in `.haex-hive.json` and publishes them. `haex add` and `haex remove` are convenience wrappers on top; nothing they do bypasses install.
@@ -45,11 +45,11 @@ Old (v2):
 ```json
 {
   "haex_hive_version": "2",
-  "atoms": [
+  "compounds": [
     {
       "source": "https://github.com/haexmas/haex-hive",
       "revision": "336eaf1e...",
-      "includes": ["com.github.haexmas.haex-hive.constitution"]
+      "molecules": ["com.github.haexmas.haex-hive.constitution"]
     }
   ]
 }
@@ -60,41 +60,46 @@ New (v3):
 ```json
 {
   "haex_hive_version": "3",
-  "molecules": [
+  "compounds": [
     {
       "source": "https://github.com/haexmas/haex-hive",
       "revision": "336eaf1e...",
-      "atoms": ["com.github.haexmas.haex-hive.constitution"]
+      "molecules": ["com.github.haexmas.haex-hive.constitution"]
     }
   ]
 }
 ```
 
-Atom-manifest rename (v2 → v3):
+Molecule-manifest transition (v2 → v3):
 
 ```json
 {
   "haex_hive_version": "3",
-  "id": "com.example.publisher.my-profile",
-  "atoms": ["com.example.publisher.atom-a", "com.example.publisher.atom-b"]
+  "id": "com.example.publisher.my-workflow",
+  "version": "1.0.0",
+  "priority": 100,
+  "atoms": {
+    "workflow": ["workflow.yml"],
+    "constitution": ["constitution.md"]
+  }
 }
 ```
 
-`atoms` in an atom manifest is the profile-composition list (Spec 007's `includes`). `contributes.*` fields are unchanged in shape and semantics; they never contained molecule-ids, so no rename applies there.
+`atoms` in a molecule manifest is the category map defined by Spec 007 v3. Each category lists delivered, molecule-relative files; it is not a profile-composition or molecule-ID list.
 
 ## What this does NOT cover (deliberately)
 
-- **New atom-resolution semantics**: `haex add` and `haex remove` only edit the JSON and call the existing resolver. No new resolution rules, no new dependency graph. If Spec 010 or Spec 011 change how resolution works, Spec 013 inherits those changes.
-- **`haex update`**: bumping a molecule's pinned revision to head. Deliberately deferred; the pattern would be `haex update [<molecule-id>|--all]` and land in a Spec 013-successor once we have `haex add` and `haex remove` working. For now the operator re-runs `haex add <source>` (same source, no `--revision`) to overwrite the pinned SHA in the merged entry.
+- **New molecule-resolution semantics**: `haex add` and `haex remove` only edit the JSON and call the existing resolver. No new resolution rules, no new dependency graph. If Spec 010 or Spec 011 change how resolution works, Spec 013 inherits those changes.
+- **`haex update`**: an explicit revision-bump command remains deferred. The current `haex add <source-url>` flow replaces the existing compound for that source when it resolves a new SHA, as defined above.
 - **`haex ls`**: listing installed molecules and atoms. Trivial to add later; not blocking the primary UX.
-- **Registry mirroring**: `haex add` does not consult a central atom registry. `<source-url>` remains a direct git URL, and the publisher-manifest is fetched from that repo at that revision.
+- **Registry mirroring**: `haex add` does not consult a central molecule registry. `<source-url>` remains a direct git URL, and the publisher-manifest's `molecules` map is fetched from that repo at that revision.
 - **Backwards-compatible v2 read**: v3 refuses v2 files at load-time. The operator must run `haex migrate` (extended in Spec 013 to also handle v2→v3) before `haex add` or `haex install` will accept the file. Pre-user policy (haex-hive has no external adopters yet) makes this acceptable; a hard refuse plus a `haex migrate` hint is clearer than mixed-vocabulary tolerance.
 
 ## Terminology
 
-- **Molecule**: a single entry in `.haex-hive.json`'s `molecules[]` list, describing one `source` + one `revision` + the list of `atoms` fetched from that pin. A molecule of size 1 is the common case; larger molecules exist when the operator wants several atoms from the same repo at the same SHA.
-- **Profile atom**: an atom whose manifest carries `atoms: [...]` (formerly `includes`) instead of, or in addition to, `contributes.*`. It resolves to the transitive union of the listed atoms. Semantics unchanged from Spec 007's profile-atom rules; only the field name changes.
-- **Adopted workflow molecule**: a workflow molecule that appears in some molecule entry's `atoms[]`. Under the Spec 011 amendment, adoption alone makes the atom binding for the repository; at most one such atom may be adopted at a time.
+- **Compound**: a single entry in `.haex-hive.json`'s `compounds[]` list, describing one `source` + one `revision` + a list of molecule IDs fetched from that pin.
+- **Molecule**: a publisher-side packaging unit named in the publisher manifest's `molecules` map. Its manifest's `atoms` map lists the delivered files by category.
+- **Adopted workflow molecule**: a molecule whose manifest declares a non-empty `atoms.workflow` list and which appears in a compound's `molecules[]`. Adoption alone makes it binding; at most one such molecule may be adopted at a time.
 
 ## Architecture
 
@@ -137,15 +142,17 @@ second transform. The transform covers every affected manifest and is applied
 as one review-gated migration:
 
 - **Consumer manifest (`.haex-hive.json`)**: rename the outer `atoms` list to
-  `molecules`, rename each entry's `includes` list to `atoms`, and bump
+  `compounds`, rename each entry's `includes` list to `molecules`, and bump
   `haex_hive_version` from `"2"` to `"3"`.
-- **Profile molecule manifests**: rename the top-level `includes` list to
-  `atoms` and bump `haex_hive_version` from `"2"` to `"3"`. Existing
-  `contributes.*` fields and their values are preserved; they are not an
-  molecule-id list and therefore are not part of this field rename.
-- **Publisher root manifest (`manifest.json`)**: bump
-  `haex_hive_version` from `"2"` to `"3"`; preserve the publisher-root
-  `atoms` map, its atom ids, paths, versions, and optional descriptions.
+- **Molecule manifests**: replace the v2 `contributes` scalar paths with the
+  v3 `atoms` category map and bump `haex_hive_version` from `"2"` to `"3"`.
+  Each supported scalar contribution becomes a one-element category list; a
+  directory contribution is expanded deterministically to its regular files.
+  Preserve IDs, versions, priorities, and file bytes. No profile-composition
+  list is emitted.
+- **Publisher root manifest (`manifest.json`)**: rename its top-level `atoms`
+  map to `molecules`, bump `haex_hive_version` from `"2"` to `"3"`, and
+  preserve each molecule ID, path, version, and optional description.
 - **Priority default**: whenever an affected v2 molecule manifest omits
   `priority`, add `priority: 100`. Preserve every existing integer priority
   unchanged.
@@ -184,7 +191,14 @@ file first applies v1→v2, then v2→v3.
 
 ### Publisher-manifest bump
 
-Publisher-manifests (the `manifest.json` at the root of a repo like `haexmas/atoms` or `haexmas/haex-hive`) also bump to `haex_hive_version: "3"`. Their internal shape does not change, but the version field must line up so a v3 consumer refuses to adopt from a v2 publisher (and a v2 consumer refuses to adopt from a v3 publisher, if any v2 consumer still exists). Given pre-user policy, this is a simple find-and-replace in the two publisher manifests we ship (`haex-hive` and `haexmas/atoms`), plus every test fixture.
+Publisher manifests (the root `manifest.json` in a repo such as
+`haexmas/atoms` or `haexmas/haex-hive`) also bump to
+`haex_hive_version: "3"`. Their internal map is renamed from `atoms` to
+`molecules`; each molecule entry keeps its ID, path, version, and optional
+description. The version must line up so a v3 consumer refuses to adopt from
+a v2 publisher (and vice versa while any v2 consumer exists). Given pre-user
+policy, this is a simple find-and-replace in the two publisher manifests we
+ship plus every test fixture.
 
 ### `haex add` refusal keys
 

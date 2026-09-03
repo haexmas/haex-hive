@@ -8,9 +8,9 @@
 
 ## R1. No registry file
 
-**Decision**: Spec 011 does NOT introduce `.specify/workflows/workflow-registry.json`. Adoption via `.haex-hive.json` is the sole signal of which workflow is binding: exactly one adopted `speckit-workflow` atom -> that workflow; none adopted -> bundled `speckit`. Two or more adopted refuse with `key=multiple-workflow-molecules-refused` at manifest load (see R3).
+**Decision**: Spec 011 does NOT introduce `.specify/workflows/workflow-registry.json`. Adoption via `.haex-hive.json` is the sole signal of which workflow is binding: exactly one adopted workflow molecule -> that workflow; none adopted -> bundled `speckit`. Two or more adopted refuse with `key=multiple-workflow-molecules-refused` at manifest load (see R3).
 
-**Rationale**: Under one-active-per-repo (FR-006), any registry would be a single-element index. The state it would encode (which workflow is binding) is already encoded by the presence of `contributes.speckit_workflow` inside an adopted molecule's manifest. A registry file is redundant state that can only drift.
+**Rationale**: Under one-active-per-repo (FR-006), any registry would be a single-element index. The state it would encode (which workflow is binding) is already encoded by the presence of a non-empty `atoms.workflow` category inside an adopted molecule's manifest. A registry file is redundant state that can only drift.
 
 **Alternatives considered**:
 - **Explicit registry file with `active_workflow` selector** (the previously-merged spec 011 approach, PR #52). Rejected: adds state that can drift from `.haex-hive.json`, requires a manual selector step to make the adopted workflow binding, and enables coexistence (which we deliberately retire).
@@ -23,7 +23,7 @@
 **Decision**: two files, disjoint responsibilities:
 
 - **`.specify/extensions.local.yml`** is **consumer-owned**: the operator authors it, edits it, and commits it. `haex install` NEVER writes to it, deletes it, or modifies it in any way. Absent file is equivalent to empty declarations. Top-level shape uses the same keys as the generated output: `installed`, `settings`, `required_extensions`, `optional_extensions`, `hooks`.
-- **`.specify/extensions.yml`** is **generated**: `haex install` regenerates it from scratch on every invocation. Inputs are the adopted workflow molecule's `contributes.speckit_extensions` fragment plus `.specify/extensions.local.yml`. Merge follows FR-005 rules. The output is never used as its own next-install input; removed or downgraded molecule entries never survive as stale output.
+- **`.specify/extensions.yml`** is **generated**: `haex install` regenerates it from scratch on every invocation. Inputs are the adopted workflow molecule's `atoms.extensions` fragment plus `.specify/extensions.local.yml`. Merge follows FR-005 rules. The output is never used as its own next-install input; removed or downgraded molecule entries never survive as stale output.
 
 **Rationale**: this separation is the load-bearing detail of PR #54's reviewer hardening. Two goals are served:
 - **Operator state preservation**: the operator's own extension declarations are in a file we never touch. They survive any atom adoption/downgrade cycle byte-for-byte. This is a Principle II-adjacent invariant (versioned config the operator owns should not be silently mutated).
@@ -38,11 +38,11 @@
 
 ## R3. Multi-workflow-molecule refusal placement
 
-**Decision**: After the publisher and selected molecule manifests have been resolved and validated, the workflow pipeline counts manifests whose `contributes` map includes `speckit_workflow`. Two or more such manifests raise `MultipleWorkflowMoleculesRefusedError` (`key=multiple-workflow-molecules-refused`, `INPUT_REFUSE`) with stderr naming every offending molecule's `id` and `source`. The check runs before any fragment loading or publication. `ConsumerManifest.from_json` validates only the consumer-owned manifest and does not perform this check.
+**Decision**: After the publisher and selected molecule manifests have been resolved and validated, the workflow pipeline counts manifests with a non-empty `atoms.workflow` list. Two or more such manifests raise `MultipleWorkflowMoleculesRefusedError` (`key=multiple-workflow-molecules-refused`, `INPUT_REFUSE`) with stderr naming every offending molecule's `id` and `source`. The check runs before any fragment loading or publication. `ConsumerManifest.from_json` validates only the consumer-owned manifest and does not perform this check.
 
 **Rationale**:
 - **Fail early**: the refusal fires before any fragment YAML is loaded, so a broken adopted set cannot exercise the merge / resolver code paths.
-- **Correct data source**: `contributes.speckit_workflow` exists in publisher molecule manifests, not in the consumer's molecule entries, so the check must run after atom resolution rather than trust duplicated consumer data or perform hidden repository I/O in `ConsumerManifest.from_json`.
+- **Correct data source**: `atoms.workflow` exists in publisher molecule manifests, not in the consumer's molecule entries, so the check must run after molecule resolution rather than trust duplicated consumer data or perform hidden repository I/O in `ConsumerManifest.from_json`.
 - **Consistent diagnostic surface**: uses the existing `HaexError` machinery.
 
 **Alternatives considered**:
@@ -53,7 +53,7 @@
 
 ## R4. Constraint-merge algorithm (simplified)
 
-**Decision**: under one-active-per-repo, extension requirement merging is only atom-vs-local (one adopted molecule's fragment against `.specify/extensions.local.yml`). This is strictly simpler than PR #52's cross-atom multi-fragment reduction. Algorithm per extension id:
+**Decision**: under one-active-per-repo, extension requirement merging is only molecule-vs-local (one adopted molecule's fragment against `.specify/extensions.local.yml`). This is strictly simpler than PR #52's cross-molecule multi-fragment reduction. Algorithm per extension id:
 
 1. Collect declarations for the id from molecule fragment and local source.
 2. Determine effective kind: if either declares `required`, effective kind is required; else optional.
@@ -65,24 +65,24 @@
    - Lower > upper: refuse-or-drop.
 4. Emit `MergedRequirement(extension_id, effective_constraint, is_required, sources)`.
 
-**Rationale**: same correctness properties as PR #52's algorithm but with only two participants per id, the reduction is a single pair. No sort order across atoms is needed because there are no cross-atom pairs.
+**Rationale**: same correctness properties as PR #52's algorithm but with only two participants per id, the reduction is a single pair. No sort order across molecules is needed because there are no cross-molecule pairs.
 
 **Alternatives considered**:
-- **Cross-atom multi-fragment algorithm from PR #52**: retired with the previously-merged spec 011; incompatible with FR-006.
+- **Cross-molecule multi-fragment algorithm from PR #52**: retired with the previously-merged spec 011; incompatible with FR-006.
 - **Local always wins**: rejected. The molecule's constraint is a hard requirement the workflow depends on; a local override that weakens it below the molecule's floor breaks the workflow's stated dependency.
-- **Atom always wins**: rejected for optional-vs-optional cases; the local optional MAY still be dropped when incompatible, but a compatible local optional should be preserved.
+- **Molecule always wins**: rejected for optional-vs-optional cases; the local optional MAY still be dropped when incompatible, but a compatible local optional should be preserved.
 
 **Residual risk**: SemVer's compatible-release intersects awkwardly with lower-bound and exact; the algorithm handles common cases and refuses exotic disjoints.
 
 ## R5. Reader-side resolution fallback
 
-**Decision**: `resolve_active_workflow(repo_root: Path) -> WorkflowResolution` returns a typed object with a `source: Literal["atom", "bundled"]` field and a `diagnostics: tuple[str, ...]` field. Algorithm:
+**Decision**: `resolve_active_workflow(repo_root: Path) -> WorkflowResolution` returns a typed object with a `source: Literal["molecule", "bundled"]` field and a `diagnostics: tuple[str, ...]` field. Algorithm:
 
 1. If `.haex-hive.json` is missing, return `WorkflowResolution(source="bundled", workflow_path=<bundled path>, atom_id=None, diagnostics=(<missing-manifest diagnostic>,))`.
 2. If `.haex-hive.json` exists, load it via `ConsumerManifest.from_json`. Propagate JSON, schema, identity, and revision validation failures with diagnostics; do not select the bundled workflow for an invalid manifest.
-3. Enumerate adopted molecules and look up their manifests via existing atom-resolution machinery. After validation, refuse multiple manifests carrying `contributes.speckit_workflow` as specified in R3.
-4. Find the molecule whose `contributes` map includes `speckit_workflow`. If found, return `WorkflowResolution(source="molecule", workflow_path=<molecule's published path>, atom_id=<id>, diagnostics=[])`.
-5. If the manifest is valid but no resolved molecule contributes `speckit_workflow`, return `WorkflowResolution(source="bundled", workflow_path=<bundled path>, atom_id=None, diagnostics=[])`.
+3. Enumerate adopted molecules and look up their manifests via existing molecule-resolution machinery. After validation, refuse multiple manifests carrying a non-empty `atoms.workflow` list as specified in R3.
+4. Find the molecule whose `atoms.workflow` list is non-empty. If found, return `WorkflowResolution(source="molecule", workflow_path=<molecule's published path>, molecule_id=<id>, diagnostics=[])`.
+5. If the manifest is valid but no resolved molecule has `atoms.workflow`, return `WorkflowResolution(source="bundled", workflow_path=<bundled path>, molecule_id=None, diagnostics=[])`.
 
 **Rationale**: typed return absorbs "no workflow molecule adopted" as a first-class outcome, not an error. Downstream consumers get a stable API surface.
 
@@ -94,12 +94,12 @@
 
 ## R6. Workflow.yml payload safety guards
 
-**Decision**: the workflow.yml payload itself (the file the molecule contributes at `contributes.speckit_workflow`) is validated on load for:
+**Decision**: the workflow.yml payload itself (the file the molecule contributes at `atoms.workflow`) is validated on load for:
 
 1. **YAML parse validity**: unparseable YAML refuses.
 2. **No plaintext secrets**: `validate_no_plaintext_secrets` runs across every string field.
 3. **No concealment instructions**: `validate_no_concealment_instructions` runs across every string field.
-4. **Path containment on `steps[].script` and `hooks[].script` fields**: each path must pass `RepoRelativePath.validate` and resolve to a file below the molecule's declared `speckit_hooks` directory. Absolute paths, backslash paths, `.`/`..` traversal, symlink escapes all refuse with a Principle II diagnostic.
+4. **Path containment on `steps[].script` and `hooks[].script` fields**: these values are destination-relative paths in the consumer's published molecule-owned hooks directory, not source paths. Each must pass `RepoRelativePath.validate` and resolve below `.specify/extensions/workflow-molecules/<molecule-id>/`. The molecule's `atoms.hooks[]` entries are source-relative to the molecule root and are independently validated and resolved below that root. Absolute paths, backslash paths, `.`/`..` traversal, and symlink escapes all refuse with a Principle II diagnostic.
 
 **Rationale**: Principle I and VIII apply to every payload haex-hive publishes into a committed root. A workflow.yml with a secret in its `description` or a concealment instruction in a `prompt` field is exactly the kind of drift these validators exist to catch.
 
@@ -107,13 +107,13 @@
 - **Trust the publisher**: rejected, contradicts Principle VIII.
 - **Deep schema validation of workflow.yml against a formal schema**: deferred. The bundled `.specify/workflows/speckit/workflow.yml` is a shape reference; a formal `workflow.v1.schema.json` is a Spec 011 successor concern.
 
-## R7. Publisher-side atom directory shape
+## R7. Publisher-side molecule directory shape
 
 **Decision**: a reference workflow-molecule directory looks like:
 
 ```text
 com.example.publisher.strict-tdd-workflow/
-├── manifest.json                       # atom-manifest v2 shape (from Spec 007)
+├── manifest.json                       # molecule-manifest v3 shape (from Spec 007)
 ├── workflow.yml                        # workflow declaration
 ├── constitution.md                     # optional; MUST-rules the workflow imposes
 ├── extensions.yml                      # optional; required-extensions + hook mappings
@@ -122,17 +122,17 @@ com.example.publisher.strict-tdd-workflow/
     └── post-tasks.sh
 ```
 
-The molecule's `manifest.json` MUST declare `contributes.speckit_workflow: "workflow.yml"` and MAY declare `contributes.constitution`, `contributes.speckit_extensions`, `contributes.speckit_hooks: "hooks/"`.
+The molecule's `manifest.json` MUST declare `atoms.workflow: ["workflow.yml"]` and MAY declare `atoms.constitution`, `atoms.extensions`, and `atoms.hooks` lists.
 
 **Rationale**: mirrors the bundled `.specify/workflows/speckit/workflow.yml` shape for the workflow file; other files follow standard atom-contribution conventions from Spec 007.
 
 **Alternatives considered**:
-- **A single-file atom (workflow.yml only)**: valid, permitted. The design supports minimal atoms that contribute only the workflow declaration.
+- **A single-file molecule (workflow.yml only)**: valid, permitted. The design supports minimal molecules that contribute only the workflow declaration.
 - **All-in-one `speckit-workflow.yml` conflating workflow + extensions + constitution**: rejected, breaks the molecule-contribution convention where each field is its own file.
 
 ## R8. Hook identity for replace-by-identity
 
-**Decision**: a hook entry's identity is the tuple `(stage, extension, command, script)`. Two entries with the same tuple are considered the same hook; a local declaration with an identity-matching atom entry REPLACES the molecule entry in the generated `.specify/extensions.yml`'s `hooks.<stage>[]` list. Non-identity-matching local entries append after molecule entries.
+**Decision**: a hook entry's identity is the tuple `(stage, extension, command, script)`. Two entries with the same tuple are considered the same hook; a local declaration with an identity-matching molecule entry REPLACES the molecule entry in the generated `.specify/extensions.yml`'s `hooks.<stage>[]` list. Non-identity-matching local entries append after molecule entries.
 
 **Rationale**: this is the load-bearing detail from PR #54's reviewer hardening of FR-005. The identity tuple is:
 - `stage`: which lifecycle stage the hook attaches to.
@@ -155,7 +155,7 @@ Two molecule-contributed entries with the same identity refuse with `key=workflo
 - R1 registry-alternative: no registry file
 - R2 extensions ownership boundary: `.specify/extensions.local.yml` (consumer) vs `.specify/extensions.yml` (generated)
 - R3 multi-workflow refusal placement: after publisher molecule resolution and validation
-- R4 constraint-merge algorithm: simplified to atom-vs-local
+- R4 constraint-merge algorithm: simplified to molecule-vs-local
 - R5 reader resolution fallback: typed `WorkflowResolution` with `source` field
 - R6 workflow.yml payload safety guards
 - R7 publisher-side atom directory shape

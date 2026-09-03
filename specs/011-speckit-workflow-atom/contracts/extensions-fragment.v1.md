@@ -3,7 +3,7 @@
 **Spec**: [Spec 011 simplified](../spec.md)
 **Referenced by**: FR-005, [atom-manifest.v2.speckit-workflow.md](./atom-manifest.v2.speckit-workflow.md)
 
-The YAML shape a workflow molecule's `contributes.speckit_extensions` file MUST conform to. The fragment is one input to the extension-merge pipeline; the other input is the consumer-owned [extensions-local.v1.md](./extensions-local.v1.md) file.
+The YAML shape of the workflow molecule's `atoms.extensions` file MUST conform to. The fragment is one input to the extension-merge pipeline; the other input is the consumer-owned [extensions-local.v1.md](./extensions-local.v1.md) file.
 
 ## Fragment shape
 
@@ -39,7 +39,7 @@ hooks:
 ## Field rules
 
 - `required_extensions[]` and `optional_extensions[]`: list of extension declarations. `id` matches `^[A-Za-z0-9][A-Za-z0-9._-]*$`. `version_constraint` parses per Spec 007's `VersionConstraint` grammar. `homepage` optional.
-- `hooks.<stage>[]`: at most one entry per `(stage, extension, command, script)` identity within a single fragment (duplicate refuses with `key=workflow-hook-mapping-invalid`). `stage` is one of the enumerated stage names. `script` MUST resolve to a file under the molecule's `speckit_hooks` directory.
+- `hooks.<stage>[]`: at most one entry per `(stage, extension, command, script)` identity within a single fragment (duplicate refuses with `key=workflow-hook-mapping-invalid`). `stage` is one of the enumerated stage names. `script` MUST resolve to a file under one of the molecule's `atoms.hooks` paths.
 - Same `id` declared twice within `required_extensions[]` or twice within `optional_extensions[]` refuses with `key=workflow-molecule-extension-id-collision`.
 - If the same `id` appears once in `required_extensions[]` and once in `optional_extensions[]`, it is not a collision: the required declaration wins. The merge emits exactly one entry in the generated `required_extensions[]` list, never a duplicate optional entry. When the constraints and metadata are compatible, `sources[]` records both declarations with their original `kind` values (`required` and `optional`); if the optional constraint conflicts, the required declaration remains and the optional declaration is dropped with the optional-conflict warning.
 - Unparseable `version_constraint` in any declaration (required or optional) refuses with `key=invalid-constraint`.
@@ -49,7 +49,7 @@ hooks:
 
 Under one-active-per-repo, the fragment is merged with the consumer-owned [extensions-local.v1.md](./extensions-local.v1.md) to produce [extensions-generated.v1.md](./extensions-generated.v1.md). Merge rules:
 
-- **Requirements per id**: canonical constraint reduction (research.md § R4). Compatible atom-vs-local pair -> merged effective constraint. Incompatible required -> refuse (`key=conflicting-constraint`). Incompatible optional -> drop with warning (`key=optional-workflow-extension-conflict`). Required wins over optional for effective kind.
+- **Requirements per id**: canonical constraint reduction (research.md § R4). Compatible molecule-vs-local pair -> merged effective constraint. Incompatible required -> refuse (`key=conflicting-constraint`). Incompatible optional -> drop with warning (`key=optional-workflow-extension-conflict`). Required wins over optional for effective kind.
 - **Hooks per stage**: molecule entries first (in declaration order), local entries after. Identity match `(stage, extension, command, script)` triggers local-replace-per-position semantics per research.md § R8.
 
 ## Load-time refusal errors
@@ -61,5 +61,5 @@ Under one-active-per-repo, the fragment is merged with the consumer-owned [exten
 | Duplicate `(stage, extension, command, script)` in fragment | `workflow-hook-mapping-invalid` | `INPUT_REFUSE` |
 | Unparseable `version_constraint` | `invalid-constraint` | `INPUT_REFUSE` |
 | Same id declared twice in one list | `workflow-molecule-extension-id-collision` | `INPUT_REFUSE` |
-| Hook `script` path escapes atom root | Principle II | `INPUT_REFUSE` |
+| Hook `script` path escapes molecule root | Principle II | `INPUT_REFUSE` |
 | Hook `script` file not present after publish-time copy | `workflow-hook-mapping-invalid` | `INPUT_REFUSE` |

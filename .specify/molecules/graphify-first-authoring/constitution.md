@@ -1,7 +1,7 @@
 # Principle: graphify-first authoring
 
-**Status**: Opt-in via atom `com.github.haexmas.haex-hive.graphify-first-authoring`.
-**Applies to**: any agent bound by a constitution assembled from this atom.
+**Status**: Opt-in via molecule `com.github.haexmas.haex-hive.graphify-first-authoring`.
+**Applies to**: any agent bound by a constitution assembled from this molecule.
 
 ## Rule
 
