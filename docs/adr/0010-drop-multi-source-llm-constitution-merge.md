@@ -98,7 +98,7 @@ and `com.example.overlay` / `https://example.com/team` / 40 `2` digits /
 ```text
 <!-- haex-hive:constitution-source:v1
 id=com.example.base
-source=https://example.com/harness
+source=https%3A%2F%2Fexample.com%2Fharness
 revision=1111111111111111111111111111111111111111
 length=7
 -->
@@ -107,7 +107,7 @@ length=7
 <!-- haex-hive:constitution-source-end:v1 -->
 <!-- haex-hive:constitution-source:v1
 id=com.example.overlay
-source=https://example.com/team
+source=https%3A%2F%2Fexample.com%2Fteam
 revision=2222222222222222222222222222222222222222
 length=9
 -->
@@ -115,8 +115,8 @@ length=9
 <!-- haex-hive:constitution-source-end:v1 -->
 ```
 
-It is 422 bytes and its D15 content hash is
-`sha256-EcAMKpjctDcbO5BTgQ6h4AJakKep/T93s5buQklbBWA=`. The acceptance test
+It is 438 bytes and its D15 content hash is
+`sha256-yqVNMTQov4yIGtDcWPo/IOxiFSiecbVnv7ZxT0Wf6Hg=`. The acceptance test
 MUST compare exact bytes and this hash, not just rendered text.
 
 Specifically:
@@ -197,5 +197,7 @@ itself.
   preserve the FR-038 checks and exit-code precedence.
 - The README and [Spec 008 quickstart](../../specs/008-install-transaction/quickstart.md)
   are aligned with the deterministic install path in this change.
-- Spec 011's independent test invokes `haex install --llm=file` plus
-  `--accept-merged`; that scenario needs rewriting against the new surface.
+- [Spec 012's adoption flow](../plans/2026-09-02-spec-012-speckit-session-hopper-atom-design.md)
+  is aligned with the deterministic install path in this change; any remaining
+  consumer instructions must not use the retired `--llm` or `--accept-merged`
+  flags.

@@ -299,7 +299,7 @@ Documented in `haexmas/atoms/README.md` and mirrored in this design for the plan
      }]
    }
    ```
-2. Run `haex install` without `--llm` or `--accept-merged` for this design's single constitution contribution. `run()` selects `assemble_single_source(...)`, which publishes deterministically and writes no pending merge state. If the consumer has two or more constitution contributions, use the separate multi-source path: run `haex install --llm=file`, review the pending candidate, then rerun `haex install --accept-merged <candidate>`.
+2. Run `haex install` for this design's single constitution contribution. `run()` selects `assemble_single_source(...)`, which publishes deterministically and writes no pending merge state. If the consumer has two or more constitution contributions, the same command uses the deterministic concatenation-with-provenance format from [ADR 0010](../../docs/adr/0010-drop-multi-source-llm-constitution-merge.md); there is no model invocation, pending candidate, or interactive confirmation path.
 3. Verify the v3 publication directly: `.specify/workflows/com.github.haexmas.atoms.speckit-session-hopper/workflow.yml` exists and matches the `atoms.workflow` contribution; `.specify/extensions/workflow-molecules/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh` is the expected regular file, has byte-identical published content, and is executable under the actual hook-runner semantics. Invoke the hook exactly as the runner does for a representative step, requiring successful exit and the expected prompt/marker output. If any assertion fails, do not treat the adoption as successful; the resolver must report the failure rather than consult a registry.
 
 Post-adoption state:

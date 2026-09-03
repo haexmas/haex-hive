@@ -37,6 +37,7 @@ Uses the canonical set defined in [src/haex_hive/util/exit_codes.py](../../../sr
 
 | Code | Trigger | Example diagnostic |
 |---|---|---|
+| 64 | Usage error | unknown subcommand, invalid flag, or missing flag value; no lock is acquired |
 | 0 | Success | `installed generation g_20260831T142011Z_a4c2` |
 | 2 | Input refuse (FR-006 / Principle V) | `.haex-hive.json not found` / `.haex-hive.json.atoms is empty (Principle V opt-in required)` |
 | 3 | I/O refuse (FR-006) | `publisher clone for <source> not found under $HAEX_HIVE_STATE/repos/` |
