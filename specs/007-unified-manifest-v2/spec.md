@@ -27,9 +27,30 @@ Two operator-driven realisations motivated a substantial simplification and rena
 
 **Added by this amendment**:
 
-- **`kind` field** on the molecule manifest: required, string. Enum in v1: `constitution`, `speckit-workflow`, `skill`, `hook`, `mcp-server`. Enum is intentionally extensible: adding a new value is a downstream-spec responsibility (Spec 011 for `speckit-workflow`, future specs for `skill`, `hook`, `mcp-server`).
+- **`kind` field** on the molecule manifest: required, string. The admitted
+  enum in v1 is `constitution` and `speckit-workflow`; both kinds have defined
+  `delivers` categories, cardinality, publication targets, and `haex install`
+  dispatch in this spec and Spec 011. The enum is extensible: a downstream
+  spec may add `skill`, `hook`, or `mcp-server` only together with its
+  per-kind contract.
+- The v1 kind contracts are:
+  - `constitution`: `delivers.constitution` is required and contains one or
+    more regular files; each file is dispatched to the Spec 008 constitution
+    merge and ultimately contributes to `.haex-hive/constitution.md`.
+  - `speckit-workflow`: `delivers.workflow` is required with exactly one
+    regular file; `delivers.constitution` and `delivers.hooks` are optional
+    zero-or-more lists; `delivers.extensions` is optional with at most one
+    file. The workflow file is published under
+    `.specify/workflows/<molecule-id>/`, the constitution files use the
+    constitution merge, the extension file is merged into
+    `.specify/extensions.yml`, and hooks are published under the reserved
+    `.specify/extensions/workflow-atoms/<molecule-id>/` namespace. The
+    `haex install` command refuses cardinality violations before staging.
 - **`delivers` field** on the molecule manifest: required, shape `dict[str, list[str]]`. Maps a category name (matching a `kind` semantic slot) to a list of repo-relative paths inside the molecule directory. Every declared path passes `RepoRelativePath.validate` and canonical containment against the molecule root at manifest-load time.
-- **New consumer-side field**: `.haex-hive.json.molecules[]` (renamed from `atoms[]`); every entry keeps its existing shape `{ source, revision, includes[] }` with `revision` being the full 40-char SHA (Principle IV, unchanged).
+- **New consumer-side field**: `.haex-hive.json.molecules[]` (renamed from
+  `atoms[]`); every entry keeps its existing source/revision shape but renames
+  `includes[]` to `atoms[]`, with `revision` being the full 40-char SHA
+  (Principle IV, unchanged).
 - **New diagnostic keys** (reuse existing exit-code categories):
   - `molecule-manifest-schema-invalid` (`INPUT_REFUSE=2`)
   - `unknown-molecule-kind` (`INPUT_REFUSE=2`)
@@ -43,7 +64,7 @@ Two operator-driven realisations motivated a substantial simplification and rena
 
 - The D1..D17 decisions from the design doc still hold, modulo the rename (they described the packaging-unit shape, which is still valid: only the noun changes).
 - Reverse-DNS ids on molecules (formerly atoms).
-- `.haex-hive.json` version discipline (`haex_hive_version: "2"`).
+- `.haex-hive.json` version discipline (`haex_hive_version: "3"` for the amended format).
 - Publisher-root manifest.json shape (lists molecules with their paths).
 - Cross-repo reference discipline (Principle IV).
 - Every existing molecule's committed content survives byte-identically; only its manifest.json fields change (contributes → kind + delivers).
@@ -56,12 +77,12 @@ A publisher authors a molecule directory containing `manifest.json` (declaring `
 
 **Why this priority**: This is the MVP. Without a working v3 publisher-and-consumer round-trip, no downstream spec (011, 012, future kinds) can use the new mechanism.
 
-**Independent Test**: On a fresh publisher checkout, create a `constitution`-kind molecule at `test-constitution/` with `manifest.json` declaring `kind: constitution, delivers: { constitution: ["constitution.md"] }` and a `constitution.md` file. Register it in the publisher-root `manifest.json.molecules`. Clone into a state-root. On a consumer checkout, add `molecules: [{ source, revision, includes: ["<molecule-id>"] }]` to `.haex-hive.json`. Run `haex install`. Verify (a) publisher's molecule manifest validates against `molecule-manifest.v3.schema.json`; (b) consumer's `.haex-hive.json` validates against the updated consumer manifest schema; (c) `haex install` completes; (d) `.haex-hive/constitution.md` contains the delivered atom's content.
+**Independent Test**: On a fresh publisher checkout, create a `constitution`-kind molecule at `test-constitution/` with `manifest.json` declaring `kind: constitution, delivers: { constitution: ["constitution.md"] }` and a `constitution.md` file. Register it in the publisher-root `manifest.json.molecules`. Clone into a state-root. On a consumer checkout, add `molecules: [{ source, revision, atoms: ["<molecule-id>"] }]` to `.haex-hive.json`. Run `haex install`. Verify (a) publisher's molecule manifest validates against `molecule-manifest.v3.schema.json`; (b) consumer's `.haex-hive.json` validates against the updated consumer manifest schema; (c) `haex install` completes; (d) `.haex-hive/constitution.md` contains the delivered atom's content.
 
 **Acceptance Scenarios**:
 
 1. **Given** a publisher molecule with `kind: constitution` and `delivers: { constitution: ["constitution.md"] }` and a valid `constitution.md`, **When** a consumer adopts it and runs `haex install`, **Then** the atom's content appears in the assembled `.haex-hive/constitution.md` per Spec 008's multi-source merge, and `install.lock.molecules[]` records the molecule's `(id, source, revision, contributed_paths)`.
-2. **Given** a publisher molecule with `kind: speckit-workflow` and multi-artifact `delivers` (workflow + 1 constitution fragment + 2 hooks + 3 skills), **When** the consumer adopts it, **Then** every atom named in `delivers` publishes into its kind-specific target (per Spec 011); cardinality-one categories (workflow) refuse if the list has 0 or 2+ entries.
+2. **Given** a publisher molecule with `kind: speckit-workflow` and multi-artifact `delivers` (workflow + 1 constitution fragment + 2 hooks), **When** the consumer adopts it, **Then** every atom named in `delivers` publishes into its kind-specific target (per Spec 011); cardinality-one categories (workflow) refuse if the list has 0 or 2+ entries.
 3. **Given** a v2-style molecule manifest that still uses the retired `contributes` field, **When** `haex install` loads it, **Then** the install refuses with `key=molecule-manifest-schema-invalid` and stderr names the offending file and the retired field.
 
 ### User Story 2 - Delivers paths are safety-checked (Priority: P2)
@@ -120,23 +141,30 @@ The two haex-hive-self molecules (`com.github.haexmas.haex-hive.constitution`, `
 
 ### Functional Requirements
 
-- **FR-001** (Molecule manifest schema): The molecule manifest at `<molecule-dir>/manifest.json` MUST match `molecule-manifest.v3.schema.json`. Required fields: `haex_hive_version: "2"` (unchanged), `id` (reverse-DNS), `version` (SemVer 2.0.0), `priority` (integer), `kind` (string, enum-validated against the current known-kind list), `delivers` (object mapping category name to a list of repo-relative paths). Optional fields: any that Spec 007 v2 already accepted at the top level and remain applicable. The retired `contributes` field MUST NOT be present; presence refuses with `key=molecule-manifest-schema-invalid`.
+- **FR-001** (Molecule manifest schema): The molecule manifest at `<molecule-dir>/manifest.json` MUST match `molecule-manifest.v3.schema.json`. Required fields: `haex_hive_version: "3"`, `id` (reverse-DNS), `version` (SemVer 2.0.0), `priority` (integer), `kind` (string, enum-validated against the current known-kind list), `delivers` (object mapping category name to a list of repo-relative paths). Optional fields: any that Spec 007 v2 already accepted at the top level and remain applicable. The retired `contributes` field MUST NOT be present; presence refuses with `key=molecule-manifest-schema-invalid`. A v2-to-v3 migration MUST add `priority: 100` when the source omits it and MUST preserve any existing priority.
 - **FR-002** (delivers path safety): Every path in `delivers.<category>[i]` MUST pass `RepoRelativePath.validate` and a canonical containment check against the molecule root at manifest-load time. Absolute paths, backslash- or drive-qualified paths, `.`/`..` traversal, and symlink or reparse-point targets that escape the molecule root MUST refuse with `key=delivers-path-escape` citing Principle II. Refusal MUST fire before any file is written to consumer roots.
 - **FR-003** (delivers uniqueness invariants): (a) No path appears more than once within a single `delivers.<category>` list; violation refuses with `key=delivers-path-duplicate`. (b) No path appears in more than one category within the same `delivers` map; violation refuses with `key=delivers-category-overlap`. (c) For a kind whose semantic slot is cardinality-one (e.g. `speckit-workflow.delivers.workflow` requires exactly one path per Spec 011), the runtime MUST refuse with `key=delivers-cardinality-violation` when the list has 0 or 2+ entries. Per-kind cardinality rules are documented in each kind's owning spec.
-- **FR-004** (kind enum): The known-kind enum in v1 of this amendment is `{constitution, speckit-workflow, skill, hook, mcp-server}`. A molecule declaring a `kind` value not in the enum MUST refuse with `key=unknown-molecule-kind` and stderr MUST list the known values. The enum is extensible: a new spec introducing a new kind adds its value here without needing to re-version the molecule manifest schema.
-- **FR-005** (consumer manifest field rename): `.haex-hive.json` MUST use the top-level key `molecules` (list of `{source, revision, includes[]}`), NOT the retired `atoms`. Consumers using `atoms` refuse at manifest-load with `key=molecule-manifest-schema-invalid`. Every entry's `revision` MUST be a full 40-char SHA per Principle IV.
+- **FR-004** (kind enum): The known-kind enum in v1 of this amendment is `{constitution, speckit-workflow}`. A molecule declaring a `kind` value not in the enum MUST refuse with `key=unknown-molecule-kind` and stderr MUST list the known values. A downstream spec may add a kind only when it defines that kind's delivers categories, cardinality, publication targets, and `haex install` dispatch; the schema version need not change for such an additive enum extension.
+- **FR-005** (consumer manifest field rename): `.haex-hive.json` MUST use the top-level key `molecules` (list of `{source, revision, atoms[]}`), NOT the retired `atoms`. Consumers using `atoms` refuse at manifest-load with `key=molecule-manifest-schema-invalid`. Every entry's `revision` MUST be a full 40-char SHA per Principle IV. The v2-to-v3 migration MUST rename the outer list and each entry's `includes[]` field, then bump `haex_hive_version` to `"3"`.
 - **FR-006** (runtime rename discipline): Every runtime-visible identifier that names the packaging-unit concept MUST use the "molecule" spelling: dataclasses (`MoleculeManifest`), fields (`ConsumerManifest.molecules[]`), functions (`resolve_molecule_contributions` where applicable), diagnostic keys (`molecule-manifest-schema-invalid`), file paths (`molecule-manifest.v3.schema.json`, `install.lock.molecules[]`). Old "atom" names refer only to the individual delivered artifact concept, never to the packaging unit.
 - **FR-007** (documentation rename sweep): Every reference to the retired "atom" term in the packaging-unit sense across `.specify/memory/constitution.md`, `docs/plans/*.md`, `docs/adr/*.md`, `specs/*/` (spec.md + plan.md + research.md + data-model.md + contracts/ + quickstart.md + tasks.md for every merged spec) MUST be updated to "molecule". The word "atom" survives only in the new meaning (an individual delivered artifact). The Spec 010 preview doc's usage of "molecule" (as bundle-of-atoms) MUST be renamed to "assembly". Reverse-DNS ids do NOT contain "atom" and do not change.
 - **FR-008** (haex-hive-self molecule migration): The two haex-hive-self molecules (`com.github.haexmas.haex-hive.constitution` at `.specify/memory/` and `com.github.haexmas.haex-hive.graphify-first-authoring` at `.specify/atoms/graphify-first-authoring/`) MUST migrate their manifest.json in this amendment landing to `kind: constitution` + `delivers: { constitution: ["constitution.md"] }`. Both version fields bump MAJOR. The publisher-root `manifest.json` at the repo root MUST rename its top-level `atoms` key to `molecules`.
 - **FR-009** (constitution v1.4.0 → v1.5.0 alignment): The haex-hive constitution's inline wording that uses "atom" in the packaging-unit sense MUST update to "molecule" as part of this amendment landing. Version bumps to 1.5.0 (MINOR) because the terminology change is a materially-expanded governance clarification, not a mere PATCH. An ADR (numbered 0010 in sequence after ADR 0009) records the rename decision.
-- **FR-010** (schema retirement discipline): The retired `atom-manifest.v2.schema.json` file MUST be deleted (not shimmed) as part of this amendment landing. `molecule-manifest.v3.schema.json` takes its place. The schema loader's `_KNOWN_SCHEMAS` registry updates accordingly. Under pre-user policy no compat shim; any external consumer stuck on v2 must migrate.
+- **FR-010** (schema retirement discipline): The schema transition MUST land
+  atomically: first add `molecule-manifest.v3.schema.json` and update the
+  schema loader's `_KNOWN_SCHEMAS` registry, then delete
+  `atom-manifest.v2.schema.json` in the same implementation change. The
+  loader MUST continue to resolve the molecule schema throughout that change;
+  deleting the v2 file before its replacement is registered is forbidden.
+  Under pre-user policy no compat shim is required; any external consumer
+  stuck on v2 must migrate.
 
 ### Key Entities
 
 - **Molecule** (packaging unit): a directory containing `manifest.json` (declaring `id`, `version`, `priority`, `kind`, `delivers`) plus the atoms named in `delivers.*[]`. Formerly called "atom".
 - **Atom** (individual delivered artifact): a single file inside a molecule's directory that the molecule's `delivers.<category>[]` list names. Examples: a `constitution.md`, a `workflow.yml`, a single `hook.sh`, a single `skill.md`. Not manifest-level; conceptual.
 - **Assembly** (composition of molecules): a named bundle of molecules an operator adopts together, typically expressed as a "personal harness" that references multiple publisher molecules from `.haex-hive.json.molecules[]`. Formerly called "molecule" in Spec 010 preview prose.
-- **Kind**: the primary discriminator on a molecule manifest, driving runtime dispatch to per-kind publication targets. Extensible enum: `{constitution, speckit-workflow, skill, hook, mcp-server}` in v1, extended by downstream specs.
+- **Kind**: the primary discriminator on a molecule manifest, driving runtime dispatch to per-kind publication targets. The v1 enum is `{constitution, speckit-workflow}`; downstream specs may extend it only with a complete per-kind contract.
 - **Delivers map**: the `delivers` field on a molecule manifest. Maps a category name (matching a kind's semantic slot) to a list of repo-relative atom paths.
 
 ## Success Criteria *(mandatory)*
@@ -148,7 +176,11 @@ The two haex-hive-self molecules (`com.github.haexmas.haex-hive.constitution`, `
 - **SC-003**: The haex-hive-self checkout at the amendment-landing commit has both molecule manifests migrated to `kind` + `delivers`, and `haex install` on a scratch consumer that adopts them succeeds and produces a byte-identical `.haex-hive/constitution.md` compared to the pre-amendment output. Verified by a self-adopt regression test.
 - **SC-004**: Every runtime-visible identifier for the packaging unit uses "molecule" spelling; every doc reference to the packaging-unit sense of "atom" is renamed. Verified by a repo-wide grep: `grep -rn "\batom\b"` returns zero packaging-unit hits and only individual-atom-artifact hits.
 - **SC-005**: The Spec 011 workflow-atom mechanism works under v3 without any bespoke `contributes.speckit_*` field: the same workflow.yml + constitution + extensions + hooks publish to their Spec 011 targets when adopted as a v3 molecule with `kind: speckit-workflow`. Verified by an integration test that adopts a `speckit-workflow`-kind molecule.
-- **SC-006**: The retired `atom-manifest.v2.schema.json` is absent from the repo after this amendment lands. A grep for `atom-manifest.v2.schema.json` in the tree returns zero results. Verified by a repo-wide grep.
+- **SC-006**: The schema retirement implementation adds and registers
+  `molecule-manifest.v3.schema.json` before removing
+  `atom-manifest.v2.schema.json`, with no interval in which manifest loading
+  is broken. Verified by the implementation diff and a repo-wide schema-loader
+  test.
 
 ## Assumptions
 
@@ -156,7 +188,11 @@ The two haex-hive-self molecules (`com.github.haexmas.haex-hive.constitution`, `
 - **Pre-user policy applies**: no external adopters of haex-hive exist as of 2026-09-03. Retiring `atom-manifest.v2.schema.json`, renaming `.haex-hive.json.atoms[]` → `.molecules[]`, and bumping haex-hive-self molecule versions MAJOR requires no compat shim and no migration tooling.
 - **Keep-artifacts UX is out of scope**: molecule removal remains all-or-nothing per Spec 008 R7 delete-orphans semantics. A `haex install --keep-artifacts <atom-list>` flag is a future spec's concern; this amendment intentionally does not introduce it.
 - **Cross-molecule dependency graph is out of scope**: no formal model of "molecule A's skill referenced by molecule B's workflow" in v1. Publishers are expected to make each molecule self-contained.
-- **Kind enum extensibility is by-spec, not by-config**: adding `skill`, `hook`, `mcp-server` to the enum is done by downstream specs (Spec 014, 015, ...) each of which adds its per-kind publication contract. This amendment lands the enum with 5 initial values; further additions do NOT require re-versioning `molecule-manifest.v3.schema.json`.
+- **Kind enum extensibility is by-spec, not by-config**: adding `skill`, `hook`,
+  or `mcp-server` to the enum is done by downstream specs (Spec 014, 015, ...)
+  each of which adds its per-kind publication contract. This amendment lands
+  the enum with 2 initial values; further additive values do NOT require
+  re-versioning `molecule-manifest.v3.schema.json`.
 - **Directory name for spec 007 unchanged**: `specs/007-unified-manifest-v2/` keeps its "v2" suffix historically; renaming the directory would break every existing link in commits and merged PRs. The amendment preamble at the top of this spec.md is the canonical marker that the underlying manifest schema is now v3.
 - **ADR 0010 for the rename**: a new ADR under `docs/adr/0010-rename-atom-molecule.md` records the decision context, per constitution §Governance requirement that amendments include an ADR.
 - **Constitution v1.5.0 bump**: MINOR (materially-expanded governance guidance introducing the molecule/atom/assembly terminology). Version bump lands in the same commit as the constitution wording sweep.
