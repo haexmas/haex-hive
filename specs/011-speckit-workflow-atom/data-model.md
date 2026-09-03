@@ -8,20 +8,20 @@
 
 ## Entities
 
-### WorkflowAtomManifest
+### WorkflowMoleculeManifest
 
-Runtime representation of a `speckit-workflow` atom kind. Specialises `AtomManifest` from Spec 007. Constructor validates every path via `RepoRelativePath.validate` + containment against the molecule root; at publication time the resolver re-validates against the consumer repo root.
+Runtime representation of a workflow molecule's v3 `atoms` map. Specialises `MoleculeManifest` from Spec 007. Constructor validates every source path via `RepoRelativePath.validate` + containment against the molecule root; at publication time the resolver re-validates destinations against the consumer repo root.
 
 | Field | Type | Notes |
 |---|---|---|
-| `atom_id` | `str` | Reverse-DNS id per Spec 007. |
-| `atom_revision` | `str` | Full 40-char SHA (Principle IV). |
-| `workflow_path` | `str` | Repo-relative path to `workflow.yml` inside the molecule directory. Presence marks the molecule as workflow-kind. |
-| `constitution_path` | `str \| None` | Optional constitution fragment path. |
-| `extensions_path` | `str \| None` | Optional extensions.yml fragment path. |
-| `hooks_dir` | `str \| None` | Optional hooks directory. |
+| `molecule_id` | `str` | Reverse-DNS id per Spec 007. |
+| `molecule_revision` | `str` | Full 40-char SHA (Principle IV). |
+| `workflow_paths` | `tuple[str, ...]` | Repo-relative paths from `atoms.workflow`; exactly one path is required for a workflow molecule. |
+| `constitution_paths` | `tuple[str, ...]` | Optional constitution fragment paths. |
+| `extensions_paths` | `tuple[str, ...]` | Optional extensions fragment paths. |
+| `hook_paths` | `tuple[str, ...]` | Optional hook file paths. |
 
-**Construction rules**: invalid path fields raise `WorkflowAtomManifestPathError` (Principle II diagnostic). a molecule carrying `extensions_path` or `hooks_dir` without `workflow_path` refuses at consumer-manifest load time via `ConsumerManifest.from_json`.
+**Construction rules**: invalid path fields raise `WorkflowMoleculeManifestPathError` (Principle II diagnostic). A molecule carrying `extensions_paths` or `hook_paths` without `workflow_paths` refuses at consumer-manifest load time via `ConsumerManifest.from_json`.
 
 ### WorkflowFragment
 
@@ -29,13 +29,13 @@ Parsed representation of the molecule's contributed `extensions.yml`.
 
 | Field | Type | Notes |
 |---|---|---|
-| `atom_id` | `str` | Source atom. |
-| `atom_revision` | `str` | Full 40-char SHA. |
+| `molecule_id` | `str` | Source molecule. |
+| `molecule_revision` | `str` | Full 40-char SHA. |
 | `required_extensions` | `tuple[ExtensionRequirement, ...]` | Sorted by `(id,)`. |
 | `optional_extensions` | `tuple[ExtensionRequirement, ...]` | Sorted by `(id,)`. |
 | `hooks` | `dict[str, tuple[HookEntry, ...]]` | Keyed by stage; entries retain in-fragment declaration order. |
 
-Duplicate `(id,)` within `required_extensions` or `optional_extensions` raises `WorkflowAtomExtensionIdCollisionError`. The same id across the two lists is normalized as one required requirement: the generated output contains one `required_extensions[]` entry, and compatible required/optional declarations both appear in that entry's `sources[]` with their original kinds. An incompatible optional declaration is dropped with a warning while the required declaration remains. Duplicate hook identity within a single stage raises `WorkflowHookMappingInvalidError`.
+Duplicate `(id,)` within `required_extensions` or `optional_extensions` raises `WorkflowMoleculeExtensionIdCollisionError`. The same id across the two lists is normalized as one required requirement: the generated output contains one `required_extensions[]` entry, and compatible required/optional declarations both appear in that entry's `sources[]` with their original kinds. An incompatible optional declaration is dropped with a warning while the required declaration remains. Duplicate hook identity within a single stage raises `WorkflowHookMappingInvalidError`.
 
 ### ExtensionRequirement
 
@@ -54,6 +54,7 @@ Duplicate `(id,)` within `required_extensions` or `optional_extensions` raises `
 | `extension` | `str \| None` | Extension id that owns the hook; nullable for local-only hooks. |
 | `command` | `str` | Dotted command name. |
 | `script_path` | `str` | Repo-relative under `.specify/extensions/workflow-molecules/<molecule-id>/` for molecule-contributed hooks, or below the consumer-owned local hook base for local hooks. |
+| `origin` | `Literal["molecule", "local"]` | Provenance required for generated hook entries. |
 | `enabled` | `bool` | Defaults true. |
 | `optional` | `bool` | Defaults true for molecule-contributed hooks. |
 | `description` | `str` | Operator-facing description. |
@@ -84,28 +85,28 @@ Merge output written to `.specify/extensions.yml`.
 | `settings` | `dict[str, Any]` | Passed through from local source (unchanged). |
 | `required_extensions` | `tuple[MergedRequirement, ...]` | Deterministic sort by `(extension_id,)`. |
 | `optional_extensions` | `tuple[MergedRequirement, ...]` | Deterministic sort by `(extension_id,)`. |
-| `hooks` | `dict[str, tuple[HookEntry, ...]]` | Merged per-stage: molecule entries first (in declaration order), local entries after; identity-matching local entries replace molecule entries in their position. |
+| `hooks` | `dict[str, tuple[HookEntry, ...]]` | Merged per-stage: molecule entries first (in declaration order), local entries after; identity-matching local entries replace molecule entries in their position. Every serialized entry carries `origin`. |
 
 Serialisation: `to_yaml_bytes()` writes YAML with a top-of-file `# generated by haex install: do not edit` comment, sorted keys where deterministic, atom-declared order preserved for hook lists.
 
 ### MergedRequirement
 
-Result of atom-vs-local reduction for a single extension id.
+Result of molecule-vs-local reduction for a single extension id.
 
 | Field | Type | Notes |
 |---|---|---|
 | `extension_id` | `str` | The id. |
 | `effective_constraint` | `VersionConstraint` | Canonical form after R4 reduction. |
-| `is_required` | `bool` | True when either atom or local marked it required. |
-| `sources` | `tuple[ExtensionRequirementSource, ...]` | Atom source first when present, then local source. |
+| `is_required` | `bool` | True when either molecule or local marked it required. |
+| `sources` | `tuple[ExtensionRequirementSource, ...]` | Molecule source first when present, then local source. |
 
 ### ExtensionRequirementSource
 
 | Field | Type | Notes |
 |---|---|---|
-| `origin` | `Literal["atom", "local"]` | Which side contributed. |
-| `atom_id` | `str \| None` | Populated when `origin == "atom"`. |
-| `atom_revision` | `str \| None` | Populated when `origin == "atom"`. |
+| `origin` | `Literal["molecule", "local"]` | Which side contributed. |
+| `molecule_id` | `str \| None` | Populated when `origin == "molecule"`. |
+| `molecule_revision` | `str \| None` | Populated when `origin == "molecule"`. |
 | `declared_constraint` | `VersionConstraint` | Verbatim from source. |
 | `kind` | `Literal["required", "optional"]` | Which list on that side. |
 
@@ -125,17 +126,17 @@ Return type of `resolve_active_workflow(repo_root)`.
 
 | Field | Type | Notes |
 |---|---|---|
-| `source` | `Literal["atom", "bundled"]` | Where the binding workflow comes from. |
+| `source` | `Literal["molecule", "bundled"]` | Where the binding workflow comes from. |
 | `workflow_path` | `Path` | Absolute path to the binding `workflow.yml`. |
-| `atom_id` | `str \| None` | Populated when `source == "atom"`. |
+| `molecule_id` | `str \| None` | Populated when `source == "molecule"`. |
 | `diagnostics` | `tuple[str, ...]` | Non-fatal messages the caller may log. |
 
 ---
 
 ## Relationships
 
-- A `WorkflowAtomManifest` is one adopted molecule's declaration; per FR-006 at most one such atom may be adopted per project.
-- Every adopted `WorkflowAtomManifest` produces zero or more of: (a) directory publication under `.specify/workflows/<molecule-id>/`; (b) directory publication under `.specify/extensions/workflow-molecules/<molecule-id>/`; (c) merged constitution fragment inside `## Workflow-Contributed Rules`; (d) contribution to `.specify/extensions.yml` merged with `LocalExtensionsSource`.
+- A `WorkflowMoleculeManifest` is one adopted molecule's declaration; per FR-006 at most one such molecule may be adopted per project.
+- Every adopted `WorkflowMoleculeManifest` produces zero or more of: (a) directory publication under `.specify/workflows/<molecule-id>/`; (b) directory publication under `.specify/extensions/workflow-molecules/<molecule-id>/`; (c) merged constitution fragment inside `## Workflow-Contributed Rules`; (d) contribution to `.specify/extensions.yml` merged with `LocalExtensionsSource`.
 - `LocalExtensionsSource` is the operator-owned input; `GeneratedExtensionsYml` is the deterministic output. The runtime writes only the latter.
 - `WorkflowFragment` + `LocalExtensionsSource` -> `merge_extensions` -> `GeneratedExtensionsYml` (with `MergedRequirement` per unique id).
 - `resolve_active_workflow` reads `ConsumerManifest` -> returns `WorkflowResolution`.
@@ -249,16 +250,16 @@ START
 [load_consumer_manifest]          (ConsumerManifest.from_json)
   │
   ▼
-[resolve_atoms]                   (workflow molecule -> WorkflowAtomManifest)
+[resolve_molecules]               (workflow molecule -> WorkflowMoleculeManifest)
   │
   ▼
-[refuse_multiple_workflow_atoms]  (count resolved, validated
-                                   contributes.speckit_workflow fields;
+[refuse_multiple_workflow_molecules] (count resolved, validated
+                                   atoms.workflow fields;
                                    refuse before fragments or publication)
   │
   ▼
 [validate_workflow_paths]         (RepoRelativePath.validate + containment
-                                   on every contributes.speckit_* path)
+                                   on every molecule source and destination path)
   │
   ▼
 [load_workflow_fragment]          (WorkflowFragment; duplicate id/hook
@@ -303,14 +304,14 @@ END
 
 - No workflow-molecule-derived file is written before `[validate_workflow_paths]`, `[load_workflow_fragment]`, `[merge_extensions]`, and `[validate_required_extensions]` all pass.
 - The live `.specify/extensions.local.yml` is NEVER written, renamed, or deleted by the runtime. It is read by `[load_local_source]` and remains outside the staged and published managed path set.
-- After a successful install, every resolved adopted `speckit-workflow` atom results in exactly one directory under `.specify/workflows/`; bundled `.specify/workflows/speckit/` is untouched by atom adoption.
-- A refused install, including invalid paths, broken YAML, missing required extensions, or multiple workflow molecules, creates no new atom directory and preserves the previous published generation.
+- After a successful install, every resolved adopted workflow molecule results in exactly one directory under `.specify/workflows/`; bundled `.specify/workflows/speckit/` is untouched by molecule adoption.
+- A refused install, including invalid paths, broken YAML, missing required extensions, or multiple workflow molecules, creates no new molecule directory and preserves the previous published generation.
 
 ---
 
 ## Boundaries
 
-- **Spec 007** (atom-manifest schema, ConsumerManifest, VersionConstraint): reused. `WorkflowAtomManifest` specialises the base atom.
+- **Spec 007** (molecule-manifest schema, ConsumerManifest, VersionConstraint): reused. `WorkflowMoleculeManifest` specialises the base molecule.
 - **Spec 008** (install transaction, rename-swap, multi-source constitution merge): reused. workflow molecule deltas participate in the repository-wide `publish_install_generation` coordinator, which calls the single-root `publish_generation` primitive for `.haex-hive/`.
 - **Constitution v1.4.0** (§ Development Workflow -> Declared speckit workflow adherence): `resolve_active_workflow` is what that clause resolves to at read-time.
 - **Spec 010** (compiler adapters): out of scope.

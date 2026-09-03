@@ -1,11 +1,11 @@
-"""Installer for the graphify-first-authoring atom.
+"""Installer for the graphify-first-authoring molecule.
 
 Contract: see specs/atoms/graphify-first-authoring/contracts/install.cli.md.
 
 Refuses cleanly (no partial changes) if any precondition fails. On success:
-- writes ``.git/hooks/post-commit`` and ``.git/hooks/post-checkout`` with a
-  shebang resolved to whichever of ``python3``/``python`` is present;
-- copies the sibling helper modules into ``.git/hooks/`` so the entrypoints'
+- writes Git's effective hooks directory's ``post-commit`` and ``post-checkout``
+  files with a shebang resolved to whichever of ``python3``/``python`` is present;
+- copies the sibling helper modules into Git's effective hooks directory so the entrypoints'
   imports resolve regardless of where the atom lives on disk;
 - appends ``graphify-out/`` to ``.gitignore`` if not already present;
 - prompts before running ``graphify install`` when the local registration marker
@@ -118,8 +118,7 @@ def _ensure_graphify_on_path() -> None:
         )
 
 
-def _check_hook_collisions(repo_root: Path) -> None:
-    hooks_dir = repo_root / ".git" / "hooks"
+def _check_hook_collisions(hooks_dir: Path) -> None:
     for name in _HOOK_NAMES:
         target = hooks_dir / name
         if target.exists():
@@ -243,13 +242,27 @@ def install() -> int:
         interpreter = _resolve_interpreter()
         repo_root = _repo_root()
         _check_current_branch_tracked(repo_root)
+        hooks_result = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "--git-path", "hooks"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if hooks_result.returncode != 0 or not hooks_result.stdout.strip():
+            detail = hooks_result.stderr.strip() or "no path returned"
+            raise InstallError(
+                f"Could not resolve Git's effective hooks directory: {detail}"
+            )
+        hooks_dir = Path(hooks_result.stdout.strip())
+        if not hooks_dir.is_absolute():
+            hooks_dir = repo_root / hooks_dir
+        hooks_dir = hooks_dir.resolve()
+        _check_hook_collisions(hooks_dir)
         _ensure_graphify_on_path()
-        _check_hook_collisions(repo_root)
     except InstallError as exc:
         print(f"graphify-first-authoring: {exc}", file=sys.stderr)
         return 1
 
-    hooks_dir = repo_root / ".git" / "hooks"
     hooks_dir.mkdir(parents=True, exist_ok=True)
 
     for name in _HOOK_NAMES:

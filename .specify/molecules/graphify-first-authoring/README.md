@@ -1,9 +1,9 @@
-# graphify-first-authoring atom
+# graphify-first-authoring molecule
 
-Opt-in atom that changes agent authoring behavior: **consult the graphify knowledge graph before authoring any new named code, and prefer extending an existing artifact over duplicating it.**
+Opt-in molecule that changes agent authoring behavior: **consult the graphify knowledge graph before authoring any new named code, and prefer extending an existing artifact over duplicating it.**
 
-- **Atom id**: `com.github.haexmas.haex-hive.graphify-first-authoring`
-- **Contributes**: `constitution.md` (merged into the adopting repo's `.haex-hive/constitution.md` via `haex constitution assemble`)
+- **Molecule id**: `com.github.haexmas.haex-hive.graphify-first-authoring`
+- **Delivers**: `atoms.constitution: ["constitution.md"]` (merged into the adopting repo's `.haex-hive/constitution.md` via `haex constitution assemble`)
 - **Also ships**: a `post-commit` hook (auto-refresh `graphify-out/` on tracked branches), a `post-checkout` hook (fork-point snapshot into new worktrees), and an installer for both
 
 Nothing here is part of haex-hive's core constitution. Adopt it explicitly in your repo's `.haex-hive.json` if you want it.
@@ -22,11 +22,15 @@ Full text lives in [`constitution.md`](constitution.md).
 
 ## Adoption (quick path)
 
-For a repo that already runs haex-hive Spec 007 manifest v2 (`.haex-hive.json`, `haex constitution assemble`), see the [quickstart](../../../specs/atoms/graphify-first-authoring/quickstart.md) — the six steps are:
+For a repo that already runs haex-hive Spec 007 manifest v3 (`.haex-hive.json`, `haex constitution assemble`), see the [quickstart](../../../specs/atoms/graphify-first-authoring/quickstart.md) — the six steps are:
 
 1. `pip install graphifyy` (or accept the installer's default-Y prompt when the CLI is absent)
 2. Run the installer with the Python command available on your platform: `python3` on Linux/WSL2, or `python3`/`python` on macOS and `python` on Windows.
-3. Add an `atoms[]` entry pinned to a full SHA of this repo
+3. Add a `compounds[]` entry with this molecule id, pinned to a full SHA of this repo:
+
+   ```json
+   {"haex_hive_version": "3", "compounds": [{"source": "https://github.com/haexmas/haex-hive", "revision": "<full 40-char SHA>", "molecules": ["com.github.haexmas.haex-hive.graphify-first-authoring"]}]}
+   ```
 4. `haex constitution assemble`
 5. `haex constitution show` — verifies both source atoms are named in the preface
 6. `git commit --allow-empty -m "chore: test refresh"` — verifies the hook is live
@@ -35,7 +39,7 @@ For a repo that already runs haex-hive Spec 007 manifest v2 (`.haex-hive.json`, 
 
 | Path | Purpose |
 |---|---|
-| `manifest.json` | Atom manifest v2, `contributes.constitution = "constitution.md"` |
+| `manifest.json` | Molecule manifest v3, `atoms.constitution = ["constitution.md"]` |
 | `constitution.md` | The contributed principle text |
 | `hooks/post-commit` | Refresh entrypoint (shebang set at install time) |
 | `hooks/post-checkout` | Snapshot entrypoint (shebang set at install time) |
@@ -59,11 +63,12 @@ Tell the agent: *"skip graphify check"* (or any equivalent). The suspension hold
 
 ## Uninstall
 
-`.git/hooks/*` is per-machine and never committed. To remove:
+Git's effective hooks directory is per-machine and never committed. To remove:
 
 ```bash
-rm .git/hooks/post-commit .git/hooks/post-checkout
-rm .git/hooks/_refresh.py .git/hooks/_snapshot.py .git/hooks/_tracked_branches.py
+hooks_dir="$(git rev-parse --git-path hooks)"
+rm "$hooks_dir"/post-commit "$hooks_dir"/post-checkout
+rm "$hooks_dir"/_refresh.py "$hooks_dir"/_snapshot.py "$hooks_dir"/_tracked_branches.py
 ```
 
 `graphify uninstall` handles the graphify side (harness registration) separately.

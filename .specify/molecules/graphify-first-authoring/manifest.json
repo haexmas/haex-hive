@@ -1,9 +1,9 @@
 {
-  "haex_hive_version": "2",
+  "haex_hive_version": "3",
   "id": "com.github.haexmas.haex-hive.graphify-first-authoring",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "priority": 20,
-  "contributes": {
-    "constitution": "constitution.md"
+  "atoms": {
+    "constitution": ["constitution.md"]
   }
 }

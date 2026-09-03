@@ -56,12 +56,12 @@ one is not a special case).
   README.md              # operator docs: adoption, config, escape hatch
 ```
 
-Root `manifest.json` gains one flat new atom entry, no `blueprint.` or
-`molecule.` segment in the id:
+Root `manifest.json` uses the v3 `molecules` map and gains one flat new
+molecule entry, with no `blueprint.` or `molecule.` segment in the id:
 
 ```json
-"atoms": {
-  "com.github.haexmas.haex-hive.constitution": { "path": ".specify/memory", "version": "1.3.0" },
+"molecules": {
+  "com.github.haexmas.haex-hive.constitution": { "path": ".specify/memory", "version": "1.5.0" },
   "com.github.haexmas.haex-hive.graphify-first-authoring": {
     "path": ".specify/molecules/graphify-first-authoring",
     "version": "0.1.0"

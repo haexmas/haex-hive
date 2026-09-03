@@ -1,27 +1,27 @@
-# Spec 012: Speckit Session Hopper Atom (Design Preview)
+# Spec 012: Speckit Session Hopper Molecule (Design Preview)
 
 **Status**: Design preview. Not yet a spec. Captured 2026-09-02 as the requirements source for a subsequent `/speckit-specify` invocation that creates `specs/012-speckit-session-hopper-atom/`.
 
-**Purpose**: define a first concrete `speckit-workflow` atom (Spec 011 atom-kind) that prompts the operator, before every `command:` step of a speckit workflow, to run that step in a new agent session (fresh context) rather than inline in the current session. The prompt is advisory: the operator picks new-session or inline for each step. The atom is fully declarative and portable across every LLM host, because the mechanism is Constitution rule plus a text-printing hook, with no client-specific subagent API.
+**Purpose**: define a first concrete `speckit-workflow` molecule (Spec 011 v3 `atoms` map) that prompts the operator, before every `command:` step of a speckit workflow, to run that step in a new agent session (fresh context) rather than inline in the current session. The prompt is advisory: the operator picks new-session or inline for each step. The molecule is fully declarative and portable across every LLM host, because the mechanism is Constitution rule plus a text-printing hook, with no client-specific subagent API.
 
 **Related**:
-- [Spec 011: Speckit Workflow Atom](2026-09-02-spec-011-speckit-workflow-atom-design.md): defines the `speckit-workflow` atom kind (`contributes.speckit_workflow`, `contributes.speckit_hooks`, `contributes.constitution`, hook publication under `.specify/extensions/workflow-molecules/<atom-id>/`, `workflow-registry.json.active_workflow` selection). This atom is an instance of that kind.
-- [Spec 007: Unified Manifest v2](2026-08-28-spec-007-unified-manifest-design.md): atom-manifest baseline; publisher-manifest shape.
+- [Spec 011: Speckit Workflow Molecule](2026-09-02-spec-011-speckit-workflow-atom-design.md): defines the v3 workflow molecule (`atoms.workflow`, `atoms.hooks`, `atoms.constitution`, hook publication under `.specify/extensions/workflow-molecules/<molecule-id>/`) whose adoption is automatically binding. This molecule is an instance of that contract.
+- [Spec 007: Unified Manifest v3](../../specs/007-unified-manifest-v2/spec.md): molecule-manifest baseline; publisher-manifest shape.
 - [Spec 008: Install Transaction](../../specs/008-install-transaction/): multi-source constitution merge; delete-orphans on removal.
-- Constitution v1.4.0, "Declared speckit workflow adherence": the bullet this atom becomes binding under when selected via `active_workflow`.
+- Constitution v1.4.0, "Declared speckit workflow adherence": the bullet this molecule becomes binding under when adopted in a compound.
 - [speckit-community workflows catalog](https://speckit-community.github.io/extensions/search?q=workflows): other workflow families (V-Model, bugfix-first, strict-TDD, ...). Motivation for keeping this atom workflow-agnostic in its hook script.
 
 ---
 
 ## What this covers
 
-A single atom, published from a new sibling repo `haexmas/atoms`, that:
+A single molecule, published from a new sibling repo `haexmas/atoms`, that:
 
 1. Ships a `workflow.yml` mirroring the bundled `speckit` "Full SDD Cycle" steps (`specify`, `clarify`, `plan`, `tasks`, `analyze`, `implement`) with the same review gates between them.
 2. Wires every `command:` step's `hooks.before` to one shared shell script that prints an English prompt block on stdout, telling the operator how to run the next step in a new session (which worktree to cd into, which branch is expected, which `/speckit-<step>` slash-command to invoke).
-3. Ships a small `constitution.md` fragment that turns the printed prompt into a binding pre-step protocol: agents whose `active_workflow` names this atom MUST display the block verbatim, wait for the operator's answer, and only continue the step inline if the operator replies `inline`.
+3. Ships a small `constitution.md` fragment that turns the printed prompt into a binding pre-step protocol: agents whose adopted workflow molecule is this molecule MUST display the block verbatim, wait for the operator's answer, and only continue the step inline if the operator replies `inline`.
 
-Adoption is via `.haex-hive.json`, same as any other atom. Making this workflow binding is a two-step operator action: adopt the atom, then set `workflow-registry.json.active_workflow` to the atom's id.
+Adoption is via `.haex-hive.json.compounds[]`, same as any other molecule. Adoption itself makes this workflow binding; no registry or activation edit is required.
 
 ## What this does NOT cover (deliberately)
 
@@ -45,7 +45,7 @@ Adoption is via `.haex-hive.json`, same as any other atom. Making this workflow 
 - Publisher repo: `haexmas/atoms` (a new sibling to `haexmas/haex-hive`), holding multiple atoms over time. First atom is this one.
 - Publisher-manifest id: `com.github.haexmas.atoms`.
 - Atom id: `com.github.haexmas.atoms.speckit-session-hopper`.
-- Workflow id inside `workflow.yml`: `speckit-session-hopper`. The workflow registry key, `WorkflowEntry.atom_id`, and `workflow-registry.json.active_workflow` all use the full atom id; the short id is internal to the workflow payload only. Spec 011 FR-002 publishes the workflow at `.specify/workflows/<atom-id>/`.
+- Workflow id inside `workflow.yml`: `speckit-session-hopper`. The molecule id is used for the published workflow directory and the byline; the short workflow id remains internal to the workflow payload. Spec 011 FR-002 publishes the workflow at `.specify/workflows/<molecule-id>/`.
 
 ### Repo layout
 
@@ -67,9 +67,9 @@ haexmas/atoms/                                # git repo root
 
 ```json
 {
-  "haex_hive_version": "2",
+  "haex_hive_version": "3",
   "publisher": "com.github.haexmas.atoms",
-  "atoms": {
+  "molecules": {
     "com.github.haexmas.atoms.speckit-session-hopper": {
       "path": "speckit-session-hopper",
       "version": "0.1.0"
@@ -78,27 +78,27 @@ haexmas/atoms/                                # git repo root
 }
 ```
 
-### Atom-manifest
+### Molecule-manifest
 
 `haexmas/atoms/speckit-session-hopper/manifest.json`:
 
 ```json
 {
-  "haex_hive_version": "2",
+  "haex_hive_version": "3",
   "id": "com.github.haexmas.atoms.speckit-session-hopper",
   "version": "0.1.0",
   "priority": 30,
-  "contributes": {
-    "speckit_workflow": "workflow.yml",
-    "constitution": "constitution.md",
-    "speckit_hooks": "hooks"
+  "atoms": {
+    "workflow": ["workflow.yml"],
+    "constitution": ["constitution.md"],
+    "hooks": ["hooks/before-step.sh"]
   }
 }
 ```
 
 ### workflow.yml
 
-Mirrors the bundled `speckit` cycle. Every `command:` step gains one `hooks.before` entry pointing at the shared script. The script destination path uses the reserved atom-owned namespace from Spec 011 FR-003.
+Mirrors the bundled `speckit` cycle. Every `command:` step gains one `hooks.before` entry pointing at the shared script. The script destination path uses the reserved molecule-owned namespace from Spec 011 FR-003.
 
 ```yaml
 schema_version: "1.0"
@@ -231,7 +231,7 @@ EOF
 Notes:
 
 - The script uses POSIX `sh` (not bash) for portability across the operator's environment. `ROOT_ESCAPED` is a single-quoted POSIX-shell literal, so spaces, command substitutions, backticks, quotes, and shell metacharacters in the worktree path remain data when the printed command is pasted.
-- It does NOT reference the constitution or any spec artefacts. The new session finds those itself: the user-global CLAUDE.md loads `.haex-hive.json` and the constitution automatically on session start (haex-hive detection); the `/speckit-<step>` slash-command reads whatever `specs/<slug>/` files are relevant for that step; `active_workflow` is read by any agent that cares.
+- It does NOT reference the constitution or any spec artefacts. The new session finds those itself: the user-global CLAUDE.md loads `.haex-hive.json` and the constitution automatically on session start (haex-hive detection); the `/speckit-<step>` slash-command reads whatever `specs/<slug>/` files are relevant for that step; the adopted molecule is resolved by the reader helper.
 - The five-line `HAEX-HIVE-HANDOFF` block is a one-shot protocol marker, not a shell command; every marker line is emitted at column 1 so the copied block has its exact protocol form. The hook rejects newline-containing root, branch, or step values before emission, so each field remains one marker line. Its `root` and `branch` values are single-quoted POSIX-shell literals containing the originating session's exact values. `commit` is the exact output of `git rev-parse HEAD`, and `nonce` is fresh for this emission (random bytes when available, with the timestamp/process/commit fallback). A new session consumes the marker only when the atom, step, root (`git rev-parse --show-toplevel`), branch (`git branch --show-current`), and commit (`git rev-parse HEAD`) all match its current context and the nonce has not already been consumed in this checkout; otherwise it rejects the marker and follows the normal prompt-and-wait rule. A valid marker skips this atom's `hooks.before` prompt once and executes exactly `/speckit-<step>`; it MUST NOT be forwarded or reused for a later step or checkout.
 - Before executing a valid marker's step, the session atomically claims the nonce in the device-local haex state root under `session-handoffs/consumed/<nonce>/`. Exclusive directory creation is the consumption event; an existing nonce is rejected, so copied markers cannot rerun a non-idempotent step in the same checkout. The claim record contains the atom, step, root, branch, commit, and nonce and is written before execution; this state is never committed to the repository. A crash after the claim is treated as consumed (at-most-once semantics).
 - It falls back gracefully outside a git worktree (`<unknown>` branch, current directory as root). The atom is not intended for non-git use; that fallback exists only to avoid a shell error if someone accidentally invokes the script by hand.
@@ -244,7 +244,7 @@ Kept short. English. States one MUST rule.
 ```markdown
 ## Per-step session isolation
 
-Sessions whose `active_workflow` resolves to
+Sessions whose adopted workflow molecule resolves to
 `com.github.haexmas.atoms.speckit-session-hopper` MUST, before every
 `command:` step of that workflow:
 
@@ -279,7 +279,7 @@ Sessions whose `active_workflow` resolves to
 ```
 
 The multi-source merge (Spec 011 FR-004) appends this fragment under
-`## Workflow-Contributed Rules` with the atom-id byline; the header
+`## Workflow-Contributed Rules` with the molecule-id byline; the header
 above becomes an `### Per-step session isolation` subsection under the
 byline heading, so no header conflict occurs.
 
@@ -287,18 +287,20 @@ byline heading, so no header conflict occurs.
 
 Documented in `haexmas/atoms/README.md` and mirrored in this design for the plan.
 
-1. Pin the atom in `.haex-hive.json`:
+1. Adopt the molecule in `.haex-hive.json.compounds[]`:
 
    ```json
    {
-     "includes": ["com.github.haexmas.atoms.speckit-session-hopper"],
-     "revision": "<full-40-char-sha>",
-     "source": "https://github.com/haexmas/atoms"
+     "haex_hive_version": "3",
+     "compounds": [{
+       "source": "https://github.com/haexmas/atoms",
+       "revision": "<full-40-char-sha>",
+       "molecules": ["com.github.haexmas.atoms.speckit-session-hopper"]
+     }]
    }
    ```
 2. Run `haex install` without `--llm` or `--accept-merged` for this design's single constitution contribution. `run()` selects `assemble_single_source(...)`, which publishes deterministically and writes no pending merge state. If the consumer has two or more constitution contributions, use the separate multi-source path: run `haex install --llm=file`, review the pending candidate, then rerun `haex install --accept-merged <candidate>`.
-3. Before activation, inspect `.specify/workflows/workflow-registry.json` and verify all of the following: `workflows["com.github.haexmas.atoms.speckit-session-hopper"]` exists; its `source` is exactly `"atom"`; its `atom_id` is exactly `"com.github.haexmas.atoms.speckit-session-hopper"`; `.specify/workflows/com.github.haexmas.atoms.speckit-session-hopper/workflow.yml` exists and matches the published contribution; and `.specify/extensions/workflow-molecules/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh` is the expected regular file, has byte-identical published content, and is executable under the actual hook-runner semantics. Test these assertions against the actual post-install registry entry, workflow file, and hook: invoke the hook exactly as the runner does for a representative step, requiring successful exit and the expected prompt/marker output; when the runner executes scripts directly, also require the executable mode and a successful direct invocation. If any assertion fails, do not activate the atom because the resolver would correctly fall back to the bundled workflow. The corresponding `workflows` entry key and `atom_id` use the same full atom id; only `workflow.yml.workflow.id` remains `speckit-session-hopper`.
-4. Only after all registry assertions pass, edit `.specify/workflows/workflow-registry.json` and set `active_workflow` to `com.github.haexmas.atoms.speckit-session-hopper`. (Spec 011 does not require a helper for this yet; a plain text edit suffices.)
+3. Verify the v3 publication directly: `.specify/workflows/com.github.haexmas.atoms.speckit-session-hopper/workflow.yml` exists and matches the `atoms.workflow` contribution; `.specify/extensions/workflow-molecules/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh` is the expected regular file, has byte-identical published content, and is executable under the actual hook-runner semantics. Invoke the hook exactly as the runner does for a representative step, requiring successful exit and the expected prompt/marker output. If any assertion fails, do not treat the adoption as successful; the resolver must report the failure rather than consult a registry.
 
 Post-adoption state:
 
@@ -309,20 +311,19 @@ Post-adoption state:
 
 ## Removal (downgrade)
 
-Removing the atom entry from `.haex-hive.json` and rerunning `haex install`
+Removing the molecule entry from `.haex-hive.json.compounds[]` and rerunning `haex install`
 triggers Spec 011 US3 (delete-orphans): the workflow directory, the hook
 directory, and the constitution fragment are removed by their respective
 per-tree rename-swap publications; no cross-tree atomicity is claimed. If
-`active_workflow` still names the full atom id
-`com.github.haexmas.atoms.speckit-session-hopper`, it is reset to `null` and
-stderr emits `workflow-atom-reset-to-default`. No atom-specific removal logic
-is needed.
+There is no activation state to reset. The reader falls back to the bundled
+workflow once the molecule is removed. No molecule-specific removal logic is
+needed.
 
 ## Assumptions
 
 - **Same-worktree new sessions**: the operator opens the new session in the same git worktree and on the same branch as the main session. The atom does NOT recommend or automate worktree-per-step. Rationale: worktree-per-step multiplies filesystem state without buying isolation the operator asked for, and speckit artefacts live inside `specs/<slug>/` on the current worktree either way.
 - **Advisory-only enforcement**: compliance rests on the Constitution rule, which agents are already required to obey under Principle II family (haex-hive constitution NON-NEGOTIABLEs). No mechanical guard.
-- **Bundled `speckit` remains available**: adopting this atom does not remove the bundled workflow. The operator can switch back by setting `active_workflow` to `speckit` (or `null`, which resolves to `speckit`), per Spec 011 FR-006/FR-008.
+- **Bundled `speckit` remains available**: adopting this molecule does not remove the bundled workflow. Removing it from `compounds[]` makes the bundled workflow binding again, per Spec 011 FR-006/FR-008.
 - **English text**: all operator-facing text shipped by the atom is English. The atom is meant to be publisher-neutral and locale-agnostic.
 
 ## Open questions
