@@ -10,14 +10,14 @@ This contract defines the workflow-specific categories in the Spec 007 v3 molecu
 
 ### `atoms.workflow`
 
-- **Type**: array of strings (repo-relative paths).
+- **Type**: array of strings (repo-relative paths), with exactly one item when present.
 - **Required**: no; a non-empty list marks the molecule as a workflow molecule.
 - **Content shape**: YAML file matching the bundled `.specify/workflows/speckit/workflow.yml` reference shape (`schema_version`, `workflow.id/name/version`, `steps[]`).
 - **Validation**: every path passes `RepoRelativePath.validate`; content parses as YAML; content passes `validate_no_plaintext_secrets` and `validate_no_concealment_instructions`. The workflow file is source-relative to the molecule and its `steps[].script`/`hooks[].script` values are destination-relative to the published molecule-owned hooks directory; each is validated against the corresponding root. A workflow that declares script paths without `atoms.hooks` refuses before publication.
 
 ### `atoms.extensions`
 
-- **Type**: array of strings (repo-relative paths).
+- **Type**: array of strings (repo-relative paths), with exactly one item when present.
 - **Required**: no; REQUIRES a non-empty `atoms.workflow` list on the same molecule. Presence without `atoms.workflow` refuses at consumer-manifest load time.
 - **Content shape**: YAML matching [extensions-fragment.v1.md](./extensions-fragment.v1.md).
 

@@ -14,6 +14,7 @@ Refuses cleanly (no partial changes) if any precondition fails. On success:
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -126,6 +127,28 @@ def _check_hook_collisions(hooks_dir: Path) -> None:
                 f"Hook '{target}' already exists from another tool. Integrate "
                 "manually rather than overwriting."
             )
+
+
+def _check_hooks_directory(hooks_dir: Path) -> None:
+    """Refuse before provisioning when Git's hooks path cannot be used."""
+    if hooks_dir.exists():
+        if not hooks_dir.is_dir():
+            raise InstallError(
+                f"Git's effective hooks path '{hooks_dir}' is not a directory."
+            )
+        if not os.access(hooks_dir, os.W_OK | os.X_OK):
+            raise InstallError(
+                f"Git's effective hooks directory '{hooks_dir}' is not writable."
+            )
+        return
+
+    parent = hooks_dir.parent
+    while not parent.exists() and parent != parent.parent:
+        parent = parent.parent
+    if not parent.is_dir() or not os.access(parent, os.W_OK | os.X_OK):
+        raise InstallError(
+            f"Git's effective hooks directory '{hooks_dir}' cannot be created."
+        )
 
 
 def _write_hook(hooks_dir: Path, name: str, interpreter: str) -> None:
@@ -257,13 +280,22 @@ def install() -> int:
         if not hooks_dir.is_absolute():
             hooks_dir = repo_root / hooks_dir
         hooks_dir = hooks_dir.resolve()
+        _check_hooks_directory(hooks_dir)
         _check_hook_collisions(hooks_dir)
         _ensure_graphify_on_path()
     except InstallError as exc:
         print(f"graphify-first-authoring: {exc}", file=sys.stderr)
         return 1
 
-    hooks_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        print(
+            f"graphify-first-authoring: could not create hooks directory "
+            f"'{hooks_dir}': {exc}",
+            file=sys.stderr,
+        )
+        return 1
 
     for name in _HOOK_NAMES:
         _write_hook(hooks_dir, name, interpreter)

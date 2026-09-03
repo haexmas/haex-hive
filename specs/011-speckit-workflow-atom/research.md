@@ -59,10 +59,8 @@
 2. Determine effective kind: if either declares `required`, effective kind is required; else optional.
 3. Reduce constraints per kind using canonical form:
    - Two exact constraints: same -> keep; different -> refuse (`key=conflicting-constraint`) if effective kind is required; drop local optional and warn (`key=optional-workflow-extension-conflict`) if effective kind is optional and local disagrees.
-   - Exact vs lower-bound / upper-bound / compatible-release: exact must satisfy the range; else refuse-or-drop per effective kind.
+   - Exact vs lower-bound: the exact version must satisfy the lower bound; else refuse-or-drop per effective kind.
    - Two lower-bounds: keep higher.
-   - Two upper-bounds: keep lower.
-   - Lower > upper: refuse-or-drop.
 4. Emit `MergedRequirement(extension_id, effective_constraint, is_required, sources)`.
 
 **Rationale**: same correctness properties as PR #52's algorithm but with only two participants per id, the reduction is a single pair. No sort order across molecules is needed because there are no cross-molecule pairs.
@@ -72,13 +70,15 @@
 - **Local always wins**: rejected. The molecule's constraint is a hard requirement the workflow depends on; a local override that weakens it below the molecule's floor breaks the workflow's stated dependency.
 - **Molecule always wins**: rejected for optional-vs-optional cases; the local optional MAY still be dropped when incompatible, but a compatible local optional should be preserved.
 
-**Residual risk**: SemVer's compatible-release intersects awkwardly with lower-bound and exact; the algorithm handles common cases and refuses exotic disjoints.
+**Residual risk**: the deliberately small grammar has no upper-bound or
+compatible-release intersections to resolve; unsupported constraint syntax is
+refused by the canonical `VersionConstraint` parser.
 
 ## R5. Reader-side resolution fallback
 
 **Decision**: `resolve_active_workflow(repo_root: Path) -> WorkflowResolution` returns a typed object with a `source: Literal["molecule", "bundled"]` field and a `diagnostics: tuple[str, ...]` field. Algorithm:
 
-1. If `.haex-hive.json` is missing, return `WorkflowResolution(source="bundled", workflow_path=<bundled path>, atom_id=None, diagnostics=(<missing-manifest diagnostic>,))`.
+1. If `.haex-hive.json` is missing, return `WorkflowResolution(source="bundled", workflow_path=<bundled path>, molecule_id=None, diagnostics=(<missing-manifest diagnostic>,))`.
 2. If `.haex-hive.json` exists, load it via `ConsumerManifest.from_json`. Propagate JSON, schema, identity, and revision validation failures with diagnostics; do not select the bundled workflow for an invalid manifest.
 3. Enumerate adopted molecules and look up their manifests via existing molecule-resolution machinery. After validation, refuse multiple manifests carrying a non-empty `atoms.workflow` list as specified in R3.
 4. Find the molecule whose `atoms.workflow` list is non-empty. If found, return `WorkflowResolution(source="molecule", workflow_path=<molecule's published path>, molecule_id=<id>, diagnostics=[])`.
@@ -132,13 +132,13 @@ The molecule's `manifest.json` MUST declare `atoms.workflow: ["workflow.yml"]` a
 
 ## R8. Hook identity for replace-by-identity
 
-**Decision**: a hook entry's identity is the tuple `(stage, extension, command, script)`. Two entries with the same tuple are considered the same hook; a local declaration with an identity-matching molecule entry REPLACES the molecule entry in the generated `.specify/extensions.yml`'s `hooks.<stage>[]` list. Non-identity-matching local entries append after molecule entries.
+**Decision**: a hook entry's identity is the tuple `(stage, extension, command, normalized script_path)`. The loader converts molecule-fragment source-relative scripts to their published paths under `.specify/extensions/workflow-molecules/<molecule-id>/` and normalizes local scripts against the consumer-local hook base before comparison. Two entries with the same normalized tuple are considered the same hook; a local declaration with an identity-matching molecule entry REPLACES the molecule entry in its position in the generated `.specify/extensions.yml`'s `hooks.<stage>[]` list. Non-identity-matching local entries append after molecule entries.
 
 **Rationale**: this is the load-bearing detail from PR #54's reviewer hardening of FR-005. The identity tuple is:
 - `stage`: which lifecycle stage the hook attaches to.
 - `extension`: which speckit extension defines the hook (may be `null` for local hooks not sourced from an extension).
 - `command`: the dotted command name.
-- `script`: the script path.
+- `script_path`: the normalized published script path.
 
 Two molecule-contributed entries with the same identity refuse with `key=workflow-hook-mapping-invalid` (duplicate within the fragment). Two local entries with the same identity refuse similarly (duplicate within the local source).
 

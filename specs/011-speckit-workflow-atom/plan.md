@@ -128,7 +128,7 @@ Prerequisites: research.md complete.
 **data-model.md**: ten dataclasses (`WorkflowMoleculeManifest`, `WorkflowFragment`, `ExtensionRequirement`, `HookEntry`, `LocalExtensionsSource`, `GeneratedExtensionsYml`, `MergedRequirement`, `ExtensionRequirementSource`, `WorkflowResolution`, `InstalledExtensionMetadata`). The implementation and workflow tests cover `ExtensionRequirementSource` through `MergedRequirement.sources`.
 
 **contracts/**:
-- `atom-manifest.v2.speckit-workflow.md`: three new `contributes.*` fields + orphan-refusal cases.
+- `atom-manifest.v2.speckit-workflow.md`: the v3 `atoms.*` category contract + orphan-refusal cases.
 - `extensions-fragment.v1.md`: molecule-contributed extensions.yml fragment shape.
 - `extensions-local.v1.md` (NEW from PR #54): consumer-owned `.specify/extensions.local.yml` shape + ownership boundary.
 - `extensions-generated.v1.md` (NEW): generated output shape + deterministic serialisation.
@@ -140,6 +140,15 @@ Prerequisites: research.md complete.
 ### Phase 2: NOT covered by /speckit-plan
 
 `tasks.md` is `/speckit-tasks`'s responsibility.
+
+The v3 consumer-manifest parser is an explicit Phase 2 prerequisite: the
+current `ConsumerManifest.from_json` implementation still targets
+`haex-hive.v2.schema.json`. Before Spec 011's US1 implementation can be
+considered complete, Spec 013 must land its v2-to-v3 consumer-manifest
+migration (including the schema/parser update and conformance tests). The
+`EXTENDED` designation above remains correct because Spec 011 will consume that
+v3 parser; its tasks MUST depend on the Spec 013 landing rather than silently
+claiming that the v3 adoption example already works.
 
 ## Constitution Check (Post-Design Re-evaluation)
 

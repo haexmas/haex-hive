@@ -2,8 +2,8 @@
 
 **Created**: 2026-08-31
 **Status**: Draft — not yet a spec
-**Depends on**: Spec 007's atom/manifest v2 machinery (`contributes.constitution`,
-`haex constitution assemble`, root/atom `manifest.json`), and the D6 pointer-block
+**Depends on**: Spec 007's Molecule Manifest v3 machinery (`atoms.constitution`,
+`haex constitution assemble`, root/molecule `manifest.json`), and the D6 pointer-block
 mechanism from [2026-08-28-spec-007-unified-manifest-design.md](2026-08-28-spec-007-unified-manifest-design.md).
 
 ## Overview
@@ -19,33 +19,26 @@ candidate, and prefer extending it over duplicating it.**
 This is explicitly **not** added to haex-hive's own core constitution
 (`.specify/memory/constitution.md`). Per Principle V, external constraints are
 opt-in per project — haex-hive's core stays minimal. Instead this ships as its
-own atom that any consumer, including haex-hive itself, can adopt by adding it
-to `.haex-hive.json`'s `atoms[]`.
+own molecule that any consumer, including haex-hive itself, can adopt by adding
+it to `.haex-hive.json`'s `compounds[].molecules[]`.
 
 ## Naming: atom vs. molecule
 
-**Atom** stays exactly what Spec 007 already defined — the schema-level
-packaging unit (a directory with a `manifest.json` declaring what it
-`contributes`). Nothing about this design changes that term or its schema.
+**Molecule** is the Spec 007 v3 schema-level packaging unit: a directory with a
+`manifest.json` whose `atoms` map lists the individual delivered artifacts by
+category. A consumer adopts a molecule through a `compounds[].molecules[]`
+reference pinned to a full source revision.
 
-**Molecule** is a new, prose-only word for how we *talk about* a bundle: a
-named grouping of one or more atoms meant to be adopted together as one
-cohesive feature. It introduces no schema (`molecule.json` does not exist),
-adds no root-manifest field, and changes nothing structurally. It exists so
-operator-facing docs can say "adopt the graphify-first-authoring molecule"
-instead of the colder "adopt the graphify-first-authoring atom."
-
-`graphify-first-authoring` is a molecule containing exactly one atom today. If
-the install tooling is later split out as its own contribution type, the
-molecule grows to two atoms without renaming anything — the pairing is
-forward-compatible by construction (atoms bond into molecules; a molecule of
-one is not a special case).
+**Atom** is an individual delivered artifact inside a molecule, such as the
+constitution text, a workflow file, or one hook script. The `atoms` map on a
+molecule manifest lists these artifacts by category; it is not a list of
+molecule IDs or a second packaging layer.
 
 ## Layout
 
 ```
 .specify/molecules/graphify-first-authoring/
-  manifest.json          # contributes.constitution: "constitution.md"
+  manifest.json          # atoms.constitution: ["constitution.md"]
   constitution.md        # the principle text (below)
   hooks/
     post-commit          # thin entrypoint → _refresh.py
@@ -69,8 +62,8 @@ molecule entry, with no `blueprint.` or `molecule.` segment in the id:
 }
 ```
 
-Because haex-hive now has two atoms contributing `constitution`, adopting this
-molecule on haex-hive itself exercises Spec 007 US3's multi-source LLM-merge
+Because haex-hive now has two molecules contributing `constitution`, adopting
+this molecule on haex-hive itself exercises Spec 007 US3's multi-source LLM-merge
 path in `haex constitution assemble` — not the single-source straight-copy
 path.
 
@@ -211,11 +204,11 @@ on PATH) with its own built-in multi-platform installer:
 `graphify install [--platform P]` places its skill/config content into any of
 ~18 supported agent harnesses. haex-hive does not need to reimplement that.
 
-What haex-hive's atom manifest schema does **not** have today is any way to
-declare "this atom requires tool X on PATH" or "this atom requires atom Y
-also installed" — confirmed by grep across the Spec 007 contracts; no
-`requires`/`dependencies` field exists anywhere in `atom-manifest.v2.schema.json`.
-Rather than growing the schema for one atom's need, this is solved ad-hoc in
+What haex-hive's molecule manifest schema does **not** have today is any way to
+declare "this molecule requires tool X on PATH" or "this molecule requires
+molecule Y also installed" — confirmed by grep across the Spec 007 contracts;
+no `requires`/`dependencies` field exists in `molecule-manifest.v3.schema.json`.
+Rather than growing the schema for one molecule's need, this is solved ad-hoc in
 `install.py`:
 
 ```python
@@ -262,8 +255,8 @@ clone's unversioned local git config. The marker, rather than
 `graphify-out/`, is the registration state; graph bootstrap, refresh, and
 worktree snapshots can create the cache independently.
 
-This gap — no formal dependency declaration between atoms, or from an atom to
-an external tool — is named here the same way Spec 007's design doc already
+This gap — no formal dependency declaration between molecules, or from a
+molecule to an external tool — is named here the same way Spec 007's design doc already
 named multi-agent adapters and blueprint hydration as real-but-deferred: a
 natural candidate for a future spec's manifest schema (`requires: { tools:
 [...], atoms: [...] }`), once more than one atom needs it. Not solved now.
@@ -300,17 +293,18 @@ python .specify/molecules/graphify-first-authoring/install.py
 Must be run on a tracked branch — `install.py` refuses otherwise, naming the
 current branch and the tracked branch(es) it expected.
 
-For a *different* repo referencing this atom cross-repo (via
+For a *different* repo referencing this molecule cross-repo (via
 `repository + SHA + path`, not locally present) rather than self-hosting it:
-`haex constitution assemble` today only materializes the `contributes.constitution`
-file, not the rest of an atom's directory (hooks, `install.py`, `README.md`).
+`haex constitution assemble` today only materializes the molecule's
+`atoms.constitution` file, not the rest of its directory (hooks, `install.py`,
+`README.md`).
 Full blueprint hydration for cross-repo consumers is Spec 007's already-named
 deferral to Spec 010's `haex install`. Not solved now — out of scope for this
 design.
 
 ## Deferred / open questions
 
-- Formal `requires` field on atom manifests (tools + atoms) — candidate for
+- Formal `requires` field on molecule manifests (tools + molecules) — candidate for
   a future spec.
 - Hook-collision policy beyond "refuse and instruct" — revisit if it becomes
   a real friction point.
@@ -318,6 +312,6 @@ design.
   `indexed_at_sha` after `graphify update` has successfully produced
   `graphify-out/graph.json`. T009 invokes that real refresh path and verifies
   the marker; graphify remains the owner of the graph outputs themselves.
-- `haex blueprint install <atom-id>` or equivalent CLI surface for
+- `haex blueprint install <molecule-id>` or equivalent CLI surface for
   cross-repo hydration — deferred to Spec 010, same as the base constitution
-  atom's own cross-repo consumption story.
+  molecule's own cross-repo consumption story.

@@ -3,7 +3,12 @@
 **Spec**: [Spec 011 simplified](../spec.md)
 **Referenced by**: FR-005, [atom-manifest.v2.speckit-workflow.md](./atom-manifest.v2.speckit-workflow.md)
 
-The YAML shape of the workflow molecule's `atoms.extensions` file MUST conform to. The fragment is one input to the extension-merge pipeline; the other input is the consumer-owned [extensions-local.v1.md](./extensions-local.v1.md) file.
+The YAML shape of the workflow molecule's single `atoms.extensions` file MUST
+conform to this contract. `atoms.extensions` is a cardinality-one category
+when present; `atoms.workflow` has the same exact-one rule, while
+`atoms.constitution` and `atoms.hooks` may contain multiple files. The fragment
+is one input to the extension-merge pipeline; the other input is the
+consumer-owned [extensions-local.v1.md](./extensions-local.v1.md) file.
 
 ## Fragment shape
 
@@ -39,7 +44,7 @@ hooks:
 ## Field rules
 
 - `required_extensions[]` and `optional_extensions[]`: list of extension declarations. `id` matches `^[A-Za-z0-9][A-Za-z0-9._-]*$`. `version_constraint` parses per Spec 007's `VersionConstraint` grammar. `homepage` optional.
-- `hooks.<stage>[]`: at most one entry per `(stage, extension, command, script)` identity within a single fragment (duplicate refuses with `key=workflow-hook-mapping-invalid`). `stage` is one of the enumerated stage names. `script` MUST resolve to a file under one of the molecule's `atoms.hooks` paths.
+- `hooks.<stage>[]`: at most one entry per `(stage, extension, command, normalized script_path)` identity within a single fragment (duplicate refuses with `key=workflow-hook-mapping-invalid`). `stage` is one of the enumerated stage names. `script` is source-relative to the molecule root and MUST resolve to one of the regular files delivered by `atoms.hooks`; before merging, it is normalized to the published `script_path` `.specify/extensions/workflow-molecules/<molecule-id>/<script>`.
 - Same `id` declared twice within `required_extensions[]` or twice within `optional_extensions[]` refuses with `key=workflow-molecule-extension-id-collision`.
 - If the same `id` appears once in `required_extensions[]` and once in `optional_extensions[]`, it is not a collision: the required declaration wins. The merge emits exactly one entry in the generated `required_extensions[]` list, never a duplicate optional entry. When the constraints and metadata are compatible, `sources[]` records both declarations with their original `kind` values (`required` and `optional`); if the optional constraint conflicts, the required declaration remains and the optional declaration is dropped with the optional-conflict warning.
 - Unparseable `version_constraint` in any declaration (required or optional) refuses with `key=invalid-constraint`.
