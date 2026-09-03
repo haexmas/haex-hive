@@ -34,7 +34,7 @@
 - [x] "Atom" (packaging unit) explicitly retired in favour of "Molecule"
 - [x] `contributes.<kind>: <path>` explicitly retired in favour of `kind` + `delivers`
 - [x] "Molecule" (bundle sense from Spec 010 preview) explicitly retired in favour of "Assembly"
-- [x] `atom-manifest.v2.schema.json` explicitly retired; `molecule-manifest.v3.schema.json` replaces it
+- [ ] `atom-manifest.v2.schema.json` explicitly retired; `molecule-manifest.v3.schema.json` replaces it (pending the replacement schema and loader update)
 - [x] `.haex-hive.json.atoms[]` explicitly renamed to `.molecules[]`
 - [x] Six new diagnostic keys enumerated in FR-001..FR-004
 - [x] Migration of haex-hive-self molecules explicitly required by FR-008
@@ -46,6 +46,6 @@
 
 ## Notes
 
-- The simplified spec has 10 FRs, 4 user stories (US1 MVP + US2/US3/US4 P2/P3), 6 SCs, 6 new diagnostic keys, 5 initial kinds in the enum. Roughly the same shape as prior versions but with a materially different mechanism.
+- The simplified spec has 10 FRs, 4 user stories (US1 MVP + US2/US3/US4 P2/P3), 6 SCs, 6 new diagnostic keys, and 2 initially admitted kinds. Roughly the same shape as prior versions but with a materially different mechanism.
 - The rename sweep is large; the actual sweep lands in the plan/tasks phase (this spec only defines that the sweep MUST happen and enumerates the touch surface).
 - Items marked incomplete require spec updates before `/speckit-plan`.

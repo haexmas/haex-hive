@@ -12,7 +12,7 @@
 These two changes ship together because `haex add` writes the new schema shape directly, and shipping the CLI on top of the old `includes[]` name would freeze bad vocabulary at the exact moment we get a chance to fix it.
 
 **Related**:
-- [Spec 007: Unified Manifest v2](2026-08-28-spec-007-unified-manifest-design.md): defines the v2 shape being renamed. Bumping to `haex_hive_version: "3"` is Spec 013's change; Spec 007 defines what "v2" was.
+- [Spec 007: Unified Manifest v3](../../specs/007-unified-manifest-v2/spec.md): defines the v3 molecule model. Spec 013 defines the consumer/profile-field migration from the merged v2 shape into that model.
 - [Spec 008: Install Transaction](../../specs/008-install-transaction/): landed. `haex add` and `haex remove` delegate publication to the existing install transaction; they add no new file-publication logic.
 - [Spec 010: Compiler & Agent Adapters](2026-08-31-spec-010-compiler-preview.md): uses "molecule" prose to describe the personal harness bundle. Spec 013 promotes that prose term to a schema field name.
 - [Spec 011 simplification amendment (2026-09-02)](../../specs/011-simplify-workflow-atom/): retires `workflow-registry.json` and `active_workflow`. Spec 013 inherits this: no `haex workflow activate`, no `--activate` flag, no interactive activation prompt.
@@ -104,12 +104,23 @@ Atom-manifest rename (v2 → v3):
 
 `add` and `remove` invoke a shared `write_and_reinstall(consumer_manifest, install_args)` helper that:
 
-1. Locks `.haex-hive.json` (advisory `flock`; refuses on contention).
+1. Acquires the same manifest lock used by `haex install` (advisory `flock` on
+   `.haex-hive.json`; refuses on contention). Lock acquisition order is
+   manifest lock first, then the device-local install mutex.
 2. Writes the modified manifest to a `.haex-hive.json.tmp` sibling and renames into place (rename-safe under the same rules Spec 008 already uses for other files).
-3. Calls `haex_hive.cli.install.run(...)` in-process.
-4. Releases the lock.
+3. Calls `haex_hive.cli.install.run(...)` in-process while retaining the
+   manifest lock. `install.run` accepts the held-lock context and must not
+   acquire the manifest lock again; standalone `haex install` acquires it
+   before reading `.haex-hive.json`.
+4. Releases the install mutex and then the manifest lock.
 
-If step 3 raises, the manifest change is rolled back by writing the pre-edit copy back atomically. Steps 1-2 alone are not a persistent change from the operator's perspective; either everything succeeded or nothing was left touched.
+If step 3 raises, the manifest change is rolled back by writing the pre-edit
+copy back atomically while the manifest lock remains held. The rollback also
+uses the same lock context, and a rollback failure reports the recovery path
+without releasing the lock early. Steps 1-2 alone are not a persistent change
+from the operator's perspective; either everything succeeded or nothing was
+left touched. This prevents a standalone install from reading a manifest
+between the add/remove write and its rollback.
 
 ### Fetch of publisher-manifest during `haex add`
 
@@ -119,13 +130,39 @@ For the initial implementation, the simpler-but-slower option is a full shallow 
 
 ### `haex migrate` v2→v3
 
-Existing v1→v2 migration in `src/haex_hive/cli/migrate.py` is extended with a second transform. Rules:
+Existing v1→v2 migration in `src/haex_hive/cli/migrate.py` is extended with a
+second transform. The transform covers every affected manifest and is applied
+as one review-gated migration:
 
-- `.haex-hive.json`: rename outer `atoms` → `molecules`, inner `includes` → `atoms`, bump `haex_hive_version` from `"2"` to `"3"`. Keep `haex_hive_min_version` in place; if it was `>=2.0.0`, bump to `>=3.0.0` (the operator adopted v3 by running the migration, so their floor rises).
-- Atom manifests: rename `includes` → `atoms` at top level. Bump `haex_hive_version` from `"2"` to `"3"`.
-- Publisher manifest (`manifest.json`): no field renames (the atoms map inside a publisher-manifest is already keyed by atom-id, not `includes`). Bump `haex_hive_version` from `"2"` to `"3"`.
+- **Consumer manifest (`.haex-hive.json`)**: rename the outer `atoms` list to
+  `molecules`, rename each entry's `includes` list to `atoms`, and bump
+  `haex_hive_version` from `"2"` to `"3"`.
+- **Profile molecule manifests**: rename the top-level `includes` list to
+  `atoms` and bump `haex_hive_version` from `"2"` to `"3"`. Existing
+  `contributes.*` fields and their values are preserved; they are not an
+  atom-id list and therefore are not part of this field rename.
+- **Publisher root manifest (`manifest.json`)**: bump
+  `haex_hive_version` from `"2"` to `"3"`; preserve the publisher-root
+  `atoms` map, its atom ids, paths, versions, and optional descriptions.
+- **Priority default**: whenever an affected v2 molecule manifest omits
+  `priority`, add `priority: 100`. Preserve every existing integer priority
+  unchanged.
+- **Minimum-version constraint**: preserve `haex_hive_min_version`'s operator
+  and meaning without leaving a v2 floor in a v3 consumer. An exact
+  `2.x.y` constraint becomes the corresponding exact v3 contract
+  `3.x.y` (the v2 major is replaced while minor and patch are preserved); a
+  lower bound `>=2.x.y` becomes `>=3.0.0`. Exact constraints stay exact and
+  lower bounds stay lower bounds during serialization. Any other major is
+  refused as unsupported for this transform.
 
-Migration is idempotent: running it on a v3 file is a no-op. Running it on a v1 file first applies v1→v2, then v2→v3.
+The migration MUST follow Spec 007 D10: invalidate a stale sidecar in write
+mode, write only to `.haex-hive.json.migrated` after all transforms and
+validation succeed, print a unified diff against the original, and require the
+operator to review and manually adopt the sidecar. `--dry-run` and `--check`
+must not mutate the original, sidecar, or temporary files. Until that reviewed
+sidecar is adopted, v3 readers continue to refuse v2 manifests. The transform
+is idempotent: running it on an adopted v3 file is a no-op; running it on a v1
+file first applies v1→v2, then v2→v3.
 
 ### Publisher-manifest bump
 
