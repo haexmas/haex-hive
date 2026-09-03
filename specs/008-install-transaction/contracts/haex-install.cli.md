@@ -94,8 +94,13 @@ With `--json`, stdout contains one LF-terminated UTF-8 object with schema
 
 `status` is `installed`, `no_changes`, or `refused`; `generation` is null on
 refusal. `degradations` is always present and sorted by
-`(target, kind, id, event)`. `error` is null on success and otherwise contains
-only `{ "key": <diagnostic-key>, "message": <safe-message> }`; it never
+`(target, kind, id, event)`. Every degradation item MUST be an object with
+exactly these required properties, all non-empty UTF-8 strings:
+`target`, `kind`, `id`, `event`, `fallback`, and `reason`. `fallback` names the
+weaker mechanism installed, while `reason` explains the unsupported
+capability. No additional properties are permitted, and neither field may
+contain a secret value. `error` is null on success and otherwise contains only
+`{ "key": <diagnostic-key>, "message": <safe-message> }`; its message never
 contains a secret value. The JSON schema is versioned by the `schema` field,
 and the exit code is duplicated in `exit_code` so an orchestrator can use
 either the process result or the captured object.
