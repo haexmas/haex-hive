@@ -52,112 +52,81 @@ then adoptable as an ordinary single-source molecule at a pinned SHA.
 
 ## Decision
 
-Remove the multi-source LLM merge. Multi-source constitution assembly becomes
-deterministic concatenation of the contributing sources in canonical order:
-ascending bytewise UTF-8 order of the resolved atom ID, which is also the
-required order of `install.lock.constitution.sources[]`. Each section is
-preceded by a provenance header naming the contributing atom (molecule) ID,
-its canonical source URL and its pinned revision.
+Remove the multi-source LLM merge, and align with the operator's one-workflow /
+one-constitution rule that this document was written under.
 
-### Multi-source serialization
+**A repository adopts exactly one prose atom with `binding: non-negotiable`.**
+That atom is the constitution. `.haex-hive/constitution.md` is a byte-for-byte
+copy of its source file, byte-identical on every satellite that resolves the
+same pinned SHA. No merge, no concatenation, no reconciliation.
 
-The assembled body is a UTF-8 byte sequence. Contributions that are not valid
-UTF-8 are validation refusals; otherwise their raw bytes are not normalized
-apart from the trailing-newline rule below.
+`haex install` refuses when the resolved atom graph carries two or more prose
+atoms with `binding: non-negotiable`. The refusal is
+`key=multiple-non-negotiable-prose-refused`, analogous to Spec 011's
+`multiple-workflow-molecules-refused`, and names the conflicting atoms and
+their sources. The exit code is the existing `INPUT_REFUSE` (2). An operator
+who wants a reconciled document produces it themselves and adopts the result
+as a single-source molecule.
 
-The provenance format is the one [Spec 011 FR-004](../../specs/011-speckit-workflow-atom/spec.md)
-already landed, extended by a source line. Reusing it avoids two mutually
-exclusive serializations of `.haex-hive/constitution.md` and keeps the
-assembled document readable by the agents that consume it.
+Any number of prose atoms with `binding: recommended` remain permitted; they
+compile into per-tool prose files (`CLAUDE.md` / `AGENTS.md` / ...), not into
+the constitution. Spec 011's `## Workflow-Contributed Rules` fragment becomes
+recommended prose under Decision 6 and stops touching the constitution.
 
-Sort contributions by `atom_id.encode("utf-8")` ascending, which is also the
-required order of `install.lock.constitution.sources[]`. Serialize each
-contribution as:
-
-```text
-### From molecule `<atom-id>` (revision `<short-sha>`)
-
-Source: <canonical source URL>
-
-<body, normalized to end with exactly one LF>
-```
-
-`<short-sha>` is the first 8 characters of the full 40-hex revision, matching
-Spec 011; the full SHA remains recorded in `install.lock`. All line endings are
-LF. Sections are joined with a single LF, which yields exactly one blank line
-between sections and no trailing blank line. The resulting complete body is the
-input to the existing D15 `haex-hive-tree-v1` `content_integrity` rule.
-
-Golden-byte acceptance case: for the sorted inputs `com.example.base` /
-`https://example.com/harness` / 40 `1` digits / body `# Base` with a trailing
-LF, and `com.example.overlay` / `https://example.com/team` / 40 `2` digits /
-body `# Overlay` without a trailing LF, the exact output is:
-
-```text
-### From molecule `com.example.base` (revision `11111111`)
-
-Source: https://example.com/harness
-
-# Base
-
-### From molecule `com.example.overlay` (revision `22222222`)
-
-Source: https://example.com/team
-
-# Overlay
-```
-
-It is 212 bytes. Two distinct digests are involved, and an acceptance test must
-not conflate them:
-
-| Value | Digest |
-|---|---|
-| plain SHA-256 of the 212 body bytes | `sha256-Jw5VgMfnllS6/77XbZ6HNkkA0oOJ3XC3sLiVi91qxWU=` |
-| `install.lock.constitution.content_integrity`, the D15 `haex-hive-tree-v1` one-file tree over those bytes | `sha256-ws+jBDJMzekPSYA4SsIYE5iDByEjWlCBGQc7eB6NlNE=` |
-
-The acceptance test MUST compare the exact bytes and the D15 value. The plain
-digest is listed only so that the two are not mistaken for each other; an
-earlier draft of this ADR published the plain digest under the D15 label, which
-would have made any test written against it assert the wrong
-`content_integrity`.
-
-**Machine-parseable framing is deliberately not specified.** An earlier draft
-defined percent-encoded, length-framed HTML-comment blocks. Nothing in the
-current design reads that framing back, so it was complexity for a parser that
-does not exist, and it contradicted the landed Spec 011 byline. If a
-round-trippable format is ever required, a versioned framing marker is the
-extension point, specified together with its first consumer.
-
-Specifically:
+Concretely:
 
 - Remove `--llm` and `--accept-merged` from `haex install`.
 - Remove `constitution/llm.py` and `constitution/pending.py`; remove the
   multi-source merge branches from `constitution/assemble.py`.
 - Remove the error keys `llm-required-for-multi-source`, `merge-not-confirmed`
   and `pending-merge-inputs-mismatch`.
+- Add the refusal key `multiple-non-negotiable-prose-refused` alongside
+  Spec 011's `multiple-workflow-molecules-refused`.
 - Narrow exit code 4 to validation refusals and exit code 5 to system refusals;
   both keep their other meanings and neither is renumbered. Code 7 remains
   exclusively the incomplete-transaction result; it is not a second system
   refusal. The complete retained mapping and precedence are defined in the
   [Spec 008 install CLI contract](../../specs/008-install-transaction/contracts/haex-install.cli.md).
 - Remove the pending-merge sidecar state and its recovery path.
-- Operators wanting a reconciled rather than concatenated document produce it
-  out of band and adopt the result as a single-source molecule.
+
+### Byte identity: git, not a separate hash
+
+Earlier drafts of this ADR specified a byte-level serialization format for the
+concatenated constitution and stated the resulting `install.lock.constitution.content_integrity`
+digest for a golden acceptance vector. Both are obsolete under the current
+model:
+
+- With one non-negotiable prose atom per repository the constitution is a copy,
+  not an assembly. There is no serialization to specify and no golden vector
+  to hash.
+- The [2026-09-01 trust-git amendment](../../specs/008-install-transaction/research.md)
+  retired `content_integrity` on every participating root, including
+  `.haex-hive/constitution.md`. Git's own tree object already covers byte
+  identity for committed content; a separate SHA-256 field would be strictly
+  weaker and duplicates work git already does. The
+  [install-lock schema](../../src/haex_hive/schema/data/install-lock.v2.schema.json)
+  and [visibility-marker schema](../../src/haex_hive/schema/data/visibility-marker.v1.schema.json)
+  already reflect that removal.
+
+The remaining `d15_one_file_tree_digest` implementation in
+[src/haex_hive/io/file_hash.py](../../src/haex_hive/io/file_hash.py) is dead
+code under the current schema and should be removed as part of the code work
+implementing Decision 9.
+
 
 Concatenation keeps Principle VI intact: nothing is rewritten in place, the
 output is a generated artifact recorded in `install.lock` with its content
 hash, and the operator reviews it as a normal diff.
 
-The direct-concatenation implementation MUST retain the FR-038 safety
-boundary: validate every source for plaintext secrets before concatenation,
-validate the complete generated lock payload before staging, and validate the
-final publication body for Principle-VIII concealment instructions before
-staging. These checks happen before `_publish_constitution` starts its journal
-or replaces a target. A refusal uses exit 10 for plaintext secrets or exit 8
-for concealment instructions, leaves the journal and output files unchanged,
-and never echoes the matched value. The code removal and implementation of
-this path are follow-up work; this ADR changes no executable behaviour by
-itself.
+The single-source publication path MUST retain the FR-038 safety boundary:
+validate the resolved source for plaintext secrets before copying, validate the
+complete generated lock payload before staging, and validate the publication
+body for Principle-VIII concealment instructions before staging. These checks
+happen before `_publish_constitution` starts its journal or replaces a target.
+A refusal uses exit 10 for plaintext secrets or exit 8 for concealment
+instructions, leaves the journal and output files unchanged, and never echoes
+the matched value. The code removal and implementation of this path are
+follow-up work; this ADR changes no executable behaviour by itself.
 
 ## Consequences
 
@@ -202,17 +171,20 @@ itself.
 
 - Revise [Spec 007's feature requirements and acceptance scenarios](../../specs/007-unified-manifest-v2/spec.md)
   and the authoritative [Spec 008 install CLI contract](../../specs/008-install-transaction/contracts/haex-install.cli.md)
-  to state concatenation-with-provenance, drop the merge requirements, and
-  preserve the FR-038 checks and exit-code precedence.
+  to state the one-non-negotiable-prose rule, add the
+  `multiple-non-negotiable-prose-refused` diagnostic key, drop the merge
+  requirements, and preserve the FR-038 checks and exit-code precedence.
 - The README and [Spec 008 quickstart](../../specs/008-install-transaction/quickstart.md)
   are aligned with the deterministic install path in this change.
 - [Spec 011](../../specs/011-speckit-workflow-atom/spec.md) still mandates the
   retired flags: FR-004 requires the review-gated `haex install --llm=file` /
   `--accept-merged` flow, and its User Story 1 independent test invokes them.
-  Both must be rewritten against the deterministic path. FR-004's
-  `## Workflow-Contributed Rules` section and `### From molecule` byline are
-  retained and are the source of the provenance format above.
+  Both need rewriting. Under this decision Spec 011's constitution fragment
+  becomes recommended prose that lands in `CLAUDE.md` / `AGENTS.md`, not in
+  the constitution; the `## Workflow-Contributed Rules` section moves with it.
 - [Spec 012's adoption flow](../plans/2026-09-02-spec-012-speckit-session-hopper-atom-design.md)
   is aligned with the deterministic install path in this change; any remaining
   consumer instructions must not use the retired `--llm` or `--accept-merged`
   flags.
+- Remove the dead `d15_one_file_tree_digest` implementation and its tests as
+  part of implementing this decision.
