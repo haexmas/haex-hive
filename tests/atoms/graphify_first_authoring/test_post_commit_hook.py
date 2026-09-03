@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_ATOM_HOOKS = _REPO_ROOT / ".specify" / "atoms" / "graphify-first-authoring" / "hooks"
+_MOLECULE_HOOKS = _REPO_ROOT / ".specify" / "molecules" / "graphify-first-authoring" / "hooks"
 
 
 def _git(repo: Path, *args: str, env: dict | None = None) -> str:
@@ -50,7 +50,7 @@ def _init_repo(repo: Path) -> None:
 
 def _install_hook(repo: Path, interpreter: str) -> None:
     hook_target = repo / ".git" / "hooks" / "post-commit"
-    hook_source = _ATOM_HOOKS / "post-commit"
+    hook_source = _MOLECULE_HOOKS / "post-commit"
     body = hook_source.read_text(encoding="utf-8")
     hook_target.write_text(f"#!{interpreter}\n{body}", encoding="utf-8")
     hook_target.chmod(hook_target.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
@@ -59,7 +59,7 @@ def _install_hook(repo: Path, interpreter: str) -> None:
     # the atom directory, but in tests we materialize them alongside the hook
     # to avoid depending on the atom being installed at a stable location.
     for name in ("_tracked_branches.py", "_refresh.py"):
-        shutil.copy2(_ATOM_HOOKS / name, repo / ".git" / "hooks" / name)
+        shutil.copy2(_MOLECULE_HOOKS / name, repo / ".git" / "hooks" / name)
 
 
 def _make_graphify_stub(bin_dir: Path, meta_target_repo: Path) -> Path:

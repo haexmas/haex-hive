@@ -44,7 +44,7 @@ one is not a special case).
 ## Layout
 
 ```
-.specify/atoms/graphify-first-authoring/
+.specify/molecules/graphify-first-authoring/
   manifest.json          # contributes.constitution: "constitution.md"
   constitution.md        # the principle text (below)
   hooks/
@@ -63,7 +63,7 @@ Root `manifest.json` gains one flat new atom entry, no `blueprint.` or
 "atoms": {
   "com.github.haexmas.haex-hive.constitution": { "path": ".specify/memory", "version": "1.3.0" },
   "com.github.haexmas.haex-hive.graphify-first-authoring": {
-    "path": ".specify/atoms/graphify-first-authoring",
+    "path": ".specify/molecules/graphify-first-authoring",
     "version": "0.1.0"
   }
 }
@@ -288,13 +288,13 @@ Manual, no new CLI surface:
 
 ```console
 # Linux / WSL2
-python3 .specify/atoms/graphify-first-authoring/install.py
+python3 .specify/molecules/graphify-first-authoring/install.py
 
 # macOS (use python if that is the command provided by your installation)
-python3 .specify/atoms/graphify-first-authoring/install.py
+python3 .specify/molecules/graphify-first-authoring/install.py
 
 # Windows
-python .specify/atoms/graphify-first-authoring/install.py
+python .specify/molecules/graphify-first-authoring/install.py
 ```
 
 Must be run on a tracked branch — `install.py` refuses otherwise, naming the

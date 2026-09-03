@@ -96,7 +96,7 @@ On `haex install`:
 2. `contributes.speckit_workflow` payload publishes to `.specify/workflows/<atom-workflow-id>/workflow.yml`. The atom's `id` becomes the workflow directory name; multiple workflow atoms may coexist under `.specify/workflows/`. One is designated active through the canonical `active_workflow` field in `.specify/workflows/workflow-registry.json`.
 3. `contributes.constitution` fragment participates in the existing multi-source constitution merge; the constitution's declared speckit workflow bullet (v1.4.0) now applies to the adopted workflow's declared steps.
 4. `contributes.speckit_extensions` is parsed using the `extensions.yml` contract below. Its requirements merge into the canonical `required_extensions` and `optional_extensions` lists, while its hook declarations merge into the canonical `hooks.<stage>` lists. Required declarations determine the effective requirement when an ID is also optional; a valid conflicting optional declaration is omitted with a stderr warning, while unsupported syntax refuses the install. Atom hooks run before local hooks; a local declaration for the same hook identity (`stage`, `extension`, `command`, and `script`) replaces the atom declaration. Atom entries are ordered by atom ID using bytewise UTF-8 ordering, then by hook identity; local entries follow in their canonical local order.
-5. `contributes.speckit_hooks/*` scripts land under the reserved atom-owned namespace `.specify/extensions/workflow-atoms/<atom-id>/` for reuse by the canonical `hooks` declarations. Community extensions remain direct child directories of `.specify/extensions/`; the installer refuses namespace or destination collisions before publication. Every atom-contributed hook has a required repository-relative `script` destination (for example, `.specify/extensions/workflow-atoms/com.example.publisher.strict-tdd-workflow/hooks/v_model/prepare.py`) that resolves exactly to one copied regular source file beneath the declared `speckit_hooks` root in the matching atom-owned directory. Missing, non-regular, duplicate, unrelated, or escaping source/destination mappings refuse before publication with `key=workflow-hook-mapping-invalid`; no unrelated repository file may satisfy a hook mapping. The copied files and the declarations that reference them are included in the same transaction.
+5. `contributes.speckit_hooks/*` scripts land under the reserved atom-owned namespace `.specify/extensions/workflow-molecules/<atom-id>/` for reuse by the canonical `hooks` declarations. Community extensions remain direct child directories of `.specify/extensions/`; the installer refuses namespace or destination collisions before publication. Every atom-contributed hook has a required repository-relative `script` destination (for example, `.specify/extensions/workflow-molecules/com.example.publisher.strict-tdd-workflow/hooks/v_model/prepare.py`) that resolves exactly to one copied regular source file beneath the declared `speckit_hooks` root in the matching atom-owned directory. Missing, non-regular, duplicate, unrelated, or escaping source/destination mappings refuse before publication with `key=workflow-hook-mapping-invalid`; no unrelated repository file may satisfy a hook mapping. The copied files and the declarations that reference them are included in the same transaction.
 6. All outputs from steps 2–5 and the assembled `.haex-hive/constitution.md` are prepared and validated by one repository-wide install transaction. No output is published until every output is valid and any required constitution review has been accepted. A failed review or later validation discards the staged candidate; if publication has already begun, existing in-flight recovery restores the previous marker-consistent generation and all output roots before the install reports failure. The existing `.haex-hive/` generation and rename-swap behavior remains unchanged.
 
 ### Active-workflow selection
@@ -115,7 +115,7 @@ On `haex install`:
     "com.example.publisher.strict-tdd-workflow": {
       "required_extensions": ["v-model-extension-pack"],
       "optional_extensions": ["speckit-companion"],
-      "hooks": ["before_implement|v-model-extension-pack|v_model.prepare|.specify/extensions/workflow-atoms/com.example.publisher.strict-tdd-workflow/hooks/v_model/prepare.py"]
+      "hooks": ["before_implement|v-model-extension-pack|v_model.prepare|.specify/extensions/workflow-molecules/com.example.publisher.strict-tdd-workflow/hooks/v_model/prepare.py"]
     }
   }
 }
@@ -148,7 +148,7 @@ hooks:
   before_implement:
     - extension: v-model-extension-pack
       command: v_model.prepare
-      script: ".specify/extensions/workflow-atoms/com.example.publisher.strict-tdd-workflow/hooks/v_model/prepare.py"
+      script: ".specify/extensions/workflow-molecules/com.example.publisher.strict-tdd-workflow/hooks/v_model/prepare.py"
       enabled: true
       optional: false
       prompt: Run the V-Model preparation hook?
@@ -227,7 +227,7 @@ declaration refuses with `key=invalid-constraint` rather than being dropped.
 - **SC-011.1**: Adopting a workflow atom via `.haex-hive.json` publishes `.specify/workflows/<atom-id>/workflow.yml` byte-for-byte matching the atom's contribution.
 - **SC-011.2**: The atom's `constitution.md` fragment appears in the assembled `.haex-hive/constitution.md` after `haex install --accept-merged`.
 - **SC-011.3**: Setting `active_workflow` in `workflow-registry.json` to an adopted-atom workflow ID makes the constitution's declared-speckit-workflow bullet resolve to that workflow's steps (verifiable by an agent-behavioural walkthrough test).
-- **SC-011.4**: Removing a workflow atom from `.haex-hive.json` and re-installing removes the corresponding `.specify/workflows/<atom-id>/` and `.specify/extensions/workflow-atoms/<atom-id>/` directories, its `workflows[<atom-id>]` registry entry, and that atom's requirements and hooks from `.specify/extensions.yml` in the same transaction, while preserving unrelated atom and local entries. If that atom was active, the transaction resets `active_workflow` to `null`; no registry may retain an ID whose `workflow.yml` was deleted.
+- **SC-011.4**: Removing a workflow atom from `.haex-hive.json` and re-installing removes the corresponding `.specify/workflows/<atom-id>/` and `.specify/extensions/workflow-molecules/<atom-id>/` directories, its `workflows[<atom-id>]` registry entry, and that atom's requirements and hooks from `.specify/extensions.yml` in the same transaction, while preserving unrelated atom and local entries. If that atom was active, the transaction resets `active_workflow` to `null`; no registry may retain an ID whose `workflow.yml` was deleted.
 - **SC-011.5**: A workflow atom declaring a required extension causes `haex install` to refuse with `required-workflow-extension-missing` when the extension is absent and with `required-workflow-extension-incompatible` when the installed version fails its declared `version_constraint`. The conformance suite includes both cases.
 
 ## Required conformance scenarios
