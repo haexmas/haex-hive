@@ -156,10 +156,11 @@ coordinator MUST hold the exclusive install lock and follow this protocol:
 
 1. Materialise complete candidate views in same-filesystem siblings
    `.haex-hive.next/` and `.specify.next/`. The `.haex-hive.next/` view contains
-   the candidate `install.lock` and `visibility.json`; the `.specify.next/`
+   the candidate `install.lock`; the `.specify.next/`
    view contains only the generated and molecule-owned managed paths, plus a
-   `.haex-hive-generation.json` record with `{ "generation_id": "...", "root": ".specify/", "participating_roots": [".haex-hive/", ".specify/"] }`.
-   The record's fields and root list are schema-validated. The consumer-owned
+   `.haex-hive-generation.json` record with `{ "generation_id": "...", "root": ".specify/" }`.
+   The record's fields are schema-validated, while the effective participating
+   roots are derived from the molecule `paths[]` records in `install.lock`. The consumer-owned
    `.specify/extensions.local.yml` is excluded from the staged view and is
    never generated, edited, renamed, or deleted.
 2. Validate both views, including schemas, path ownership, generated output,
@@ -177,15 +178,16 @@ coordinator MUST hold the exclusive install lock and follow this protocol:
    managed files in deterministic order, excluding
    `.specify/extensions.local.yml` and all unrelated consumer files. Fsync each
    changed file and the `.specify/` directory. Commit `.haex-hive/` second
-   through `publish_generation`, with `visibility.json` naming both
-   participating roots (`[".haex-hive/", ".specify/"]`) and the candidate
-   generation ID. Publishing that marker is the sole repository-wide visibility
-   event; until it is published, a candidate root paired with the previous
-   marker is unavailable and must not be accepted by readers.
+   through `publish_generation`, with `install.lock` carrying the candidate
+   generation ID and molecule paths under both roots. Publishing that lock as
+   part of the rename-swap is the sole repository-wide visibility event; until
+   it is published, a candidate root paired with the previous lock is
+   unavailable and must not be accepted by readers.
 4. Pass the cross-root verification as `publish_generation`'s
    `post_write_verify` callback. The callback runs after the `.haex-hive/`
    swap but before that primitive removes `.haex-hive.prev/`; it verifies both
-   live-root generation records and the marker. If verification fails, it
+   live-root generation records and `.haex-hive/install.lock`'s
+   `generation_id`. If verification fails, it
    restores all changed `.specify/` managed paths from `.specify.prev/` and
    raises so `publish_generation` restores `.haex-hive/` while its previous root
    is still available. The local source is not part of this rollback because it
@@ -196,32 +198,34 @@ coordinator MUST hold the exclusive install lock and follow this protocol:
 
 Recovery runs under the same lock before a retry reads inputs. It first reads
 and validates each `.next/` sibling and its generation record, then classifies
-it against the live marker, the matching
+it against the live install lock, the matching
 `.prev/` record, and the other root's sibling. A sibling is deleted only when
 its well-formed generation is attributable as stale (for example, an
 unpublished candidate older than the live generation). A missing, malformed, or
 unattributable record causes recovery to refuse and preserve that sibling.
 After classification, recovery compares the generation records in both live
-roots and the marker. If only the `.specify/` managed paths were changed, or the
-marker and roots name different generations, it restores those paths from
+roots and the install lock. If only the `.specify/` managed paths were changed,
+or the lock and roots name different generations, it restores those paths from
 `.specify.prev/`. If `.haex-hive/` was also swapped, `publish_generation`
 restores it from `.haex-hive.prev/`; recovery fsyncs the parent directories. If
-both roots and the marker agree, recovery only removes attributable stale
+both roots and the lock agree, recovery only removes attributable stale
 `.prev/` siblings. A failed
 retry keeps the previous complete generation. Downgrade cleanup is therefore
 atomic at the repository visibility boundary: removed molecule-owned workflow
-directories and generated entries become absent together with the new marker,
+directories and generated entries become absent together with the new
+`.haex-hive/install.lock`,
 while unrelated consumer files and `.specify/extensions.local.yml` survive
 verbatim.
 
 Readers enforce the same visibility boundary. After loading
-`.haex-hive/visibility.json`, a reader MUST require its `generation_id` and
-`participating_roots` to match `.haex-hive/install.lock` and
-`.specify/.haex-hive-generation.json`; `visibility.json` is the `.haex-hive/`
-root's generation record. Any missing record or generation mismatch, including
-the interval after the `.specify/` swap and before the `.haex-hive/` marker
-swap, is unavailable; the reader rejects the view and retries after the install
-recovery path has run.
+`.haex-hive/install.lock`, a reader MUST require its `generation_id` and every
+path in its molecules to be present, and require the live
+`.specify/.haex-hive-generation.json` record and every active adapter pointer
+to name the same generation. The effective participating roots are the root
+prefixes of those molecule paths; there is no separate root list to compare.
+Any missing record or generation mismatch, including the interval after the
+`.specify/` swap and before the `.haex-hive/` lock swap, is unavailable; the
+reader rejects the view and retries after the install recovery path has run.
 
 The integration suite MUST inject process termination after staging, after the
 first `.specify/` managed-path replacement, after the `.haex-hive/` swap, after
@@ -231,7 +235,7 @@ path replacement; that case MUST assert restoration of the old generation in
 both roots, no mixed managed paths, byte-identical
 `.specify/extensions.local.yml`, and safe stale-sibling cleanup. The suite
 MUST exercise a reader during the interval between the managed-path
-replacements and the marker swap, and mutate `.specify/extensions.local.yml`
+replacements and the lock swap, and mutate `.specify/extensions.local.yml`
 between parsing and staging. Each retry MUST converge to either the old
 generation or the fully published candidate, never a mixed generation; tests
 also assert that removed atom paths are absent, unrelated files are unchanged,
@@ -289,14 +293,14 @@ START
 [review_gate --llm=file / --accept-merged]   (Principle VI, unchanged)
   │
   ▼
-[compose_install_lock + visibility.json + extensions.yml + workflow files]
+[compose_install_lock + extensions.yml + workflow files]
   │
   ▼
 [publish_install_generation]      (repository-wide coordinator: stage both
                                    roots, replace managed `.specify/` paths,
                                    then call the Spec 008 `.haex-hive/`
                                    rename-swap; verify the shared generation
-                                   ID before cleanup. The consumer-owned
+                                   ID from install.lock before cleanup. The consumer-owned
                                    `.specify/extensions.local.yml` remains
                                    outside the transaction.)
   │
