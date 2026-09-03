@@ -114,9 +114,10 @@ code under the current schema and should be removed as part of the code work
 implementing Decision 9.
 
 
-Concatenation keeps Principle VI intact: nothing is rewritten in place, the
-output is a generated artifact recorded in `install.lock` with its content
-hash, and the operator reviews it as a normal diff.
+Principle VI stays intact: `.haex-hive/constitution.md` is written from a
+single pinned source, its byte identity is provided by git per the trust-git
+amendment, and the operator reviews it as a normal diff. There is no in-place
+rewrite of versioned config.
 
 The single-source publication path MUST retain the FR-038 safety boundary:
 validate the resolved source for plaintext secrets before copying, validate the
@@ -139,13 +140,10 @@ follow-up work; this ADR changes no executable behaviour by itself.
 - **Positive**: roughly 350 lines of implementation plus an interactive stdio
   protocol and its tests leave the codebase, including the only component that
   depends on an external model.
-- **Negative**: genuinely conflicting constitutions are no longer reconciled by
-  the tool. Two molecules that both forbid and permit the same practice produce
-  a concatenated document containing both statements. The operator must notice
-  and resolve this. Mitigation is a lint that flags duplicate section headings
-  across sources; whether that lands is left to the Spec 007 revision.
-- **Negative**: the assembled document is longer and more repetitive than a
-  merged one, because shared boilerplate is repeated per source.
+- **Negative**: an operator wanting a reconciled document from two publishers
+  produces it themselves and adopts the result as a single non-negotiable prose
+  atom. `haex install` no longer performs that reconciliation, and refuses when
+  the resolved atom graph carries two or more non-negotiable prose atoms.
 - **Neutral**: this changes behaviour that has already landed. Per the project's
   pre-adopter status there is no compatibility shim; the removal is a clean
   break, and consumers on an older pin are unaffected until they bump it.
