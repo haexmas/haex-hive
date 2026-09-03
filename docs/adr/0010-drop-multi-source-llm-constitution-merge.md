@@ -59,65 +59,74 @@ required order of `install.lock.constitution.sources[]`. Each section is
 preceded by a provenance header naming the contributing atom (molecule) ID,
 its canonical source URL and its pinned revision.
 
-### Normative multi-source serialization
+### Multi-source serialization
 
 The assembled body is a UTF-8 byte sequence. Contributions that are not valid
-UTF-8 are validation refusals; otherwise their raw bytes are not normalized.
-Sort contributions by `source.id.encode("utf-8")`, then serialize each one in
-that order using this exact grammar (all line endings are LF, and the header is
-ASCII):
+UTF-8 are validation refusals; otherwise their raw bytes are not normalized
+apart from the trailing-newline rule below.
+
+The provenance format is the one [Spec 011 FR-004](../../specs/011-speckit-workflow-atom/spec.md)
+already landed, extended by a source line. Reusing it avoids two mutually
+exclusive serializations of `.haex-hive/constitution.md` and keeps the
+assembled document readable by the agents that consume it.
+
+Sort contributions by `atom_id.encode("utf-8")` ascending, which is also the
+required order of `install.lock.constitution.sources[]`. Serialize each
+contribution as:
 
 ```text
-<!-- haex-hive:constitution-source:v1
-id=<percent-encoded UTF-8 value>
-source=<percent-encoded UTF-8 value>
-revision=<percent-encoded UTF-8 value>
-length=<ASCII decimal body-byte length>
--->
-<exactly length body bytes>
-\n<!-- haex-hive:constitution-source-end:v1 -->\n
+### From molecule `<atom-id>` (revision `<short-sha>`)
+
+Source: <canonical source URL>
+
+<body, normalized to end with exactly one LF>
 ```
 
-In this grammar, each displayed `\n` denotes one LF byte; it is not the two
-literal characters backslash and `n`.
+`<short-sha>` is the first 8 characters of the full 40-hex revision, matching
+Spec 011; the full SHA remains recorded in `install.lock`. All line endings are
+LF. Sections are joined with a single LF, which yields exactly one blank line
+between sections and no trailing blank line. The resulting complete body is the
+input to the existing D15 `haex-hive-tree-v1` `content_integrity` rule.
 
-Percent encoding operates on UTF-8 bytes; unreserved RFC 3986 bytes
-(`A-Z`, `a-z`, `0-9`, `-`, `.`, `_`, `~`) remain literal and every other
-byte is encoded as uppercase `%HH`. The fields are always emitted in the
-order `id`, `source`, `revision`, `length`; the length counts only the raw
-body bytes. After the body, emit one LF, the end marker, and one final LF.
-Thus a body-ending LF is retained and the framing LF is additional. The
-resulting complete body, including all framing, is the value hashed by the
-existing D15 `haex-hive-tree-v1` `content_integrity` rule.
-
-Golden-byte acceptance case: for the sorted inputs
-`com.example.base` / `https://example.com/harness` / 40 `1` digits / `# Base\n`
-and `com.example.overlay` / `https://example.com/team` / 40 `2` digits /
-`# Overlay`, the exact output is:
+Golden-byte acceptance case: for the sorted inputs `com.example.base` /
+`https://example.com/harness` / 40 `1` digits / body `# Base` with a trailing
+LF, and `com.example.overlay` / `https://example.com/team` / 40 `2` digits /
+body `# Overlay` without a trailing LF, the exact output is:
 
 ```text
-<!-- haex-hive:constitution-source:v1
-id=com.example.base
-source=https%3A%2F%2Fexample.com%2Fharness
-revision=1111111111111111111111111111111111111111
-length=7
--->
+### From molecule `com.example.base` (revision `11111111`)
+
+Source: https://example.com/harness
+
 # Base
 
-<!-- haex-hive:constitution-source-end:v1 -->
-<!-- haex-hive:constitution-source:v1
-id=com.example.overlay
-source=https%3A%2F%2Fexample.com%2Fteam
-revision=2222222222222222222222222222222222222222
-length=9
--->
+### From molecule `com.example.overlay` (revision `22222222`)
+
+Source: https://example.com/team
+
 # Overlay
-<!-- haex-hive:constitution-source-end:v1 -->
 ```
 
-It is 438 bytes and its D15 content hash is
-`sha256-yqVNMTQov4yIGtDcWPo/IOxiFSiecbVnv7ZxT0Wf6Hg=`. The acceptance test
-MUST compare exact bytes and this hash, not just rendered text.
+It is 212 bytes. Two distinct digests are involved, and an acceptance test must
+not conflate them:
+
+| Value | Digest |
+|---|---|
+| plain SHA-256 of the 212 body bytes | `sha256-Jw5VgMfnllS6/77XbZ6HNkkA0oOJ3XC3sLiVi91qxWU=` |
+| `install.lock.constitution.content_integrity`, the D15 `haex-hive-tree-v1` one-file tree over those bytes | `sha256-ws+jBDJMzekPSYA4SsIYE5iDByEjWlCBGQc7eB6NlNE=` |
+
+The acceptance test MUST compare the exact bytes and the D15 value. The plain
+digest is listed only so that the two are not mistaken for each other; an
+earlier draft of this ADR published the plain digest under the D15 label, which
+would have made any test written against it assert the wrong
+`content_integrity`.
+
+**Machine-parseable framing is deliberately not specified.** An earlier draft
+defined percent-encoded, length-framed HTML-comment blocks. Nothing in the
+current design reads that framing back, so it was complexity for a parser that
+does not exist, and it contradicted the landed Spec 011 byline. If a
+round-trippable format is ever required, a versioned framing marker is the
+extension point, specified together with its first consumer.
 
 Specifically:
 
@@ -197,6 +206,12 @@ itself.
   preserve the FR-038 checks and exit-code precedence.
 - The README and [Spec 008 quickstart](../../specs/008-install-transaction/quickstart.md)
   are aligned with the deterministic install path in this change.
+- [Spec 011](../../specs/011-speckit-workflow-atom/spec.md) still mandates the
+  retired flags: FR-004 requires the review-gated `haex install --llm=file` /
+  `--accept-merged` flow, and its User Story 1 independent test invokes them.
+  Both must be rewritten against the deterministic path. FR-004's
+  `## Workflow-Contributed Rules` section and `### From molecule` byline are
+  retained and are the source of the provenance format above.
 - [Spec 012's adoption flow](../plans/2026-09-02-spec-012-speckit-session-hopper-atom-design.md)
   is aligned with the deterministic install path in this change; any remaining
   consumer instructions must not use the retired `--llm` or `--accept-merged`

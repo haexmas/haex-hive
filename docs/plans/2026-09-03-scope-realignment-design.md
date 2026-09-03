@@ -10,10 +10,24 @@
 - [Spec 008: Install Transaction](2026-08-29-spec-008-install-transaction-requirements.md): transaction primitives landed; its install CLI contract is amended by Decisions 9 and 10.
 - [Spec 009: Hook Boundary](2026-08-29-spec-009-hook-boundary-requirements.md): recalibrated by Decision 11.
 - [Spec 010: Compiler & Agent Adapters](2026-08-31-spec-010-compiler-preview.md): adapter surface shrinks under Decision 3; `contributes.*` extension list replaced by Decision 6; degradation reporting added by Decision 7.
-- Spec 013 (`haex add` and molecule rename; design slot not yet present): gains the manifest-optional adoption path from Decision 4.
+- [Spec 013: `haex add` and molecule rename](2026-09-02-spec-013-add-cli-and-molecule-rename-design.md): gains the manifest-optional adoption path from Decision 4.
 - [ADR 0010](../adr/0010-drop-multi-source-llm-constitution-merge.md): records Decision 9 against landed behaviour.
 
 ---
+
+## 0. Normative status
+
+This is a design record. It fixes *direction*, not contracts. The normative home
+for every requirement below is a numbered spec under `specs/`, written through
+`/speckit-specify` per [ADR 0009](../adr/0009-declared-speckit-workflow-adherence.md)
+and the constitution's Development Workflow clause.
+
+Three blocks in this document were written in normative language during PR 59
+review and are marked inline as **design input**: the manifestless adoption
+algorithm (Decision 4), the `haex-install-result-v1` shape and exit-code table
+(Decision 10), and the handoff manifest (Decision 1). They are worked-out
+proposals for the spec phase, not settled contracts, and their field names,
+identity derivations and code assignments are expected to change there.
 
 ## 1. Findings
 
@@ -70,8 +84,8 @@ It is nonetheless rejected as a haex-hive deliverable for two reasons that are a
 
 **What haex-hive does own is the handoff.** When a task is delegated to another device, the harness pin travels with it, and the receiving side runs `haex install` at that pin before starting the agent. That is the actual guarantee behind "the same thing runs everywhere", it is small, and it is implementable against any execution plane: against Buzz, against Remote Control via a session hook, against a future bridge.
 
-The handoff payload is a versioned, repository-relative manifest. Its minimum
-shape is:
+**Design input for the spec phase**, not a settled contract. The handoff
+payload is a versioned, repository-relative manifest. Its minimum shape is:
 
 ```json
 {
@@ -147,8 +161,9 @@ hooks. If `exec_prefix` is present, the hook runs `requires` outside the
 provider, then runs `verify` through the active environment prefix. If
 `exec_prefix` is absent, it skips the outside-provider checks and runs
 `verify` directly in the current environment. A failed `requires` or `verify`
-check is a system refusal with exit 5 and an explicit diagnostic; it is not a
-degradation. A target without hooks gets the prose instruction and an explicit
+check is treated as a refusal with an explicit diagnostic rather than a
+degradation. Whether that refusal is unconditional, and which exit code it
+carries, is Open Question 4 and is not settled by this document. A target without hooks gets the prose instruction and an explicit
 degradation report instead of a silently implied check.
 
 **haex-hive never installs a provider.** Installing Docker or podman means root, a daemon, groups and kernel modules. That is categorically different from writing files into a repository and would break the project's own model (Principle II, and the sidecar/review-gate philosophy). Every package manager has this boundary: npm needs node, cargo needs rustup, nix needs the Nix installer. haex-hive's boundary is `requires`.
@@ -177,7 +192,8 @@ Requiring a publisher-authored `manifest.json` is the decisive adoption barrier 
 
 Adoption therefore detects by shape. A directory containing `SKILL.md` is a prose contribution with `activation: on-demand`, with no haex manifest. A directory containing `extension.yml` is a Spec Kit extension. `haex add <url>` works against any such repository, at a resolved full SHA, with a lockfile. The foreign formats and their documented entry files are verified against the [Agent Skills specification](https://github.com/agentskills/agentskills) and [Spec Kit extension reference](https://github.com/github/spec-kit/blob/main/docs/reference/extensions.md), both on 2026-09-03.
 
-The manifestless adoption algorithm is deliberately narrow and reproducible:
+**Design input for the spec phase**, not a settled contract. The manifestless
+adoption algorithm is deliberately narrow and reproducible:
 
 1. Canonicalize the supplied repository URL with the existing D3 rules. A
    caller may supply a full SHA; otherwise `haex add` resolves the repository's
@@ -307,6 +323,9 @@ The operator's goal is that haex-hive both integrates the existing ecosystem and
 
 Concretely, integration with Buzz then reduces to: a Buzz workflow trigger runs `haex install` at the handed-off pin on the target device before `buzz-acp` starts the agent. No haex-hive-side transport code.
 
+**Design input for the spec phase**, not a settled contract; the authoritative
+version belongs in the Spec 008 install CLI contract.
+
 The machine-readable result is a versioned `haex-install-result-v1` JSON
 document written as one LF-terminated UTF-8 object to stdout when
 `--json` is supplied. Its stable shape is:
@@ -353,8 +372,7 @@ for a busy writer, and 10 for a Principle-I plaintext-secret refusal. Usage
 errors use 64. A missing `requires` provider is a refusal with exit 5; it is
 not a warning. An unsupported optional hook is a successful install with a
 degradation entry. The same table, including precedence, is normative in the
-[Spec 008 install CLI contract](../../specs/008-install-transaction/contracts/haex-install.cli.md)
-and the [Spec 008 install CLI contract](../../specs/008-install-transaction/contracts/haex-install.cli.md).
+[Spec 008 install CLI contract](../../specs/008-install-transaction/contracts/haex-install.cli.md).
 
 Integration readiness is not complete until both contracts and their golden
 JSON/exit-code acceptance cases are implemented and tested.
@@ -381,10 +399,10 @@ Recommendation: retain subprocess isolation, the timeout contract and the enviro
 | Spec | Effect |
 |---|---|
 | 007 | The `contributes`/`atoms` category map is restructured per Decision 6. Multi-source assembly changes per Decision 9. The v3 rename in Spec 013 should carry the new shape rather than the seven-category one. |
-| 008 | Landed. Unaffected: the transaction, lockfile, journal and orphan deletion are exactly the primitives Decisions 3, 4 and 10 rely on. |
+| 008 | Transaction primitives landed and are exactly what Decisions 3, 4 and 10 rely on. Its install CLI contract is amended by Decisions 9 and 10 (`--llm` / `--accept-merged` removal, `--json`, exit-code table). |
 | 009 | Recalibrate per Decision 11 before drafting. |
 | 010 | Adapter surface shrinks for skills, stays per-tool for hooks and structured config. Add degradation reporting (Decision 7), the `agent` payload kind (Decision 6) and `--json` output (Decision 10). Replace the proposed `contributes.*` extension list with the collapsed model. |
-| 011 | Unaffected in substance. Gains per-step delegation declaration (Decision 8). Whether "workflow" survives as a payload kind is a Decision 6 follow-up. |
+| 011 | **Affected.** FR-004 mandates the review-gated `--llm=file` / `--accept-merged` flow and its User Story 1 test invokes both; Decision 9 retires them, so FR-004 and that test need rewriting. Its `## Workflow-Contributed Rules` section and `### From molecule` byline are retained and supply the provenance format in ADR 0010. Also gains per-step delegation declaration (Decision 8). Whether "workflow" survives as a payload kind is a Decision 6 follow-up. |
 | 013 | Gains the manifest-optional adoption path from Decision 4: `haex add` must accept a plain skills repository and a Spec Kit extension repository, not only a haex-hive publisher. |
 
 ## 5. Explicitly rejected alternatives
@@ -396,6 +414,7 @@ Recommendation: retain subprocess isolation, the timeout contract and the enviro
 - **A `mode` enum on the `environment` block.** Rejected as vocabulary that must be learned without explaining anything. The presence of `exec_prefix` carries the same information.
 - **Adopt `npx skills add` semantics.** Rejected: no pinning, violating Principle IV. haex-hive consumes the same repositories at a full SHA instead.
 - **Automatic subagent delegation for every workflow step.** Rejected per Decision 8.
+- **Percent-encoded, length-framed provenance blocks in the assembled constitution.** Introduced during PR 59 review, reverted here. Nothing reads the framing back, so it was a wire format for a parser that does not exist, and it contradicted Spec 011's landed `### From molecule` byline. See ADR 0010.
 - **Multiple named environments per project.** Deferred until a real case demands it.
 
 ## 6. Open questions
@@ -403,4 +422,5 @@ Recommendation: retain subprocess isolation, the timeout contract and the enviro
 1. Does "workflow" remain a payload kind after Decision 6, or become an attribute on a prose contribution?
 2. Where does the Spec Kit extension format sit: a fifth payload kind, or a foreign format the installer translates into the four existing ones?
 3. What is the minimum viable adapter set, given that skills are portable by format and only hooks, structured config and `agent` payloads remain per-tool?
-4. Does the handoff manifest (Decision 1) warrant its own spec slot, or does it belong inside Spec 010's compiler output?
+4. Should `requires` failures refuse the install outright, or warn and let the compiled prose carry the instruction? Refusal is safer; warning keeps `haex install` usable on a machine that only edits configuration. PR 59 review answered this as an unconditional exit-5 refusal in Decision 2 and Decision 10; that answer is recorded but not adopted, because it is the operator's call and was reopened in this follow-up.
+5. Does the handoff manifest (Decision 1) warrant its own spec slot, or does it belong inside Spec 010's compiler output?
