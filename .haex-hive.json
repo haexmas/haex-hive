@@ -7,13 +7,6 @@
       ],
       "revision": "336eaf1e5b1a86f76031b60b7f692da98682b9ac",
       "source": "https://github.com/haexmas/haex-hive"
-    },
-    {
-      "includes": [
-        "com.github.haexmas.haex-hive.graphify-first-authoring"
-      ],
-      "revision": "a83ef22cf171133cd62a26be489cc791aec0b053",
-      "source": "https://github.com/haexmas/haex-hive"
     }
   ],
   "groups": [],

@@ -17,7 +17,7 @@ These two changes ship together because `haex add` writes the new schema shape d
 - [Spec 010: Compiler & Agent Adapters](2026-08-31-spec-010-compiler-preview.md): uses "molecule" prose to describe the personal harness bundle. Spec 013 promotes that prose term to a schema field name.
 - [Spec 011 simplification amendment (2026-09-02)](../../specs/011-speckit-workflow-atom/): retires `workflow-registry.json` and `active_workflow`. Spec 013 inherits this: no `haex workflow activate`, no `--activate` flag, no interactive activation prompt.
 - [Spec 012: Speckit Session Hopper Atom](2026-09-02-spec-012-speckit-session-hopper-atom-design.md): first atom that the new `haex add` flow will adopt in a single command instead of a copy-and-paste JSON block. The molecule's README will be rewritten against the Spec 013 CLI once it lands. The Spec-012 doc itself pre-dates the Spec 011 amendment and still references `active_workflow`; its parallel branch updates that.
-- [graphify-first-authoring design doc](2026-08-31-graphify-first-authoring-design.md): where "molecule" was first defined as a prose-only term. Spec 013 lifts the "no schema" caveat.
+- graphify-first-authoring design doc: originally at `docs/plans/2026-08-31-graphify-first-authoring-design.md`; extracted with the atom to `https://github.com/haexmas/atoms/blob/main/graphify-first-authoring/design.md`. That doc first defined "molecule" as a prose-only term; Spec 013 lifts the "no schema" caveat.
 
 ---
 
