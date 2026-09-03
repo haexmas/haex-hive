@@ -24,10 +24,10 @@ The `haex` CLI covers the **constitution** portion of the config plane. As an op
 
 1. **Migrate a legacy v1 `.haex-hive.json` into the v2 shape.** `haex migrate` writes a `.migrated` sidecar with a reviewable unified diff; the original file is untouched until you replace it manually.
 2. **Assemble a single-source constitution deterministically.** One `atoms[]` entry pointing at a constitution atom pinned by SHA produces a byte-for-byte copy of the source file at `.haex-hive/constitution.md`, plus an `install.lock` recording atom-ID, revision, source URL, and a SHA-256 content hash.
-3. **Assemble a multi-source constitution via reviewed LLM merge.** With N atoms all contributing a constitution (e.g. base + team overlay), `haex constitution assemble` on a device with LLM access loads every source, asks you interactively to resolve conflicts, and writes the reconciled result. You commit the file plus its recorded hash; other satellites `git pull` and verify it byte-for-byte without re-running the LLM.
+3. **Assemble a multi-source constitution deterministically.** With N atoms all contributing a constitution (e.g. base + team overlay), `haex install` concatenates the sources in canonical atom-ID order with provenance headers and records the exact content hash in `install.lock`. No model access is required; other satellites `git pull` and verify the committed bytes.
 4. **Inspect the effective constitution on any satellite.** `haex constitution show` prints an "Assembled from" preface synthesized from `install.lock` (one line per source with atom-ID + SHA + URL), a `---` separator, then the constitution content. `--no-preface` for scripting.
 
-Spec 008, in flight on `008-install-transaction`, extends this to a full `haex install` command that publishes atoms atomically across `.haex-hive/`, `.claude/`, `.codex/` and other participating roots, with concurrent-install safety, crash recovery, and delta-driven cleanup when an atom is removed.
+Spec 008 provides the full `haex install` command that publishes atoms atomically across `.haex-hive/`, `.claude/`, `.codex/` and other participating roots, with concurrent-install safety, crash recovery, and delta-driven cleanup when an atom is removed.
 
 ## Install
 
@@ -45,13 +45,13 @@ Requires Python 3.10+ and Git 2.30+ on `$PATH`. Only runtime dependency is `json
 
 ```bash
 haex migrate                # rewrite a v1 .haex-hive.json into the v2 sidecar
-haex constitution assemble  # produce .haex-hive/constitution.md + install.lock
+haex install                # produce .haex-hive/constitution.md + install.lock
 haex constitution show      # print the effective constitution to stdout
 ```
 
 Every write goes through a **sidecar → review → replace** flow: migrations write to `.migrated`, constitution assembly stages into `.haex-hive/*.lock`, and no versioned config file is ever rewritten in place by the tool.
 
-See [specs/007-unified-manifest-v2/quickstart.md](specs/007-unified-manifest-v2/quickstart.md) for a full walkthrough of each command, including the multi-source LLM-merge flow and every refusal path.
+See [specs/008-install-transaction/quickstart.md](specs/008-install-transaction/quickstart.md) for a full walkthrough of each command and every refusal path.
 
 ## Core Model
 
@@ -71,7 +71,7 @@ A project opts into haex-hive by committing a `.haex-hive.json` at its root. Tha
 }
 ```
 
-`haex constitution assemble` resolves the atoms and writes both the effective constitution and an `install.lock` recording which SHA supplied which section together with a SHA-256 content hash. For a **single-source** manifest, assembly is fully deterministic: two satellites resolving the same pinned SHA see byte-identical output. For a **multi-source** manifest, an interactive LLM merge produces a reviewed `constitution.md` that the operator commits; other satellites `git pull` and use the committed content, and the recorded hash lets them verify integrity without re-running the LLM.
+`haex install` resolves the atoms and writes both the effective constitution and an `install.lock` recording which SHA supplied which section together with a SHA-256 content hash. For a **single-source** manifest, the output is a byte-for-byte copy. For a **multi-source** manifest, the output is deterministic concatenation with provenance framing; other satellites `git pull` and use the committed content without model access.
 
 ## Non-Negotiable Principles
 

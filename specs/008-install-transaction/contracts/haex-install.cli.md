@@ -6,8 +6,7 @@
 ## Usage
 
 ```console
-haex install [--repo-root PATH] [--verify-only]
-            [--llm {stdio,file,none}] [--accept-merged PATH]
+haex install [--repo-root PATH] [--verify-only] [--json]
 ```
 
 ## Flags
@@ -16,12 +15,12 @@ haex install [--repo-root PATH] [--verify-only]
 |---|---|---|
 | `--repo-root PATH` | current working directory | Path to the project checkout. Inherited from the top-level `haex --repo-root` per Spec 007. |
 | `--verify-only` | off | Acquire the SHARED read lock, validate the current `install.lock` schema/migration gate, verify recorded paths and generation agreement, then exit. Never mutates. Same shape as `haex verify` today. |
-| `--llm {stdio,file,none}` | default | Select the multi-source constitution merge workflow. `stdio` reads a framed candidate from the attached LLM and requires operator confirmation; `file` writes the pending merge inputs for an external editor/LLM and exits; `none` refuses because a multi-source constitution requires a merge method. |
-| `--accept-merged PATH` | unset | Accept a reviewed merged constitution candidate from `PATH` and publish it after validating it against the pending merge inputs. It is mutually exclusive with `--llm`. |
+| `--json` | off | Emit the versioned `haex-install-result-v1` result object instead of human-readable status text. The result includes any capability degradations. |
 
-The `--llm` and `--accept-merged` options apply to multi-source constitution
-installation. Single-source installations use the deterministic fast path when
-neither option is supplied.
+Single-source installations use the deterministic fast path. Multi-source
+installations use the same deterministic concatenation-with-provenance format
+defined in [ADR 0010](../../../docs/adr/0010-drop-multi-source-llm-constitution-merge.md);
+there is no model invocation, pending state, or interactive confirmation path.
 
 Recovery is implicit: any subsequent `haex install` acquires the exclusive lock, removes a leftover `<root>.next/` sibling, retains `<root>.prev/` until the replacement is successfully published, and reinstalls from the deterministic pinned inputs. There is no separate `haex verify --recover` verb (retired 2026-09-02 by the detect+retry amendment).
 
@@ -42,8 +41,9 @@ Uses the canonical set defined in [src/haex_hive/util/exit_codes.py](../../../sr
 | 2 | Input refuse (FR-006 / Principle V) | `.haex-hive.json not found` / `.haex-hive.json.atoms is empty (Principle V opt-in required)` |
 | 3 | I/O refuse (FR-006) | `publisher clone for <source> not found under $HAEX_HIVE_STATE/repos/` |
 | 4 | Validation refuse (FR-006) | `plan snapshot digest does not match commit snapshot; source mutated during install` |
-| 5 | System refuse (FR-003) | `platform does not support required overlay primitive for <path> (Windows requires Developer Mode for file-scoped symlinks)` |
+| 5 | System refuse (FR-003) | `declared environment provider is unavailable` |
 | 6 | Post-write validation (FR-005 / FR-009) | `install.lock schema or published generation validation failed` |
+| 7 | Incomplete transaction | `journal cannot be recovered to a stable generation pair` |
 | 8 | Constitution concealment (Principle VIII) | (from Spec 007's guard; unchanged) |
 | 9 | Writer busy (FR-001 / FR-010) | `lock held by <pid>@<hostname> since <acquired_at> (heartbeat <n>s ago, ttl <t>s)` |
 | 10 | Plaintext secret (Principle I) | (from Spec 007's guard; unchanged) |
@@ -69,6 +69,37 @@ error: exit=4 key=commit-snapshot-mismatch (FR-006)
   hint: another editor rewrote .haex-hive.json during the install; retry
 ```
 
+The exit-code precedence is deterministic: parse/usage errors first; then
+writer-lock acquisition (9); transaction recovery (7); manifest validation
+(2 or 4); source resolution and local-content access (2 or 3); Principle-I
+source validation (10); environment requirements (5); generated payload
+validation (4, 8, or 10); and finally publication/post-write verification (6).
+The first failing stage wins and later stages are not attempted. A missing
+`requires` provider is therefore a system refusal with exit 5, not a warning.
+An unsupported optional hook is a successful install with a degradation entry.
+
+With `--json`, stdout contains one LF-terminated UTF-8 object with schema
+`haex-install-result-v1`:
+
+```json
+{
+  "schema": "haex-install-result-v1",
+  "status": "installed",
+  "exit_code": 0,
+  "generation": "<generation-id-or-null>",
+  "degradations": [],
+  "error": null
+}
+```
+
+`status` is `installed`, `no_changes`, or `refused`; `generation` is null on
+refusal. `degradations` is always present and sorted by
+`(target, kind, id, event)`. `error` is null on success and otherwise contains
+only `{ "key": <diagnostic-key>, "message": <safe-message> }`; it never
+contains a secret value. The JSON schema is versioned by the `schema` field,
+and the exit code is duplicated in `exit_code` so an orchestrator can use
+either the process result or the captured object.
+
 ## Reader consistency (informational)
 
 Third-party readers (agent CLIs, editors) do not invoke this CLI — they read the participating output roots directly. Per FR-005, correct readers:
@@ -91,4 +122,7 @@ The Spec 008 landing includes a reference reader-guide in [quickstart.md](../qui
 
 `haex constitution show` remains as the read-only inverse of `haex install`: it prints the byte-for-byte effective constitution from the currently published generation. It does not resolve, assemble, or write.
 
-The former `haex constitution assemble` shortcut was retired in favour of `haex install` (which now owns the `--llm` and `--accept-merged` flags directly). Under the pre-user policy, keeping two commands doing the same work carried UX cost without adoption benefit.
+The former `haex constitution assemble` shortcut was retired in favour of
+`haex install`. Under the pre-user policy, keeping two commands doing the same
+work carried UX cost without adoption benefit. The install command does not
+accept the retired `--llm` or `--accept-merged` flags.
