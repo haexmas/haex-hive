@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from collections.abc import Sequence
 from contextlib import suppress
 from pathlib import Path
 
@@ -177,19 +178,33 @@ def _publish_constitution(
 
 
 def assemble_single_source(
-    contribution: ResolvedConstitutionContribution,
+    contributions: Sequence[ResolvedConstitutionContribution],
     repo_root: Path,
     *,
     tool_version: str,
     state_root: Path | None = None,
 ) -> None:
-    """Publish one resolved constitution contribution without merging."""
-    validate_no_plaintext_secrets(
-        contribution.body, location=f"constitution source {contribution.source.id}"
-    )
+    """Publish all constitution files from one molecule without merging sources.
+
+    The v3 constitution category may contain multiple files. They retain the
+    resolver's deterministic order and are separated by one newline in the
+    generated constitution. The lock records the molecule only once.
+    """
+    if not contributions:
+        raise ValueError("at least one constitution contribution is required")
+
+    source = contributions[0].source
+    if any(contribution.source != source for contribution in contributions[1:]):
+        raise ValueError("single-source assembly received multiple molecule sources")
+
+    for contribution in contributions:
+        validate_no_plaintext_secrets(
+            contribution.body, location=f"constitution source {contribution.source.id}"
+        )
+
     _publish_constitution(
-        (contribution.source,),
-        contribution.body,
+        (source,),
+        b"\n".join(contribution.body for contribution in contributions),
         repo_root,
         tool_version=tool_version,
         state_root=state_root,

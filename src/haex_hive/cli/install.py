@@ -130,10 +130,10 @@ def run(args: argparse.Namespace) -> int:
             if not contributions:
                 raise NoSourcesDeclaredError(message="no constitution sources declared")
 
-            if len(contributions) != 1:
-                molecule_ids = sorted(
-                    {contribution.source.id for contribution in contributions}
-                )
+            molecule_ids = sorted(
+                {contribution.source.id for contribution in contributions}
+            )
+            if len(molecule_ids) != 1:
                 raise ConstitutionAlreadyAdoptedError(
                     message=(
                         "multiple constitution contributions are not supported; "
@@ -143,9 +143,12 @@ def run(args: argparse.Namespace) -> int:
                 )
 
             contribution = contributions[0]
+            assembled_body = b"\n".join(
+                contribution.body for contribution in contributions
+            )
             if _is_no_op_single_source(
                 repo_root,
-                contribution.body,
+                assembled_body,
                 contribution.source.id,
                 contribution.source.revision,
                 contribution.source.source,
@@ -158,7 +161,7 @@ def run(args: argparse.Namespace) -> int:
                 return exit_codes.SUCCESS
 
             assemble_single_source(
-                contribution,
+                contributions,
                 repo_root,
                 tool_version=INSTALLED_VERSION_STRING,
                 state_root=state_root,

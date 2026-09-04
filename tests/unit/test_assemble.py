@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from haex_hive.constitution import assemble
-from haex_hive.constitution.assemble import _publish_constitution
+from haex_hive.constitution.assemble import _publish_constitution, assemble_single_source
 from haex_hive.constitution.llm import MergeResult, generation_input_identities
 from haex_hive.constitution.resolve import ResolvedConstitutionContribution
 from haex_hive.io import transaction
@@ -117,6 +117,36 @@ def test_generation_input_profiles_match_payload_formats() -> None:
     assert tool_config.serialization["format"] == "json"
     assert tool_config.serialization["key_order"] == "lexicographic-utf8"
     assert tool_config.serialization["indent"] is None
+
+
+def test_single_source_assembles_all_constitution_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keep every constitution file when one molecule contributes several paths."""
+    source = ConstitutionSource(
+        id="com.example.constitution",
+        revision="0" * 40,
+        source="https://example.com/publisher",
+    )
+    contributions = [
+        ResolvedConstitutionContribution(source=source, body=b"# First"),
+        ResolvedConstitutionContribution(source=source, body=b"# Second"),
+    ]
+    captured: dict[str, object] = {}
+
+    def capture_publish(sources, body, repo_root, **kwargs) -> None:
+        captured["sources"] = sources
+        captured["body"] = body
+        del repo_root, kwargs
+
+    monkeypatch.setattr(assemble, "_publish_constitution", capture_publish)
+
+    assemble_single_source(contributions, tmp_path, tool_version="3.0.0")
+
+    assert captured == {
+        "sources": (source,),
+        "body": b"# First\n# Second",
+    }
 
 
 def test_multi_source_adapter_receives_contributions_in_stable_order(
