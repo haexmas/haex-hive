@@ -52,3 +52,34 @@ def test_duplicate_contributed_paths_are_rejected() -> None:
     data = _with_molecules([".haex-hive/a.md", ".haex-hive/a.md"])
     with pytest.raises(SchemaValidationError):
         validate(data, SCHEMA_NAME)
+
+
+def test_contributed_path_outside_participating_roots_is_rejected() -> None:
+    """_check_contributed_paths: JSON Schema alone cannot express this cross-field rule."""
+    data = _with_molecules([".claude/orphan.md"])
+    assert data["participating_roots"] == [".haex-hive/"]
+    with pytest.raises(SchemaValidationError) as exc_info:
+        validate(data, SCHEMA_NAME)
+    assert "participating root" in str(exc_info.value)
+
+
+def test_contributed_path_matching_second_participating_root_validates() -> None:
+    """The path must match *any* configured root, not just the first one."""
+    data = _with_molecules([".claude/skill.md"])
+    data["participating_roots"] = [".claude/", ".haex-hive/"]
+    validate(data, SCHEMA_NAME)
+
+
+def test_non_empty_contributed_paths_without_participating_roots_is_rejected() -> None:
+    data = _with_molecules([".haex-hive/constitution.md"])
+    del data["participating_roots"]
+    with pytest.raises(SchemaValidationError) as exc_info:
+        validate(data, SCHEMA_NAME)
+    assert "participating_roots" in str(exc_info.value)
+
+
+def test_empty_contributed_paths_validates_without_participating_roots() -> None:
+    """An empty contributed_paths array carries no path to check against any root."""
+    data = _with_molecules([])
+    del data["participating_roots"]
+    validate(data, SCHEMA_NAME)

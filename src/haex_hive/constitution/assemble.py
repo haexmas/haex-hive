@@ -1,28 +1,16 @@
-"""Constitution assembly: single-source straight-copy (US2) and multi-source
-LLM-merge (US3)."""
+"""Constitution assembly: single-source straight-copy (US2).
+
+The multi-source LLM-merge path (US3) was retired by ADR 0010: a repository
+adopts exactly one non-negotiable prose atom, so `haex install` never needs
+to reconcile multiple constitution contributions into one document.
+"""
 
 from __future__ import annotations
 
 import json
-import os
-import sys
 from collections.abc import Sequence
-from contextlib import suppress
 from pathlib import Path
 
-from haex_hive.constitution.llm import (
-    FileMergeLLM,
-    MergeLLM,
-    NoneMergeLLM,
-    PendingMergeWritten,
-    StdioMergeLLM,
-    generation_input_identities,
-)
-from haex_hive.constitution.pending import (
-    load_pending,
-    pending_path,
-    verify_pending_matches_current,
-)
 from haex_hive.constitution.resolve import ResolvedConstitutionContribution
 from haex_hive.constitution.safety import (
     validate_no_concealment_instructions,
@@ -38,21 +26,9 @@ from haex_hive.model.install_lock import (
     InstallLock,
     VisibilityMarkerRef,
 )
-from haex_hive.util import exit_codes
-from haex_hive.util.errors import (
-    HaexError,
-    MergeNotConfirmedError,
-    PostWriteValidationError,
-    UsageError,
-)
+from haex_hive.util.errors import HaexError, PostWriteValidationError
 
 TOOL_NAME = "haex"
-
-DEFAULT_TASK_PROMPT = (
-    "Merge the following constitution contributions into a single coherent "
-    "constitution. Preserve every non-conflicting principle; where two sources "
-    "conflict, resolve explicitly and note the resolution."
-)
 
 
 def _read_existing_lock(repo_root: Path) -> InstallLock | None:
@@ -201,6 +177,9 @@ def assemble_single_source(
         validate_no_plaintext_secrets(
             contribution.body, location=f"constitution source {contribution.source.id}"
         )
+        # Principle VIII (ADR 0010): retained on the single-source path even
+        # though there is no adapter-produced candidate to police anymore.
+        validate_no_concealment_instructions(contribution.body)
 
     _publish_constitution(
         (source,),
@@ -209,83 +188,3 @@ def assemble_single_source(
         tool_version=tool_version,
         state_root=state_root,
     )
-
-
-def _select_adapter(llm_method: str | None, repo_root: Path) -> MergeLLM:
-    """Select the configured merge adapter for a multi-source assembly."""
-    method = llm_method or os.environ.get("HAEX_LLM")
-    if not method:
-        method = "stdio" if sys.stdin.isatty() else "none"
-    if method == "stdio":
-        return StdioMergeLLM()
-    if method == "file":
-        return FileMergeLLM(repo_root)
-    if method == "none":
-        return NoneMergeLLM()
-    raise UsageError(message=f"unknown --llm method {method!r}")
-
-
-def assemble_multi_source(
-    contributions: list[ResolvedConstitutionContribution],
-    repo_root: Path,
-    *,
-    llm_method: str | None,
-    accept_merged_path: Path | None,
-    tool_version: str,
-    task_prompt: str = DEFAULT_TASK_PROMPT,
-    state_root: Path | None = None,
-) -> int:
-    """Merge multiple constitution contributions and publish the result."""
-    if accept_merged_path is not None and llm_method is not None:
-        raise UsageError(message="--accept-merged and --llm are mutually exclusive")
-
-    ordered_contributions = sorted(
-        contributions, key=lambda c: c.source.id.encode("utf-8")
-    )
-    sorted_sources = tuple(c.source for c in ordered_contributions)
-
-    if accept_merged_path is not None:
-        candidate = accept_merged_path.read_bytes()
-        validate_no_plaintext_secrets(candidate, location="accepted merge candidate")
-
-        pending = load_pending(repo_root)
-        verify_pending_matches_current(pending, contributions)
-
-        validate_no_concealment_instructions(candidate)
-
-        _publish_constitution(
-            sorted_sources,
-            candidate,
-            repo_root,
-            tool_version=tool_version,
-            state_root=state_root,
-            generation_inputs=generation_input_identities("file", pending.task_prompt),
-        )
-        with suppress(FileNotFoundError):
-            pending_path(repo_root).unlink()
-        return exit_codes.SUCCESS
-
-    for c in contributions:
-        validate_no_plaintext_secrets(c.body, location=f"constitution source {c.source.id}")
-
-    adapter = _select_adapter(llm_method, repo_root)
-
-    try:
-        result = adapter.merge(ordered_contributions, task_prompt)
-    except PendingMergeWritten:
-        return exit_codes.SYSTEM_REFUSE
-
-    if not result.confirmed:
-        raise MergeNotConfirmedError(message="merge candidate was not confirmed")
-
-    validate_no_concealment_instructions(result.candidate)
-
-    _publish_constitution(
-        sorted_sources,
-        result.candidate,
-        repo_root,
-        tool_version=tool_version,
-        state_root=state_root,
-        generation_inputs=result.generation_inputs,
-    )
-    return exit_codes.SUCCESS
