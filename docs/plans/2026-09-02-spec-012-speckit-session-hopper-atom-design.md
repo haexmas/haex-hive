@@ -7,7 +7,7 @@
 **Related**:
 - [Spec 011: Speckit Workflow Molecule](2026-09-02-spec-011-speckit-workflow-atom-design.md): defines the v3 workflow molecule (`atoms.workflow`, `atoms.hooks`, `atoms.constitution`, hook publication under `.specify/extensions/workflow-molecules/<molecule-id>/`) whose adoption is automatically binding. This molecule is an instance of that contract.
 - [Spec 007: Unified Manifest v3](../../specs/007-unified-manifest-v2/spec.md): molecule-manifest baseline; publisher-manifest shape.
-- [Spec 008: Install Transaction](../../specs/008-install-transaction/): multi-source constitution merge; delete-orphans on removal.
+- [Spec 008: Install Transaction](../../specs/008-install-transaction/): single-source constitution publication (ADR 0010 retired the multi-source merge); delete-orphans on removal.
 - Constitution v1.4.0, "Declared speckit workflow adherence": the bullet this molecule becomes binding under when adopted in a compound.
 - [speckit-community workflows catalog](https://speckit-community.github.io/extensions/search?q=workflows): other workflow families (V-Model, bugfix-first, strict-TDD, ...). Motivation for keeping this atom workflow-agnostic in its hook script.
 
@@ -278,10 +278,19 @@ Sessions whose adopted workflow molecule resolves to
    output is on disk.
 ```
 
-The multi-source merge (Spec 011 FR-004) appends this fragment under
+**Superseded 2026-09-04 (ADR 0010), pending Spec 011 redesign**: the
+multi-source merge this paragraph relied on (Spec 011 FR-004) was retired.
+The fragment is expected to instead become `binding: recommended` prose
+compiled into `CLAUDE.md`/`AGENTS.md` under a `## Workflow-Contributed Rules`
+section, but that compilation mechanism (Spec 010, compiler + adapters) does
+not exist yet as of this writing. The byline/subsection structure described
+below may or may not survive that redesign unchanged; do not implement
+against this paragraph until Spec 011 is rewritten.
+
+~~The multi-source merge (Spec 011 FR-004) appends this fragment under
 `## Workflow-Contributed Rules` with the molecule-id byline; the header
 above becomes an `### Per-step session isolation` subsection under the
-byline heading, so no header conflict occurs.
+byline heading, so no header conflict occurs.~~
 
 ## Adoption flow
 
@@ -299,7 +308,7 @@ Documented in `haexmas/atoms/README.md` and mirrored in this design for the plan
      }]
    }
    ```
-2. Run `haex install` for this design's single constitution contribution. `run()` selects `assemble_single_source(...)`, which publishes deterministically and writes no pending merge state. If the consumer has two or more constitution contributions, the same command uses the deterministic concatenation-with-provenance format from [ADR 0010](../../docs/adr/0010-drop-multi-source-llm-constitution-merge.md); there is no model invocation, pending candidate, or interactive confirmation path.
+2. Run `haex install` for this design's single constitution contribution. `run()` selects `assemble_single_source(...)`, which publishes deterministically and writes no pending merge state. If the consumer has two or more constitution contributions, `haex install` refuses outright with `key=constitution-already-adopted` (exit 2) per [ADR 0010](../../docs/adr/0010-drop-multi-source-llm-constitution-merge.md); there is no merge, no concatenation, no model invocation, and no interactive confirmation path.
 3. Verify the v3 publication directly: `.specify/workflows/com.github.haexmas.atoms.speckit-session-hopper/workflow.yml` exists and matches the `atoms.workflow` contribution; `.specify/extensions/workflow-molecules/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh` is the expected regular file, has byte-identical published content, and is executable under the actual hook-runner semantics. Invoke the hook exactly as the runner does for a representative step, requiring successful exit and the expected prompt/marker output. If any assertion fails, do not treat the adoption as successful; the resolver must report the failure rather than consult a registry.
 
 Post-adoption state:

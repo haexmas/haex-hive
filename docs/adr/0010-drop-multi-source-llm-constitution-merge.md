@@ -1,6 +1,6 @@
 # ADR 0010: Drop the Multi-Source LLM Constitution Merge
 
-**Status**: Proposed
+**Status**: Accepted
 **Date**: 2026-09-03
 **Related**: [Scope Realignment design](../plans/2026-09-03-scope-realignment-design.md) §Decision 9;
 [Spec 007 Unified Manifest](../../specs/007-unified-manifest-v2/spec.md),
@@ -62,11 +62,20 @@ same pinned SHA. No merge, no concatenation, no reconciliation.
 
 `haex install` refuses when the resolved atom graph carries two or more prose
 atoms with `binding: non-negotiable`. The refusal is
-`key=multiple-non-negotiable-prose-refused`, analogous to Spec 011's
+`key=constitution-already-adopted`[^1], analogous to Spec 011's
 `multiple-workflow-molecules-refused`, and names the conflicting atoms and
 their sources. The exit code is the existing `INPUT_REFUSE` (2). An operator
 who wants a reconciled document produces it themselves and adopts the result
 as a single-source molecule.
+
+[^1]: This ADR originally proposed the key `multiple-non-negotiable-prose-refused`.
+    Spec 013 (2026-09-04) shipped the equivalent refusal under the key
+    `constitution-already-adopted` instead — the same rule, both at `haex add`'s
+    pre-write check and directly inside `haex install`. `multiple-non-negotiable-prose-refused`
+    was never implemented; `constitution-already-adopted` is the key in
+    `src/haex_hive/util/errors.py`, `cli/install.py`, README.md, and every
+    Spec 013 artifact. This footnote is the amendment; the name is retained
+    below only where it appears as this ADR's original (superseded) proposal.
 
 Any number of prose atoms with `binding: recommended` remain permitted; they
 compile into per-tool prose files (`CLAUDE.md` / `AGENTS.md` / ...), not into
@@ -80,7 +89,7 @@ Concretely:
   multi-source merge branches from `constitution/assemble.py`.
 - Remove the error keys `llm-required-for-multi-source`, `merge-not-confirmed`
   and `pending-merge-inputs-mismatch`.
-- Add the refusal key `multiple-non-negotiable-prose-refused` alongside
+- Add the refusal key `multiple-non-negotiable-prose-refused`[^1] alongside
   Spec 011's `multiple-workflow-molecules-refused`.
 - Narrow exit code 4 to validation refusals and exit code 5 to system refusals;
   both keep their other meanings and neither is renumbered. Code 7 remains
@@ -170,8 +179,10 @@ follow-up work; this ADR changes no executable behaviour by itself.
 - Revise [Spec 007's feature requirements and acceptance scenarios](../../specs/007-unified-manifest-v2/spec.md)
   and the authoritative [Spec 008 install CLI contract](../../specs/008-install-transaction/contracts/haex-install.cli.md)
   to state the one-non-negotiable-prose rule, add the
-  `multiple-non-negotiable-prose-refused` diagnostic key, drop the merge
+  `constitution-already-adopted` diagnostic key[^1], drop the merge
   requirements, and preserve the FR-038 checks and exit-code precedence.
+  **Done** 2026-09-04 (Spec 007 spec.md, Spec 008 spec.md/plan.md/research.md/
+  contracts/haex-install.cli.md).
 - The README and [Spec 008 quickstart](../../specs/008-install-transaction/quickstart.md)
   are aligned with the deterministic install path in this change.
 - [Spec 011](../../specs/011-speckit-workflow-atom/spec.md) still mandates the
@@ -180,9 +191,18 @@ follow-up work; this ADR changes no executable behaviour by itself.
   Both need rewriting. Under this decision Spec 011's constitution fragment
   becomes recommended prose that lands in `CLAUDE.md` / `AGENTS.md`, not in
   the constitution; the `## Workflow-Contributed Rules` section moves with it.
-- [Spec 012's adoption flow](../plans/2026-09-02-spec-012-speckit-session-hopper-atom-design.md)
-  is aligned with the deterministic install path in this change; any remaining
-  consumer instructions must not use the retired `--llm` or `--accept-merged`
-  flags.
+  **Not done.** The replacement mechanism ("recommended prose compiled into
+  `CLAUDE.md`/`AGENTS.md`") has no implementation to describe yet — Spec 010
+  (compiler + adapters) does not exist as of 2026-09-04. Rewriting FR-004,
+  the US1 test, `quickstart.md`'s "First install" walkthrough, `data-model.md`'s
+  pipeline diagram, and `plan.md`'s Constitution Check rows all depend on that
+  design landing first. Marked superseded-pending-redesign in each of those
+  four files instead of rewritten.
+- [Spec 012's adoption flow](../plans/2026-09-02-spec-012-speckit-session-hopper-atom-design.md):
+  **was not actually aligned** despite this bullet's original claim — it
+  described "a deterministic concatenation-with-provenance format" for the
+  multi-source case, which this ADR's own Decision section above rejected in
+  favor of outright refusal. **Done** 2026-09-04: corrected to describe the
+  `constitution-already-adopted` refusal instead.
 - Remove the dead `d15_one_file_tree_digest` implementation and its tests as
   part of implementing this decision.

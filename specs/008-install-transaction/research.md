@@ -237,7 +237,18 @@ is authoritative; no procedure from the earlier design is active.
 
 ## R9. Constitution assembly integration
 
-**2026-09-02 amendment**: `haex install` is the single CLI entry point for
+**2026-09-04 amendment (ADR 0010)**: the multi-source LLM merge described
+below (the `--llm`/`--accept-merged` flags, `assemble_multi_source`,
+`constitution/llm.py`, `constitution/pending.py`, and the pending-merge
+sidecar state) is retired. A repository adopts exactly one non-negotiable
+prose constitution source; `haex install` refuses with
+`key=constitution-already-adopted` (exit 2) when the resolved atom graph
+carries two or more. `constitution/assemble.py` retains only
+`_publish_constitution` and `assemble_single_source`. The rest of this
+section describes the 2026-09-02 amendment's now-superseded design and is
+kept for history; do not implement against it.
+
+**2026-09-02 amendment (superseded above)**: `haex install` is the single CLI entry point for
 constitution installation and owns the `--llm` / `--accept-merged` flags
 directly. `haex constitution show` remains the read-only inverse. The
 library-layer functions in `constitution/assemble.py`
