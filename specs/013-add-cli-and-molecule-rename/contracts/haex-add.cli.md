@@ -48,6 +48,7 @@ haex add <source-url> [<molecule-id>[,<molecule-id>...]]
 | `source-url-invalid` | `<source-url>` did not resolve to a git remote (`git ls-remote` failed with a non-transient error). Nothing written. | 2 |
 | `revision-not-found` | `--revision=<SHA>` was given, but the remote does not have that SHA. Nothing written. | 2 |
 | `publisher-manifest-missing` | The resolved revision has no `manifest.json` at repo root. Nothing written. | 2 |
+| `publisher-manifest-invalid` | The publisher `manifest.json` at the resolved revision does not validate against `publisher-manifest.v3.schema.json` (schema violation, or `haex_hive_version` is not `"3"`). Nothing written. | 2 |
 | `molecule-id-not-in-source` | A positional molecule-id is not listed in the publisher manifest at that revision. Nothing written. | 2 |
 | `interactive-selection-unavailable` | No positional ids, no `--all`, and stdin is not a TTY. Nothing written. | 2 |
 | `workflow-molecule-already-adopted` | The added molecule set includes a workflow molecule while `.haex-hive.json` already resolves to a different workflow molecule. Names the currently adopted workflow molecule; asks the operator to `haex remove <current-id>` first. Nothing written. | 2 |

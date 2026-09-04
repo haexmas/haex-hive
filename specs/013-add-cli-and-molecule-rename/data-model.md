@@ -83,6 +83,7 @@ Every entity below has its authoritative JSON Schema under [`contracts/`](contra
 - Keys of `atoms{}` are category names as documented by Spec 010 (compiler + adapters). Known categories: `constitution`, `workflow`, `hooks`, `skills`, `prompts`, `mcp`, and adapter-specific ones.
 - The value of each key is a non-empty, unique list of molecule-directory-relative POSIX paths. No absolute paths; no `..` segments.
 - A molecule contributing a constitution declares `atoms.constitution: [<path>]` (typically one file). Spec 014 (single-non-negotiable-prose) rule interpretation still applies to the *consumer*'s adopted set.
+- **Cross-category path overlap is refused**: no delivered path may appear in more than one category's list within a single molecule manifest's `atoms{}` map. JSON Schema's `uniqueItems` only detects intra-array duplicates, so the tool enforces this cross-array constraint at molecule-manifest load-time and refuses with `atoms-category-overlap` (per Spec 007's contract) before any publication. This is orthogonal to the `install.lock` `contributed_paths` uniqueness constraint, which covers the post-publication ledger.
 
 ---
 
