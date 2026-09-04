@@ -95,7 +95,7 @@ Policy may mark any capability class as `require-confirmation`. The relay holds 
 
 ### Explicit device targeting
 
-Any cross-device command must name a target device by alias. A skill enforces this: the resolved target (alias plus `nostr_pubkey` plus `iroh_node_id`, both stable across sessions and both drawn from the current device attestation) is shown to the operator before dispatch. When the command carries a file transfer, the ticket fingerprint of the accompanying `blob.offer` is shown alongside; pure control commands have no ticket at this stage. Stale presence is surfaced.
+Any cross-device command must name a target device by alias. A skill enforces this: the resolved target (alias plus `nostr_pubkey` plus `iroh_node_id`, both stable across sessions and both drawn from the current device attestation) is shown to the operator before dispatch. The signed intent payload carries `target_nostr_pubkey`, `target_iroh_node_id`, and the attestation epoch that was current at resolution time; the receiver validates all three against its own current attestation before executing. An alias rebinding between confirmation and dispatch therefore cannot silently route an authorized command to a different device: the alias is used for display and lookup only, never as the authorization binding. Alias uniqueness within the operator's device registry is enforced by the master signing at most one active attestation per alias, and rebinding requires a fresh master-signed attestation with a new epoch. When the command carries a file transfer, the ticket fingerprint of the accompanying `blob.offer` is shown alongside; pure control commands have no ticket at this stage. Stale presence is surfaced.
 
 ## 3. Integration with the existing haex-hive core
 
