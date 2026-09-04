@@ -38,7 +38,12 @@ from haex_hive.model.install_lock import (
     VisibilityMarkerRef,
 )
 from haex_hive.util import exit_codes
-from haex_hive.util.errors import MergeNotConfirmedError, PostWriteValidationError, UsageError
+from haex_hive.util.errors import (
+    HaexError,
+    MergeNotConfirmedError,
+    PostWriteValidationError,
+    UsageError,
+)
 
 TOOL_NAME = "haex"
 
@@ -59,9 +64,11 @@ def _read_existing_lock(repo_root: Path) -> InstallLock | None:
         return None
     try:
         return InstallLock.from_json(lock_path.read_bytes())
-    except (OSError, ValueError):
-        # Best-effort forward-compat preservation only; a corrupt existing lock
-        # is simply replaced wholesale by the fresh generation below.
+    except (OSError, ValueError, HaexError):
+        # Best-effort forward-compat preservation only; a corrupt or
+        # schema-incompatible existing lock (e.g. a pre-v3 lock read by the
+        # v3-only reader) is simply replaced wholesale by the fresh
+        # generation below.
         return None
 
 
