@@ -36,7 +36,7 @@ Until that ADR lands, no spec descended from this document may claim Decision 1 
 - **Nostr** carries identity, presence, discovery, capability advertisement, commands, LLM prompts and text responses (including chunked text-token streams), DMs, and control-plane events (including iroh handshake tickets).
 - **iroh** carries bulk bytes in two shapes over the same peer connection: content-addressed blobs for persistent artifacts (user-facing files, generated media saved as images, video, audio) via iroh-blobs' BAO tree (chunked, resumable, verifiable); and ephemeral QUIC streams for real-time media (voice call, video call, screen share, live playback of a large file whose bytes are not being captured as a blob).
 
-LLM text-token streams stay on Nostr because each chunk is a small semantic event that benefits from audit-friendly ingress checks, and the throughput is trivial (a few KB/s per session). Anything at real-time media bitrate (audio, video, screen) is on iroh: Nostr's per-event JSON envelope, base64 encoding, and per-event policy check are the wrong tool for that traffic profile, and public relays will drop the connection under it.
+The split is by traffic class, not by a runtime bitrate check. LLM text-token streams are always on Nostr: each chunk is a small semantic event that benefits from audit-friendly ingress checks, throughput is trivial (a few KB/s per session), no measurement needed. Real-time media sessions (voice, video, screen, live large-file playback) are always on iroh: Nostr's per-event JSON envelope, base64 encoding, and per-event policy check are the wrong tool for that traffic profile, and public relays would drop the connection under it. A session's transport is fixed at offer time by the offer kind and does not migrate between Nostr and iroh at runtime; a session that changes character (an audio call gaining a video track, for example) opens a new offer.
 
 ### Device equals relay equals Tauri application
 
@@ -83,7 +83,12 @@ Two iroh session shapes exist, authorized identically by a signed offer event on
 - **Blob offer** (`blob.offer`): announces a content-addressed transfer. Carries the Blake3 hash, filename, MIME, size, and a short-lived iroh ticket.
 - **Stream offer** (`stream.offer`): announces an ephemeral QUIC stream for real-time media. Carries a stream kind (voice, video, screen, generic), codec parameters, direction (unidirectional or bidirectional), an expected duration hint, and a short-lived iroh ticket. No content hash, since the payload is generated in real time.
 
-The iroh accept-handler admits connections only for currently-issued, unexpired, single-use tickets bound to the intended recipient's `nostr_pubkey` and `iroh_node_id` and tied to the event ID of the announcing offer. Connections presenting a valid ticket from any other peer identity are rejected, so a leaked ticket cannot authorize a session by a third party even before its single-use consumption. Single-use means "one download session per ticket" for a blob and "one live session per ticket" for a stream, with the stream closing when the session ends or a heartbeat lapses. No separate authorization layer sits on top of iroh.
+Authorization is per iroh QUIC stream, not per underlying iroh connection. iroh multiplexes multiple streams onto a single connection between two peers, and every new stream carries its own ticket check at accept time. On each new-stream accept:
+
+- The ticket must be currently issued, unexpired, bound to the intended recipient's `nostr_pubkey` and `iroh_node_id`, and tied to the event ID of the announcing offer. A ticket presented from any other peer identity is rejected, so a leaked ticket cannot authorize a session by a third party even before its single-use consumption.
+- Ticket consumption is atomic and durable, keyed by the pair (`ticket`, offer event ID). Concurrent accepts race exactly one to success; every other concurrent accept fails. The ticket is consumed at the start of the handshake (fail-closed): a failed handshake does not release the ticket, the offer must re-issue.
+
+Single-use therefore means "one accepted stream per ticket": one blob download session, or one `stream.offer` session. Session lifetime after the accept (ordinary teardown, heartbeat behavior on transient loss, and behavior on iroh endpoint reconnection or migration) is spec-phase work and listed in Section 5, item 11. No separate authorization layer sits on top of iroh.
 
 ### MCP as capability schema
 
@@ -134,7 +139,13 @@ Recorded here so the follow-up ADR and specs know their scope:
 8. Multi-device routing when several devices offer the same capability. The explicit-target skill covers UX; how presence events express load hints and "prefer for capability X" flags is unresolved.
 9. Reason to build this rather than adopt Buzz (Decision 1 named this as a precondition). The follow-up ADR must answer it.
 10. Sequencing: which of `attestation and ingress policy`, `ping round-trip`, `iroh blob roundtrip`, `MCP adapter and LLM` lands first, and against which milestone in the existing speckit backlog.
-11. Stream session semantics for `stream.offer`: codec negotiation, session lifecycle (heartbeat interval, teardown, migration on network change), bandwidth adaptation, and optional in-session blob capture (e.g. saving a video call to a persistent blob mid-stream). Not settled by this document.
+11. Stream session semantics for `stream.offer`, unresolved and normative in the stream spec:
+    - Session identifier and its relationship to the announcing offer's event ID.
+    - Ticket lifetime relative to session lifetime: strict single-use per stream, or session-scoped so a normal iroh QUIC connection migration continues the same authorized session without a fresh ticket.
+    - Heartbeat interval, missed-heartbeat grace period, and behavior during transient network loss, so dead sessions are removed without terminating valid ones under short outages.
+    - Reconnection semantics on iroh endpoint address change: same session continues under the existing authorization, or fresh authorization is required.
+    - Codec negotiation and bandwidth adaptation within a session.
+    - Optional in-session blob capture (for example, saving a video call to a persistent blob mid-stream).
 
 ## 6. Follow-up work
 
