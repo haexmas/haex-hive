@@ -61,8 +61,8 @@ Each installation is one process that hosts:
 
 The relay treats two classes of events differently:
 
-- **Command events** (device-to-device: MCP calls, presence refresh, ticket handshake, status queries, policy updates). Accepted only from pubkeys in the master-attested device registry, with NIP-42 auth. Egress only to known home-relays of the operator's other devices. This is the closed federation.
-- **DM events** (NIP-17 gift-wrapped). Accepted from any pubkey not on the operator's blocklist. Egress to whatever public relay set the user chose. This is the open channel.
+- **Command events** (device-to-device: MCP calls, presence refresh, ticket handshake, status queries, policy updates). Accepted only from pubkeys in the master-attested device registry, with NIP-42 auth. Egress only to the relay endpoints of the operator's other devices. Since device equals relay one-to-one, the home-relay identity for a target device is the relay URL announced in that device's most recent valid presence event, signed by its attested `nostr_pubkey`; stale or revoked presence entries are excluded from egress. This is the closed federation.
+- **DM events** (NIP-17 gift-wrapped, `kind:1059`). The outer wrapper carries a per-event random pubkey by design, so the operator blocklist is applied against the actual sender pubkey after gift-wrap decryption and sender validation, not against the outer pubkey. Wrapper events are admitted subject to explicit size, rate, and retention limits set on the relay. NIP-42 authenticates the local client publishing wrappers to the operator's own relays. Egress to whatever public relay set the user chose. This is the open channel.
 
 Both handlers live in the same relay instance, dispatched by event kind.
 
@@ -74,12 +74,12 @@ Both handlers live in the same relay instance, dispatched by event kind.
 
 ### Trust store covers both endpoints
 
-Ingress checks share one table: `(alias, nostr_pubkey, iroh_node_id, valid_until, capabilities)`. Nostr ingress validates against `nostr_pubkey`, iroh accept-handler validates against `iroh_node_id`. Any drift between the two trust states is structurally impossible.
+Ingress checks share one table: `(alias, nostr_pubkey, iroh_node_id, valid_until, capabilities, epoch)`. Nostr ingress validates against `nostr_pubkey`, iroh accept-handler validates against `iroh_node_id`, and both check the current epoch and reject decisions that would be taken on a stale epoch value. Revocation bumps the epoch atomically for both endpoints; iroh transfers in flight against a stale epoch are cancelled by the accept-handler on the next chunk exchange. Any drift between the two trust states is structurally impossible. The precise epoch propagation, revocation ordering, and in-flight cancellation contract is spec-phase work.
 
 ### iroh authorization piggybacks Nostr
 
 - A file transfer is announced by a signed `blob.offer` event carrying the Blake3 hash, filename, MIME, size and a short-lived iroh ticket.
-- The iroh accept-handler admits connections only for currently-issued, unexpired, single-use tickets tied to the event ID of the announcing intent.
+- The iroh accept-handler admits connections only for currently-issued, unexpired, single-use tickets bound to the intended recipient's `nostr_pubkey` and `iroh_node_id` and tied to the event ID of the announcing intent. Connections presenting a valid ticket from any other peer identity are rejected, so a leaked ticket cannot authorize a download by a third party even before its single-use consumption.
 - No separate authorization layer sits on top of iroh.
 
 ### MCP as capability schema
@@ -91,18 +91,18 @@ Ingress checks share one table: `(alias, nostr_pubkey, iroh_node_id, valid_until
 
 ### Confirmation for write actions
 
-Policy may mark any capability class as `require-confirmation`. The relay holds such intents until the operator confirms with a signed release event from the primary device, then forwards.
+Policy may mark any capability class as `require-confirmation`. The relay holds such intents until it receives a signed release event from a device whose current attestation carries a `confirmation-authority` capability, master-attested and rotatable or revocable through the same attestation flow. The release event names the exact intent ID it authorizes; receivers verify the attestation binding and the intent scope before accepting the release, then forward the intent.
 
 ### Explicit device targeting
 
-Any cross-device command must name a target device by alias. A skill enforces this: the resolved target (alias plus pubkey plus iroh ticket fingerprint) is shown to the operator before dispatch. Stale presence is surfaced.
+Any cross-device command must name a target device by alias. A skill enforces this: the resolved target (alias plus `nostr_pubkey` plus `iroh_node_id`, both stable across sessions and both drawn from the current device attestation) is shown to the operator before dispatch. When the command carries a file transfer, the ticket fingerprint of the accompanying `blob.offer` is shown alongside; pure control commands have no ticket at this stage. Stale presence is surfaced.
 
 ## 3. Integration with the existing haex-hive core
 
 The speckit-driven harness core is not replaced; the personal agent is a new consumer of it.
 
 - **Handoff contract**: unchanged. A task delegated to another device still carries a harness pin and lockfile hash. The receiver still runs `haex install` at that pin before starting the agent session. What changes is the transport of the handoff manifest: it can now travel as a signed Nostr command event between the operator's own devices, and the harness materialization happens locally on the receiving device before the agent turn begins.
-- **Manifest v2/v3**: unchanged. It still declares what a harness contributes across skills, hooks, prompts, MCP servers. A new field or block will be needed to declare which capabilities the agent runtime exposes to remote devices; that declaration lives in a follow-up spec, not this document.
+- **Manifest v2/v3**: the current declarations (skills, hooks, prompts, MCP servers) are unchanged. The declaration of which capabilities the agent runtime exposes to remote devices needs a normative home, and the two candidate placements have different downstream consequences that the follow-up spec MUST decide, not defer: (a) keeping the declaration inside the manifest bumps the schema version, extends canonicalization, and covers the field with both the install transaction and the handoff hash, or (b) keeping it in a separate versioned runtime-capability artifact requires an explicit binding to the handoff, either by hashing the artifact from the manifest or by carrying a second pinned entry in the handoff manifest. Leaving both open at implementation time is not permitted; the follow-up spec picks one and this design does not.
 - **Install transaction**: unchanged. Installation of the harness on any device is still atomic with a lockfile, orphan deletion and integrity checks.
 - **Compiler and adapters**: the Tauri agent runtime is a new adapter target. The compiler emits per-tool artifacts as it does today; a new adapter emits the runtime's configuration file. This is future spec 010-follow-up work, not this document.
 - **Environment plane** (Scope Realignment Decision 2): unchanged. The Tauri build's own toolchain is declared via the same environment block. No provider is installed by haex-hive.
@@ -122,7 +122,7 @@ The split in Section 2 is chosen so each layer does what it is good at. No layer
 Recorded here so the follow-up ADR and specs know their scope:
 
 1. Event kind numbering for command events, presence events, `blob.offer`, attestation, revocation, confirmation. Working proposals only; numbers not fixed.
-2. Wire format of the device attestation event (fields, signature scheme, replay protection).
+2. Wire format of the device attestation event (fields, signature scheme, replay protection). Replay protection is normative for every state-changing event kind (attestation, revocation, command, MCP call, confirmation release, `blob.offer`, handoff), covering event or intent ID, expiry, sender-and-target binding, durable deduplication or monotonic sequence checks, and explicit idempotency rules. The attestation spec fixes the mechanism once; the ingress, blob, MCP, and runtime specs reuse it.
 3. Policy language for the ingress ACL (per-tool, per-argument, per-device-pair).
 4. Relay implementation choice (nostr-rs-relay embedded, strfry embedded, or a purpose-built minimal relay). Trade-offs not yet weighed.
 5. Encrypted-at-rest storage choice (SQLCipher, Sled + AGE, or other).
