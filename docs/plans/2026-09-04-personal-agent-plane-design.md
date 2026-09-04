@@ -33,10 +33,10 @@ Until that ADR lands, no spec descended from this document may claim Decision 1 
 
 ### Two planes, disjoint by intent
 
-- **Nostr** carries identity, presence, discovery, capability advertisement, commands, LLM prompts and text responses, DMs, and control-plane events (including iroh handshake tickets).
-- **iroh** carries only file bytes: user-facing files, and generated media outputs (images, video, audio) treated as file artifacts. Content-addressed via Blake3, chunked and resumable through iroh-blobs' BAO tree.
+- **Nostr** carries identity, presence, discovery, capability advertisement, commands, LLM prompts and text responses (including chunked text-token streams), DMs, and control-plane events (including iroh handshake tickets).
+- **iroh** carries bulk bytes in two shapes over the same peer connection: content-addressed blobs for persistent artifacts (user-facing files, generated media saved as images, video, audio) via iroh-blobs' BAO tree (chunked, resumable, verifiable); and ephemeral QUIC streams for real-time media (voice call, video call, screen share, live playback of a large file whose bytes are not being captured as a blob).
 
-Live streaming (token streams, live audio/video from a session) stays on Nostr as a chain of chunked events, not as an iroh stream. iroh is strictly a blob transport.
+LLM text-token streams stay on Nostr because each chunk is a small semantic event that benefits from audit-friendly ingress checks, and the throughput is trivial (a few KB/s per session). Anything at real-time media bitrate (audio, video, screen) is on iroh: Nostr's per-event JSON envelope, base64 encoding, and per-event policy check are the wrong tool for that traffic profile, and public relays will drop the connection under it.
 
 ### Device equals relay equals Tauri application
 
@@ -78,9 +78,12 @@ Ingress checks share one table: `(alias, nostr_pubkey, iroh_node_id, valid_until
 
 ### iroh authorization piggybacks Nostr
 
-- A file transfer is announced by a signed `blob.offer` event carrying the Blake3 hash, filename, MIME, size and a short-lived iroh ticket.
-- The iroh accept-handler admits connections only for currently-issued, unexpired, single-use tickets bound to the intended recipient's `nostr_pubkey` and `iroh_node_id` and tied to the event ID of the announcing intent. Connections presenting a valid ticket from any other peer identity are rejected, so a leaked ticket cannot authorize a download by a third party even before its single-use consumption.
-- No separate authorization layer sits on top of iroh.
+Two iroh session shapes exist, authorized identically by a signed offer event on Nostr plus a peer-bound iroh ticket:
+
+- **Blob offer** (`blob.offer`): announces a content-addressed transfer. Carries the Blake3 hash, filename, MIME, size, and a short-lived iroh ticket.
+- **Stream offer** (`stream.offer`): announces an ephemeral QUIC stream for real-time media. Carries a stream kind (voice, video, screen, generic), codec parameters, direction (unidirectional or bidirectional), an expected duration hint, and a short-lived iroh ticket. No content hash, since the payload is generated in real time.
+
+The iroh accept-handler admits connections only for currently-issued, unexpired, single-use tickets bound to the intended recipient's `nostr_pubkey` and `iroh_node_id` and tied to the event ID of the announcing offer. Connections presenting a valid ticket from any other peer identity are rejected, so a leaked ticket cannot authorize a session by a third party even before its single-use consumption. Single-use means "one download session per ticket" for a blob and "one live session per ticket" for a stream, with the stream closing when the session ends or a heartbeat lapses. No separate authorization layer sits on top of iroh.
 
 ### MCP as capability schema
 
@@ -113,7 +116,7 @@ The speckit-driven harness core is not replaced; the personal agent is a new con
 Recorded here so future readers do not relitigate:
 
 - Nostr provides asynchronous publish to an offline recipient (relay stores events), identity-based discovery (a pubkey reaches all its posts), a cross-client public data model, censorship resistance through relay pluralism, zero infrastructure to publish, and Lightning-native payments.
-- iroh provides efficient content-addressed blob transfer, direct P2P streams with hole-punching, and resumable chunked delivery.
+- iroh provides two efficient direct-P2P transports over the same QUIC connection with hole-punching: content-addressed blob transfer (chunked, resumable, verifiable via BAO tree) for persistent artifacts, and ephemeral QUIC streams for real-time media. Both inherit the same peer-identity binding.
 
 The split in Section 2 is chosen so each layer does what it is good at. No layer is asked to do the other's job.
 
@@ -121,8 +124,8 @@ The split in Section 2 is chosen so each layer does what it is good at. No layer
 
 Recorded here so the follow-up ADR and specs know their scope:
 
-1. Event kind numbering for command events, presence events, `blob.offer`, attestation, revocation, confirmation. Working proposals only; numbers not fixed.
-2. Wire format of the device attestation event (fields, signature scheme, replay protection). Replay protection is normative for every state-changing event kind (attestation, revocation, command, MCP call, confirmation release, `blob.offer`, handoff), covering event or intent ID, expiry, sender-and-target binding, durable deduplication or monotonic sequence checks, and explicit idempotency rules. The attestation spec fixes the mechanism once; the ingress, blob, MCP, and runtime specs reuse it.
+1. Event kind numbering for command events, presence events, `blob.offer`, `stream.offer`, attestation, revocation, confirmation. Working proposals only; numbers not fixed.
+2. Wire format of the device attestation event (fields, signature scheme, replay protection). Replay protection is normative for every state-changing event kind (attestation, revocation, command, MCP call, confirmation release, `blob.offer`, `stream.offer`, handoff), covering event or intent ID, expiry, sender-and-target binding, durable deduplication or monotonic sequence checks, and explicit idempotency rules. The attestation spec fixes the mechanism once; the ingress, blob, MCP, and runtime specs reuse it.
 3. Policy language for the ingress ACL (per-tool, per-argument, per-device-pair).
 4. Relay implementation choice (nostr-rs-relay embedded, strfry embedded, or a purpose-built minimal relay). Trade-offs not yet weighed.
 5. Encrypted-at-rest storage choice (SQLCipher, Sled + AGE, or other).
@@ -131,6 +134,7 @@ Recorded here so the follow-up ADR and specs know their scope:
 8. Multi-device routing when several devices offer the same capability. The explicit-target skill covers UX; how presence events express load hints and "prefer for capability X" flags is unresolved.
 9. Reason to build this rather than adopt Buzz (Decision 1 named this as a precondition). The follow-up ADR must answer it.
 10. Sequencing: which of `attestation and ingress policy`, `ping round-trip`, `iroh blob roundtrip`, `MCP adapter and LLM` lands first, and against which milestone in the existing speckit backlog.
+11. Stream session semantics for `stream.offer`: codec negotiation, session lifecycle (heartbeat interval, teardown, migration on network change), bandwidth adaptation, and optional in-session blob capture (e.g. saving a video call to a persistent blob mid-stream). Not settled by this document.
 
 ## 6. Follow-up work
 
