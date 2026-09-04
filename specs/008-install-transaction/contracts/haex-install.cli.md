@@ -17,14 +17,16 @@ haex install [--repo-root PATH] [--verify-only] [--json]
 | `--verify-only` | off | Acquire the SHARED read lock, validate the current `install.lock` schema/migration gate, verify recorded paths and generation agreement, then exit. Never mutates. Same shape as `haex verify` today. |
 | `--json` | off | Emit the versioned `haex-install-result-v1` result object instead of human-readable status text. The result includes any capability degradations. |
 
-A repository adopts exactly one non-negotiable-prose constitution source
-(ADR 0010): `haex install` refuses with `key=constitution-already-adopted`
-(exit 2) when the resolved atom graph carries two or more constitution-
-contributing molecules, naming the conflicting molecules and their sources.
-There is no merge, no concatenation, no model invocation, no pending state,
-and no interactive confirmation path — an operator who wants a reconciled
-document produces it themselves and adopts the result as a single-source
-molecule.
+A repository adopts exactly one non-negotiable-prose constitution-contributing
+molecule (ADR 0010). `haex install` refuses with
+`key=constitution-already-adopted` (exit 2) when the resolved molecule graph
+contains two or more distinct constitution-contributing molecules, naming the
+conflicting molecule IDs. If that molecule declares multiple constitution
+files, install composes them in deterministic declaration order; this
+same-source composition is allowed. There is no cross-molecule merge or
+concatenation, model invocation, pending state, or interactive confirmation
+path — an operator who wants a reconciled document produces it themselves and
+adopts the result as a single-source molecule.
 
 Recovery is implicit: any subsequent `haex install` acquires the exclusive lock, removes a leftover `<root>.next/` sibling, retains `<root>.prev/` until the replacement is successfully published, and reinstalls from the deterministic pinned inputs. There is no separate `haex verify --recover` verb (retired 2026-09-02 by the detect+retry amendment).
 
@@ -43,7 +45,7 @@ Uses the canonical set defined in [src/haex_hive/util/exit_codes.py](../../../sr
 |---|---|---|
 | 64 | Usage error | unknown subcommand, invalid flag, or missing flag value; no lock is acquired |
 | 0 | Success | `installed generation g_20260831T142011Z_a4c2` |
-| 2 | Input refuse (FR-006 / Principle V) | `.haex-hive.json not found` / `.haex-hive.json.atoms is empty (Principle V opt-in required)` / `key=constitution-already-adopted` (ADR 0010: two or more constitution-contributing molecules resolved) |
+| 2 | Input refuse (FR-006 / Principle V) | `.haex-hive.json not found` / `{"haex_hive_version":"3","identity":"com.example.project","compounds":[]}` (Principle V opt-in required) / `.haex-hive.json contains retired "atoms" field (v3 schema error)` / `key=constitution-already-adopted` (ADR 0010: two or more constitution-contributing molecules resolved) |
 | 3 | I/O refuse (FR-006) | `publisher clone for <source> not found under $HAEX_HIVE_STATE/repos/` |
 | 4 | Validation refuse (FR-006) | `plan snapshot digest does not match commit snapshot; source mutated during install` |
 | 5 | System refuse (FR-003) | `declared environment provider is unavailable` |
