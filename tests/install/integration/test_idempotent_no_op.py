@@ -55,10 +55,9 @@ def test_second_install_is_a_no_op(
     live = consumer / ".haex-hive"
     constitution_bytes = (live / "constitution.md").read_bytes()
     lock_bytes = (live / "install.lock").read_bytes()
-    marker_bytes = (live / "visibility.json").read_bytes()
     stat_before = {
         p.name: p.stat().st_mtime_ns
-        for p in (live / "constitution.md", live / "install.lock", live / "visibility.json")
+        for p in (live / "constitution.md", live / "install.lock")
     }
 
     second = _run_install(consumer, state_root)
@@ -67,11 +66,10 @@ def test_second_install_is_a_no_op(
 
     assert (live / "constitution.md").read_bytes() == constitution_bytes
     assert (live / "install.lock").read_bytes() == lock_bytes
-    assert (live / "visibility.json").read_bytes() == marker_bytes
 
     stat_after = {
         p.name: p.stat().st_mtime_ns
-        for p in (live / "constitution.md", live / "install.lock", live / "visibility.json")
+        for p in (live / "constitution.md", live / "install.lock")
     }
     assert stat_after == stat_before, "no-op path must not touch on-disk files"
 
@@ -105,4 +103,4 @@ def test_changed_source_url_republishes_lock(
     assert second_generation_id != first_generation_id
 
     lock = json.loads((consumer / ".haex-hive" / "install.lock").read_text())
-    assert lock["constitution"]["sources"][0]["source"] == new_source
+    assert lock["molecules"][0]["source"] == new_source

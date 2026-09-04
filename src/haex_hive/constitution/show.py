@@ -6,19 +6,26 @@ import sys
 from pathlib import Path
 from typing import BinaryIO
 
+from haex_hive.constitution.assemble import CONSTITUTION_PATH
 from haex_hive.io import transaction
-from haex_hive.model.install_lock import InstallLock
+from haex_hive.model.install_lock import InstallLock, MoleculeEntry
 from haex_hive.util.errors import (
     ConstitutionNotAssembledError,
     InstallLockMissingError,
 )
 
 
-def _render_preface(lock: InstallLock) -> bytes:
-    assert lock.constitution is not None
-    lines = "".join(
-        f"- {s.id} @ {s.revision[:7]} ({s.source})\n" for s in lock.constitution.sources
-    )
+def _constitution_molecules(lock: InstallLock) -> tuple[MoleculeEntry, ...]:
+    """Molecules whose contribution includes the published constitution file.
+
+    Constitution provenance is derived from `molecules[]` rather than
+    tracked in a separate lock section (2026-09-03 install.lock amendment).
+    """
+    return tuple(molecule for molecule in lock.molecules if CONSTITUTION_PATH in molecule.paths)
+
+
+def _render_preface(molecules: tuple[MoleculeEntry, ...]) -> bytes:
+    lines = "".join(f"- {m.id} @ {m.revision[:7]} ({m.source})\n" for m in molecules)
     return f"# Assembled from\n{lines}\n---\n\n".encode()
 
 
@@ -46,14 +53,15 @@ def show(
         )
 
     lock = InstallLock.from_json(lock_path.read_bytes())
-    if lock.constitution is None:
+    constitution_molecules = _constitution_molecules(lock)
+    if not constitution_molecules:
         raise InstallLockMissingError(
-            message="install.lock has no constitution section",
+            message="install.lock has no constitution-contributing molecule",
         )
 
     body = constitution_path.read_bytes()
 
     stream = out if out is not None else sys.stdout.buffer
     if not no_preface:
-        stream.write(_render_preface(lock))
+        stream.write(_render_preface(constitution_molecules))
     stream.write(body)

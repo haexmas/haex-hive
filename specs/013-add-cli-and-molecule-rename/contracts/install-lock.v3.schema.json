@@ -1,159 +1,57 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/haexmas/haex-hive/schemas/install-lock.v3.schema.json",
-  "title": "haex-hive Install Lockfile v3",
-  "description": "Schema for `.haex-hive/install.lock` under v3 vocabulary. Renames v2 `atoms[]` to `molecules[]` and `atomInstallRecord` to `moleculeInstallRecord`. Semantics inherit from Spec 008.",
+  "title": "haex-hive Install Lockfile v3 (npm/pip-shape simplification)",
+  "description": "Schema for `.haex-hive/install.lock` after the 2026-09-03 Spec 008 amendment, adapted to v3 vocabulary. The shape contains only the schema version, the published generation ID, and molecule entries. Legacy generated_by, constitution, atoms, contributed_paths, generation_inputs, participating_roots, and visibility_marker fields are rejected by the FR-005 schema/migration gate.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["haex_hive_version", "generated_by"],
+  "required": ["haex_hive_version", "generation_id", "molecules"],
   "properties": {
     "haex_hive_version": { "const": "3" },
-    "generated_by": {
+    "generation_id": {
       "type": "string",
-      "pattern": "^haex [0-9]+\\.[0-9]+\\.[0-9]+.*$",
-      "description": "e.g. 'haex 3.0.0'."
-    },
-    "constitution": {
-      "$ref": "#/$defs/constitutionBlock",
-      "description": "Constitution block. Present when the install includes at least one molecule contributing a constitution."
+      "pattern": "^g_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{4}$",
+      "description": "This generation's identifier. install.lock is the sole publication record; there is no separate visibility.json file."
     },
     "molecules": {
       "type": "array",
-      "items": { "$ref": "#/$defs/moleculeInstallRecord" },
-      "description": "One entry per adopted molecule whose contribution is recorded in this install. Renamed from v2 `atoms[]`."
-    },
-    "generation_inputs": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/generationInputIdentity" },
       "uniqueItems": true,
-      "description": "Immutable adapter and tool-configuration identities used to generate this publication; order MUST be `(kind, id)`-sorted."
-    },
-    "participating_roots": {
-      "type": "array",
-      "minItems": 1,
-      "items": { "$ref": "#/$defs/rootName" },
-      "uniqueItems": true,
-      "description": "MUST match `visibility.json.participating_roots` byte-identically at publication time."
-    },
-    "visibility_marker": {
-      "$ref": "#/$defs/visibilityMarkerRef",
-      "description": "Cross-reference to the `.haex-hive/visibility.json` marker this lock corresponds to (by `generation_id` only)."
+      "items": { "$ref": "#/$defs/moleculeEntry" },
+      "$comment": "The post-schema semantic validator requires lexicographic (id, source, revision, paths) ordering. JSON Schema cannot compare properties across array items. uniqueItems rejects duplicate full tuples.",
+      "description": "One entry per resolved molecule, canonically ordered by (id, source, revision, paths). Constitution provenance, participating roots, and tool/adapter identity are all derivable from this array rather than tracked separately."
     }
   },
   "$defs": {
-    "rootName": {
-      "type": "string",
-      "pattern": "^(?!\\.\\.?/$)\\.[A-Za-z0-9._-]+/$",
-      "description": "Repo-relative directory with trailing slash, e.g. '.haex-hive/'."
-    },
-    "constitutionBlock": {
+    "moleculeEntry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sources", "assembled_by"],
-      "properties": {
-        "sources": { "type": "array" },
-        "assembled_by": { "type": "object" }
-      }
-    },
-    "moleculeInstallRecord": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "source", "revision", "contributed_paths"],
+      "required": ["id", "source", "revision", "paths"],
       "properties": {
         "id": {
           "type": "string",
           "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$",
-          "description": "Reverse-DNS molecule-id."
+          "description": "Reverse-DNS molecule ID."
         },
         "source": {
           "type": "string",
           "format": "uri",
-          "description": "Publisher repo URL."
+          "description": "Credential-free canonical publisher repository URL."
         },
         "revision": {
           "type": "string",
           "pattern": "^[0-9a-f]{40}$",
-          "description": "Full 40-char SHA per Principle IV."
+          "description": "Immutable full commit SHA per Constitution Principle IV."
         },
-        "contributed_paths": {
+        "paths": {
           "type": "array",
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/repoRelativePath" },
-          "description": "Unique POSIX repo-relative paths written by this molecule under participating roots. Each path must start with a participating root name (as listed in `participating_roots`); this semantic relationship is enforced by the tool at load time, since JSON Schema alone cannot express it."
+          "items": {
+            "type": "string",
+            "pattern": "^(?!.*(?:^|/)\\.\\.?/)(?!.*\\\\)\\.[A-Za-z0-9._-]+/[^\\u0000-\\u001F\\u007F\\\\]+$"
+          },
+          "description": "Unique, deterministically ordered POSIX paths relative to the consumer repository root that this molecule wrote. Every path implicitly names its participating root (its leading dot-segment); there is no separate participating_roots list."
         }
       }
-    },
-    "generationInputIdentity": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "id", "revision", "serialization"],
-      "properties": {
-        "kind": { "type": "string", "enum": ["adapter", "tool-config"] },
-        "id": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
-        },
-        "revision": {
-          "oneOf": [
-            { "type": "string", "pattern": "^git:[0-9a-f]{40}$" },
-            { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
-          ]
-        },
-        "serialization": { "$ref": "#/$defs/serializationProfile" }
-      }
-    },
-    "serializationProfile": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["format", "encoding", "newline", "key_order", "indent", "ensure_ascii"],
-      "properties": {
-        "format": { "type": "string", "enum": ["json", "text", "toml"] },
-        "encoding": { "const": "UTF-8" },
-        "newline": { "const": "LF" },
-        "key_order": { "type": "string", "enum": ["lexicographic-utf8", "not-applicable"] },
-        "indent": {
-          "oneOf": [
-            { "type": "integer", "minimum": 0 },
-            { "type": "null" }
-          ]
-        },
-        "ensure_ascii": { "type": "boolean" }
-      },
-      "allOf": [
-        {
-          "if": { "properties": { "format": { "const": "json" } } },
-          "then": {
-            "properties": {
-              "key_order": { "const": "lexicographic-utf8" },
-              "ensure_ascii": { "const": false }
-            }
-          }
-        },
-        {
-          "if": { "properties": { "format": { "enum": ["text", "toml"] } } },
-          "then": {
-            "properties": {
-              "key_order": { "const": "not-applicable" },
-              "indent": { "const": null },
-              "ensure_ascii": { "const": false }
-            }
-          }
-        }
-      ]
-    },
-    "visibilityMarkerRef": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["generation_id"],
-      "properties": {
-        "generation_id": { "type": "string" }
-      }
-    },
-    "repoRelativePath": {
-      "type": "string",
-      "pattern": "^(?!(?:\\.{1,2})(?:/|$))[^\\u0000-\\u001F\\u007F/\\\\]+(?:/(?!(?:\\.{1,2})(?:/|$))[^\\u0000-\\u001F\\u007F/\\\\]+)*$",
-      "minLength": 1,
-      "description": "Repository-relative POSIX path: no leading/trailing slash, no control characters, no empty, `.`, or `..` segments, no backslashes."
     }
   }
 }

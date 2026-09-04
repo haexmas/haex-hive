@@ -42,11 +42,12 @@ def test_v3_consumer_and_publisher_produce_byte_identical_lock_across_runs(
     lock_path = consumer / ".haex-hive" / "install.lock"
     lock_data = json.loads(lock_path.read_text())
     assert lock_data["haex_hive_version"] == "3"
-    assert lock_data["constitution"]["sources"] == [
+    assert lock_data["molecules"] == [
         {
             "id": single_source_constitution_fixture["atom_id"],
-            "revision": single_source_constitution_fixture["commit_sha"],
             "source": single_source_constitution_fixture["canonical"],
+            "revision": single_source_constitution_fixture["commit_sha"],
+            "paths": [".haex-hive/constitution.md"],
         }
     ]
 

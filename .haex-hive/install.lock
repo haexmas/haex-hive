@@ -1,23 +1,14 @@
 {
-  "constitution": {
-    "assembled_by": {
-      "tool": "haex",
-      "version": "3.0.0"
-    },
-    "sources": [
-      {
-        "id": "com.github.haexmas.haex-hive.constitution",
-        "revision": "fc05d7aa6ca454a6f057f17d59d8a289e897399f",
-        "source": "https://github.com/haexmas/haex-hive"
-      }
-    ]
-  },
-  "generated_by": "haex 3.0.0",
+  "generation_id": "g_20260904T223900Z_b6df",
   "haex_hive_version": "3",
-  "participating_roots": [
-    ".haex-hive/"
-  ],
-  "visibility_marker": {
-    "generation_id": "g_20260904T111222Z_b6df"
-  }
+  "molecules": [
+    {
+      "id": "com.github.haexmas.haex-hive.constitution",
+      "paths": [
+        ".haex-hive/constitution.md"
+      ],
+      "revision": "fc05d7aa6ca454a6f057f17d59d8a289e897399f",
+      "source": "https://github.com/haexmas/haex-hive"
+    }
+  ]
 }

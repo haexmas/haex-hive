@@ -33,13 +33,10 @@ def _init_project(repo_root: Path) -> Path:
     return state_root
 
 
-def _staged(
-    constitution: bytes, install_lock: bytes, visibility: bytes
-) -> list[transaction.StagedFile]:
+def _staged(constitution: bytes, install_lock: bytes) -> list[transaction.StagedFile]:
     return [
         transaction.StagedFile(transaction.CONSTITUTION_NAME, constitution),
         transaction.StagedFile(transaction.INSTALL_LOCK_NAME, install_lock),
-        transaction.StagedFile(transaction.VISIBILITY_NAME, visibility),
     ]
 
 
@@ -49,14 +46,13 @@ def test_publish_creates_live_on_first_generation(tmp_path: Path) -> None:
 
     transaction.publish_generation(
         live,
-        _staged(b"body\n", b"{}\n", b"{}\n"),
+        _staged(b"body\n", b"{}\n"),
         state_root=state_root,
         repo_root=tmp_path,
     )
 
     assert (live / transaction.CONSTITUTION_NAME).read_bytes() == b"body\n"
     assert (live / transaction.INSTALL_LOCK_NAME).read_bytes() == b"{}\n"
-    assert (live / transaction.VISIBILITY_NAME).read_bytes() == b"{}\n"
     assert not (tmp_path / f"{transaction.HAEX_HIVE_DIR}.next").exists()
     assert not (tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev").exists()
 
@@ -67,13 +63,13 @@ def test_publish_replaces_previous_generation_via_rename_swap(tmp_path: Path) ->
 
     transaction.publish_generation(
         live,
-        _staged(b"old\n", b"{}\n", b"{}\n"),
+        _staged(b"old\n", b"{}\n"),
         state_root=state_root,
         repo_root=tmp_path,
     )
     transaction.publish_generation(
         live,
-        _staged(b"new\n", b'{"generated_by": "haex 2.0.0"}\n', b"{}\n"),
+        _staged(b"new\n", b'{"generated_by": "haex 2.0.0"}\n'),
         state_root=state_root,
         repo_root=tmp_path,
     )
@@ -89,7 +85,7 @@ def test_publish_writes_identity_record_under_state_root(tmp_path: Path) -> None
 
     transaction.publish_generation(
         live,
-        _staged(b"body\n", b"{}\n", b"{}\n"),
+        _staged(b"body\n", b"{}\n"),
         state_root=state_root,
         repo_root=tmp_path,
     )
@@ -106,7 +102,7 @@ def test_post_write_verify_rollback_restores_previous(tmp_path: Path) -> None:
 
     transaction.publish_generation(
         live,
-        _staged(b"good\n", b"{}\n", b"{}\n"),
+        _staged(b"good\n", b"{}\n"),
         state_root=state_root,
         repo_root=tmp_path,
     )
@@ -117,7 +113,7 @@ def test_post_write_verify_rollback_restores_previous(tmp_path: Path) -> None:
     with pytest.raises(PostWriteValidationError):
         transaction.publish_generation(
             live,
-            _staged(b"bad\n", b'{"bad": true}\n', b"{}\n"),
+            _staged(b"bad\n", b'{"bad": true}\n'),
             post_write_verify=failing_verify,
             state_root=state_root,
             repo_root=tmp_path,
@@ -136,7 +132,7 @@ def test_rename_b_failure_restores_previous_generation(
     live = tmp_path / transaction.HAEX_HIVE_DIR
     transaction.publish_generation(
         live,
-        _staged(b"old\n", b"{}\n", b"{}\n"),
+        _staged(b"old\n", b"{}\n"),
         state_root=state_root,
         repo_root=tmp_path,
     )
@@ -152,7 +148,7 @@ def test_rename_b_failure_restores_previous_generation(
     with pytest.raises(OSError, match="rename B failed"):
         transaction.publish_generation(
             live,
-            _staged(b"new\n", b"{}\n", b"{}\n"),
+            _staged(b"new\n", b"{}\n"),
             state_root=state_root,
             repo_root=tmp_path,
         )
@@ -172,7 +168,7 @@ def test_post_write_verify_rollback_removes_first_generation(tmp_path: Path) -> 
     with pytest.raises(PostWriteValidationError):
         transaction.publish_generation(
             live,
-            _staged(b"new\n", b"{}\n", b"{}\n"),
+            _staged(b"new\n", b"{}\n"),
             post_write_verify=failing_verify,
             state_root=state_root,
             repo_root=tmp_path,
@@ -223,12 +219,12 @@ def test_restore_previous_generation_when_live_is_absent(tmp_path: Path) -> None
     prev_dir = tmp_path / f"{transaction.HAEX_HIVE_DIR}.prev"
 
     prev_dir.mkdir()
-    (prev_dir / "visibility.json").write_bytes(b'{"generation_id":"P"}\n')
+    (prev_dir / "install.lock").write_bytes(b'{"generation_id":"P"}\n')
 
     assert inflight.restore_previous_generation(live)
     assert live.exists()
     assert not prev_dir.exists()
-    assert (live / "visibility.json").read_bytes() == b'{"generation_id":"P"}\n'
+    assert (live / "install.lock").read_bytes() == b'{"generation_id":"P"}\n'
     assert not inflight.restore_previous_generation(live)
 
 

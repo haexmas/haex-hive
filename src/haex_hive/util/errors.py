@@ -153,13 +153,6 @@ class InstallLockSchemaInvalidError(HaexError):
 
 
 @dataclass
-class InstallLockSourcesNotCanonicalError(HaexError):
-    diagnostic_key: str = "install-lock-sources-not-canonical"
-    exit_code: int = exit_codes.VALIDATION_REFUSE
-    hint: str = "Regenerate install.lock via `haex install`."
-
-
-@dataclass
 class PublisherCloneUnavailableError(HaexError):
     diagnostic_key: str = "publisher-clone-unavailable"
     exit_code: int = exit_codes.IO_REFUSE

@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/haexmas/haex-hive/schemas/install-lock.v2.schema.json",
   "title": "haex-hive Install Lockfile v2 (Spec 008 amended molecule shape)",
-  "description": "Schema for `.haex-hive/install.lock` after the 2026-09-03 Spec 008 amendment. The current shape contains only the schema version, published generation ID, and molecule records. Legacy generated_by, constitution, atoms, contributed_paths, generation_inputs, participating_roots, and visibility_marker fields are rejected by the FR-005 schema/migration gate.",
+  "description": "Schema for `.haex-hive/install.lock` after the 2026-09-03 Spec 008 amendment. The current shape contains only the schema version, published generation ID, and molecule records. Legacy generated_by, constitution, atoms, contributed_paths, generation_inputs, participating_roots, and visibility_marker fields are rejected by the FR-005 schema/migration gate. Implemented against v3 vocabulary (Spec 013, landed 2026-09-04, one day after this amendment was written): the shipped const is \"3\", not \"2\" as this file's own name suggests.",
   "type": "object",
   "additionalProperties": false,
   "required": ["haex_hive_version", "generation_id", "molecules"],
   "properties": {
-    "haex_hive_version": { "const": "2" },
+    "haex_hive_version": { "const": "3" },
     "generation_id": {
       "type": "string",
       "pattern": "^g_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{4}$"
