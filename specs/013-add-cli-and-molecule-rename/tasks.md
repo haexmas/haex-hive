@@ -34,13 +34,13 @@ Single Python CLI project (unchanged from Specs 007 and 008):
 
 **Purpose**: prepare the codebase for a v3-only tool. Version bump, schema payload rewrite, and dependency confirmation.
 
-- [ ] T001 Bump the tool's version in [pyproject.toml](../../pyproject.toml): change `version = "2.0.0.dev0"` to `version = "3.0.0.dev0"` and update the `description` field to reference v3 vocabulary and `haex add`/`haex remove` instead of "Unified manifest v2 CLI".
-- [ ] T002 [P] Copy [specs/013-add-cli-and-molecule-rename/contracts/consumer-manifest.v3.schema.json](./contracts/consumer-manifest.v3.schema.json) to `src/haex_hive/schema/data/consumer-manifest.v3.schema.json` verbatim so the schema-loader payload matches the spec contract.
-- [ ] T003 [P] Copy [specs/013-add-cli-and-molecule-rename/contracts/molecule-manifest.v3.schema.json](./contracts/molecule-manifest.v3.schema.json) to `src/haex_hive/schema/data/molecule-manifest.v3.schema.json` verbatim.
-- [ ] T004 [P] Copy [specs/013-add-cli-and-molecule-rename/contracts/publisher-manifest.v3.schema.json](./contracts/publisher-manifest.v3.schema.json) to `src/haex_hive/schema/data/publisher-manifest.v3.schema.json` verbatim.
-- [ ] T005 [P] Copy [specs/013-add-cli-and-molecule-rename/contracts/install-lock.v3.schema.json](./contracts/install-lock.v3.schema.json) to `src/haex_hive/schema/data/install-lock.v3.schema.json` verbatim.
-- [ ] T006 Delete the v2 schema payloads from `src/haex_hive/schema/data/` in one commit: `atom-manifest.v2.schema.json`, `haex-hive.v2.schema.json`, `install-lock.v2.schema.json`, `publisher-manifest.v2.schema.json`. Leave `visibility-marker.v1.schema.json` untouched (Spec 008, unchanged by this feature).
-- [ ] T007 [P] Update `[tool.setuptools.package-data]` in [pyproject.toml](../../pyproject.toml) if needed to keep the `haex_hive = ["schema/data/*.json"]` glob correct after the file swap (verify no explicit-file entries reference v2 names).
+- [X] T001 Bump the tool's version in [pyproject.toml](../../pyproject.toml): change `version = "2.0.0.dev0"` to `version = "3.0.0.dev0"` and update the `description` field to reference v3 vocabulary and `haex add`/`haex remove` instead of "Unified manifest v2 CLI".
+- [X] T002 [P] Copy [specs/013-add-cli-and-molecule-rename/contracts/consumer-manifest.v3.schema.json](./contracts/consumer-manifest.v3.schema.json) to `src/haex_hive/schema/data/consumer-manifest.v3.schema.json` verbatim so the schema-loader payload matches the spec contract.
+- [X] T003 [P] Copy [specs/013-add-cli-and-molecule-rename/contracts/molecule-manifest.v3.schema.json](./contracts/molecule-manifest.v3.schema.json) to `src/haex_hive/schema/data/molecule-manifest.v3.schema.json` verbatim.
+- [X] T004 [P] Copy [specs/013-add-cli-and-molecule-rename/contracts/publisher-manifest.v3.schema.json](./contracts/publisher-manifest.v3.schema.json) to `src/haex_hive/schema/data/publisher-manifest.v3.schema.json` verbatim.
+- [X] T005 [P] Copy [specs/013-add-cli-and-molecule-rename/contracts/install-lock.v3.schema.json](./contracts/install-lock.v3.schema.json) to `src/haex_hive/schema/data/install-lock.v3.schema.json` verbatim.
+- [X] T006 Delete the v2 schema payloads from `src/haex_hive/schema/data/` in one commit: `atom-manifest.v2.schema.json`, `haex-hive.v2.schema.json`, `install-lock.v2.schema.json`, `publisher-manifest.v2.schema.json`. Leave `visibility-marker.v1.schema.json` untouched (Spec 008, unchanged by this feature).
+- [X] T007 [P] Update `[tool.setuptools.package-data]` in [pyproject.toml](../../pyproject.toml) if needed to keep the `haex_hive = ["schema/data/*.json"]` glob correct after the file swap (verify no explicit-file entries reference v2 names).
 
 **Checkpoint**: schema payload is v3-only, tool version reflects the major bump. `haex_hive_version: "3"` becomes the only accepted value at the schema layer.
 
