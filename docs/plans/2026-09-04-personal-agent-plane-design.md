@@ -160,3 +160,25 @@ Ordered by the earliest thing that must exist for the rest to have a normative h
 7. **Speckit spec for the Tauri runtime adapter** produced by the compiler.
 
 Mobile scope, encryption-at-rest choice, and provider-model adapters are further follow-ups whose priority is set once the specs above are in flight.
+
+## 7. Future direction beyond v1
+
+Cross-user file and data sharing is a deliberate future extension. In v1 the trust model is a closed federation of one operator's own devices. A later version extends it to a **half-open sharing model**: an operator (Alice) can grant read (or richer) rights on a specific resource to another operator (Bob), either targeted to Bob's master pubkey or as a limited public share, for a defined period.
+
+Sketched (not settled, not part of v1 scope):
+
+- Two new event kinds signed by the resource owner: `access.grant` (names the resource, the grantee master pubkey, the rights, an expiry, optional device restriction) and `access.revoke` (references the grant event id, effective immediately).
+- A third ingress track on the relay alongside command events and DMs: **guest events** (`access.request`, `blob.request`, `stream.request`) accepted only from pubkeys with a currently valid grant on the referenced resource, per a `guest_grants` table on the granter's device.
+- Cross-operator attestation trust: the granter's device accepts the grantee's master-signed device attestations as proof of the grantee-device-to-grantee-master binding, but does not otherwise inherit trust from the foreign fleet. Pure signature verification, no persistent trust state.
+- Grants are delivered to the grantee via NIP-17 DM plus published directly to the grantee's home relay if reachable; the grantee's UI shows a "granted access to R until D" entry.
+- Existing `blob.offer` and `stream.offer` primitives are reused unchanged: the ticket binds to the grantee device's `nostr_pubkey` and `iroh_node_id` per the same rules that today bind to own-fleet identities.
+- Revocation piggybacks the trust-store epoch mechanic: a revoke event flips the grant's epoch, in-flight iroh sessions tied to the grant are cancelled by the accept-handler on the next chunk exchange. The grantee does not have to observe the revoke for it to take effect; the granter's device simply stops honoring requests.
+
+Open sub-questions for the future spec:
+
+- Whether grants can reference dynamic resource sets (e.g. `/shared/*`) or only enumerated resources.
+- Public share limits (per-grantee quotas, per-resource rate limits, aggregate egress budgets, abuse response).
+- Discovery and change notification: does the grantee poll the resource, or does the granter push updates through the same DM channel that delivered the grant.
+- Whether recursive delegation (Bob re-grants to Charlie) is allowed at all, and if so under what constraints.
+
+This section is a scope pointer, not design input for the v1 specs listed in Section 6.
