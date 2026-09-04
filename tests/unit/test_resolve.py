@@ -11,7 +11,7 @@ import pytest
 
 from haex_hive.constitution.resolve import resolve_constitution_contributions
 from haex_hive.migrate.transform import clone_dir
-from haex_hive.model.consumer_manifest import CompoundEntry, ConsumerManifest
+from haex_hive.model.consumer_manifest import CompoundEntry, ConfigEntry, ConsumerManifest
 from haex_hive.util.errors import (
     AtomIdCollisionError,
     MissingAtomManifestError,
@@ -316,6 +316,81 @@ def test_non_contribution_atom_is_filtered_not_errored(tmp_path: Path) -> None:
 
     manifest = _manifest([CompoundEntry(source=canonical, revision=sha, molecules=(molecule_id,))])
     assert resolve_constitution_contributions(manifest, state_root) == []
+
+
+def test_effective_priority_overrides_lexical_molecule_order(tmp_path: Path) -> None:
+    """Order contributions by manifest priority and per-molecule overrides."""
+    canonical = "https://github.com/example/publisher"
+    ids = {
+        suffix: f"com.github.example.publisher.{suffix}"
+        for suffix in ("alpha", "beta", "gamma")
+    }
+    publisher = tmp_path / "publisher"
+    sha = _publish(
+        publisher,
+        {
+            "haex_hive_version": "3",
+            "publisher": "com.github.example.publisher",
+            "molecules": {
+                ids["alpha"]: {"path": "alpha", "version": "1.0.0"},
+                ids["beta"]: {"path": "beta", "version": "1.0.0"},
+                ids["gamma"]: {"path": "gamma", "version": "1.0.0"},
+            },
+        },
+        {
+            "alpha": (
+                {
+                    "haex_hive_version": "3",
+                    "id": ids["alpha"],
+                    "version": "1.0.0",
+                    "priority": 200,
+                    "atoms": {"constitution": ["constitution.md"]},
+                },
+                b"alpha",
+            ),
+            "beta": (
+                {
+                    "haex_hive_version": "3",
+                    "id": ids["beta"],
+                    "version": "1.0.0",
+                    "priority": 100,
+                    "atoms": {"constitution": ["constitution.md"]},
+                },
+                b"beta",
+            ),
+            "gamma": (
+                {
+                    "haex_hive_version": "3",
+                    "id": ids["gamma"],
+                    "version": "1.0.0",
+                    "priority": 300,
+                    "atoms": {"constitution": ["constitution.md"]},
+                },
+                b"gamma",
+            ),
+        },
+    )
+    state_root = tmp_path / "state"
+    _clone(state_root, canonical, publisher)
+
+    manifest = _manifest(
+        [
+            CompoundEntry(
+                source=canonical,
+                revision=sha,
+                molecules=(ids["alpha"], ids["beta"], ids["gamma"]),
+                config={ids["gamma"]: ConfigEntry(priority=0)},
+            )
+        ]
+    )
+
+    contributions = resolve_constitution_contributions(manifest, state_root)
+
+    assert [contribution.source.id for contribution in contributions] == [
+        ids["gamma"],
+        ids["beta"],
+        ids["alpha"],
+    ]
 
 
 def test_canonicalization_idempotence_refusal(tmp_path: Path) -> None:

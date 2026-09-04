@@ -104,7 +104,7 @@ class AtomIdCollisionError(HaexError):
 class MoleculeAtomsCategoryOverlapError(HaexError):
     diagnostic_key: str = "atoms-category-overlap"
     exit_code: int = exit_codes.VALIDATION_REFUSE
-    hint: str = "A delivered path may appear in only one atoms{} category."
+    hint: str = "A delivered path may appear in only one atoms.<category>."
 
 
 @dataclass
@@ -119,6 +119,16 @@ class NoSourcesDeclaredError(HaexError):
     diagnostic_key: str = "no-sources-declared"
     exit_code: int = exit_codes.INPUT_REFUSE
     hint: str = "Add at least one atom that contributes a constitution."
+
+
+@dataclass
+class ConstitutionAlreadyAdoptedError(HaexError):
+    diagnostic_key: str = "constitution-already-adopted"
+    exit_code: int = exit_codes.INPUT_REFUSE
+    hint: str = (
+        "Adopt only one constitution-contributing molecule, or combine the "
+        "constitutions externally."
+    )
 
 
 @dataclass

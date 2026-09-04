@@ -164,36 +164,18 @@ def test_quickstart_walkthrough_single_source(
         assert (consumer / root_name.rstrip("/")).exists(), root_name
 
 
-def test_quickstart_walkthrough_delete_orphan(
-    multi_source_constitution_fixture: dict[str, Any], tmp_path: Path
+def test_quickstart_walkthrough_refuses_multiple_constitutions(
+    multi_source_constitution_fixture: dict[str, Any],
 ) -> None:
-    """Walk quickstart step 6 (remove an atom) against the multi-source fixture."""
+    """Walk the current quickstart behavior for multiple constitution sources."""
     consumer: Path = multi_source_constitution_fixture["consumer"]
     state_root: Path = multi_source_constitution_fixture["state_root"]
-    atom_id_a = multi_source_constitution_fixture["atom_id_a"]
 
-    pending = _run_install(consumer, "--llm=file", state_root=state_root)
-    assert pending.returncode == 5, pending.stderr
-    merged = b"# Merged Constitution\n\nBe kind.\nBe bold.\n"
-    candidate_path = tmp_path / "merged.md"
-    candidate_path.write_bytes(merged)
-    accept = _run_install(consumer, "--accept-merged", str(candidate_path), state_root=state_root)
-    assert accept.returncode == 0, accept.stderr
+    refused = _run_install(consumer, state_root=state_root)
 
-    manifest_path = consumer / ".haex-hive.json"
-    manifest = json.loads(manifest_path.read_text())
-    manifest["compounds"][0]["molecules"] = [atom_id_a]
-    manifest_path.write_text(json.dumps(manifest, indent=2))
-
-    drop = _run_install(consumer, state_root=state_root)
-    assert drop.returncode == 0, drop.stderr
-    assert drop.stdout.startswith("installed generation g_")
-
-    lock = json.loads((consumer / ".haex-hive" / "install.lock").read_text())
-    assert [s["id"] for s in lock["constitution"]["sources"]] == [atom_id_a]
-    assert (consumer / ".haex-hive" / "constitution.md").read_bytes() == (
-        b"# Constitution A\n\nBe kind.\n"
-    )
+    assert refused.returncode == 2, refused.stderr
+    assert "key=constitution-already-adopted" in refused.stderr
+    assert not (consumer / ".haex-hive" / "constitution.md").exists()
 
 
 @pytest.mark.skip(reason="Step 3 depends on T037 (`--verify-only` + shared lock), deferred")

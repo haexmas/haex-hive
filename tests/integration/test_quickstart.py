@@ -111,42 +111,14 @@ def test_path2_single_source_assemble_and_show(
     assert no_preface.stdout == constitution
 
 
-def test_path3_multi_source_assemble_second_device_show(
-    multi_source_constitution_fixture: dict, tmp_path: Path
+def test_path3_multi_source_refuses_before_writing(
+    multi_source_constitution_fixture: dict,
 ) -> None:
-    """quickstart.md Path 3 — SC-003: a second device verifies via `show` without re-assembling."""
-    consumer = multi_source_constitution_fixture["consumer"]
-    state_root = multi_source_constitution_fixture["state_root"]
-    merged = b"# Merged Constitution\n\nBe kind.\nBe bold.\n"
-
-    candidate = f"Content-Length: {len(merged)}\n".encode("ascii") + merged
-    confirm = b"--haex-confirm: yes\n"
-    proc = _run_haex(
-        consumer,
-        "install",
-        "--llm=stdio",
-        state_root=state_root,
-        stdin_bytes=candidate + confirm,
-    )
-    assert proc.returncode == 0, proc.stderr.decode()
-
-    # Simulate "git pull" on a second device: only the two output files travel.
-    second_device = tmp_path / "second-device"
-    (second_device / ".haex-hive").mkdir(parents=True)
-    for name in ("constitution.md", "install.lock"):
-        shutil.copy2(consumer / ".haex-hive" / name, second_device / ".haex-hive" / name)
-
-    show = _run_haex(second_device, "constitution", "show", state_root=state_root)
-    assert show.returncode == 0, show.stderr.decode()
-    assert show.stdout.endswith(merged)
-
-
-def test_path3_refuses_missing_llm(multi_source_constitution_fixture: dict) -> None:
-    """quickstart.md Path 3 — SC-007 companion: no-LLM refuses cleanly, no files written."""
+    """Multiple constitution sources are refused before publication."""
     consumer = multi_source_constitution_fixture["consumer"]
     state_root = multi_source_constitution_fixture["state_root"]
 
-    proc = _run_haex(consumer, "install", "--llm=none", state_root=state_root)
-    assert proc.returncode == 4
-    assert b"key=llm-required-for-multi-source" in proc.stderr
+    proc = _run_haex(consumer, "install", state_root=state_root)
+    assert proc.returncode == 2
+    assert b"key=constitution-already-adopted" in proc.stderr
     assert not (consumer / ".haex-hive" / "constitution.md").exists()

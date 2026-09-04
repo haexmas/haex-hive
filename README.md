@@ -24,7 +24,7 @@ The `haex` CLI covers the **constitution** portion of the config plane. As an op
 
 1. **Migrate a legacy v1 `.haex-hive.json` into the v2 shape.** `haex migrate` writes a `.migrated` sidecar with a reviewable unified diff; the original file is untouched until you replace it manually. (The v2 → v3 leg of this chain is not implemented yet — see Status above.)
 2. **Assemble a single-source constitution deterministically.** One `compounds[]` entry pointing at a constitution molecule pinned by SHA produces a byte-for-byte copy of the source file at `.haex-hive/constitution.md`, plus an `install.lock` recording molecule-ID, revision, source URL, and a SHA-256 content hash.
-3. **Assemble a multi-source constitution deterministically.** With N molecules all contributing a constitution (e.g. base + team overlay), `haex install` concatenates the sources in canonical molecule-ID order with provenance headers and records the exact content hash in `install.lock`. No model access is required; other satellites `git pull` and verify the committed bytes.
+3. **Enforce one constitution source per repository.** If more than one adopted molecule contributes a constitution, `haex install` refuses with `constitution-already-adopted` before writing. Combine multiple rule sets externally into one constitution molecule when needed.
 4. **Inspect the effective constitution on any satellite.** `haex constitution show` prints an "Assembled from" preface synthesized from `install.lock` (one line per source with molecule-ID + SHA + URL), a `---` separator, then the constitution content. `--no-preface` for scripting.
 
 Spec 008 provides the full `haex install` command that publishes molecules atomically across `.haex-hive/`, `.claude/`, `.codex/` and other participating roots, with concurrent-install safety, crash recovery, and delta-driven cleanup when a molecule is removed.
@@ -73,7 +73,7 @@ A project opts into haex-hive by committing a `.haex-hive.json` at its root. Tha
 }
 ```
 
-`haex install` resolves the molecules and writes both the effective constitution and an `install.lock` recording which SHA supplied which section together with a SHA-256 content hash. For a **single-source** manifest, the output is a byte-for-byte copy. For a **multi-source** manifest, the output is deterministic concatenation with provenance framing; other satellites `git pull` and use the committed content without model access.
+`haex install` resolves the molecules and writes both the effective constitution and an `install.lock` recording which SHA supplied it. For a **single-source** manifest, the output is a byte-for-byte copy. A manifest resolving multiple constitution contributions is refused with `constitution-already-adopted` before any output is written; combine those contributions externally into one molecule if needed.
 
 ## Non-Negotiable Principles
 

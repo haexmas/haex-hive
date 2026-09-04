@@ -31,6 +31,7 @@ from haex_hive.util.errors import (
     IdentityMismatchError,
     InstallLockSchemaInvalidError,
     MissingAtomManifestError,
+    MissingPublisherManifestError,
     PlaintextSecretDetectedError,
     TerminalUnsafeContributionError,
 )
@@ -92,6 +93,47 @@ def test_invalid_atom_manifest_is_typed(
         )
 
 
+def test_invalid_legacy_publisher_atoms_is_typed(tmp_path: Path) -> None:
+    """Malformed publisher-level atoms are reported as publisher errors."""
+    with pytest.raises(MissingPublisherManifestError):
+        _select_atom_for_path(
+            {"atoms": []}, tmp_path, "0" * 40, "constitution", "atom/constitution.md"
+        )
+
+
+@pytest.mark.parametrize(
+    "publisher",
+    [
+        {"atoms": {"com.example.atom": []}},
+        {"atoms": {"com.example.atom": {"path": 42}}},
+    ],
+)
+def test_invalid_legacy_atom_entry_is_typed(
+    publisher: dict, tmp_path: Path
+) -> None:
+    """Malformed legacy atom entries are reported before field access."""
+    with pytest.raises(MissingAtomManifestError):
+        _select_atom_for_path(
+            publisher, tmp_path, "0" * 40, "constitution", "atom/constitution.md"
+        )
+
+
+def test_invalid_legacy_contributes_value_is_typed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A malformed legacy contributes block does not leak an AttributeError."""
+    monkeypatch.setattr(
+        "haex_hive.migrate.transform.git_show.show_bytes",
+        lambda *args, **kwargs: b'{"contributes": []}',
+    )
+    publisher = {"atoms": {"com.example.atom": {"path": "atom"}}}
+
+    with pytest.raises(MissingAtomManifestError):
+        _select_atom_for_path(
+            publisher, tmp_path, "0" * 40, "constitution", "atom/constitution.md"
+        )
+
+
 def test_glob_contributions_use_segment_aware_matching() -> None:
     assert _glob_matches("rules/*.md", "rules/main.md")
     assert not _glob_matches("rules/*.md", "rules/nested/main.md")
@@ -124,9 +166,8 @@ def test_diagnostics_quote_control_characters() -> None:
 
 
 def test_install_lock_freezes_unknown_nested_values() -> None:
-    # `additionalProperties: false` at install-lock.v3's root (T023) means no
-    # unknown top-level key can reach `from_json` anymore; construct the
-    # dataclass directly to exercise `unknown_top_level`'s freeze invariant.
+    # Unknown top-level fields are accepted by the model's forward-compatible
+    # projection and remain immutable after they are stored.
     lock = InstallLock(
         haex_hive_version="3",
         generated_by="haex 3.0.0",

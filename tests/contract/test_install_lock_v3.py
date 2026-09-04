@@ -26,6 +26,7 @@ def _with_molecules(contributed_paths: list[str]) -> dict:
             "contributed_paths": contributed_paths,
         }
     ]
+    data["participating_roots"] = [".haex-hive/"]
     return data
 
 

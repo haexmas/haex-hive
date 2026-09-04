@@ -3,9 +3,9 @@
 
 Every molecule-id in every `compounds[].molecules[]` MUST resolve; a molecule
 that resolves but does not declare an `atoms.constitution` list is filtered
-out silently (it is a non-contribution, not an error). A molecule whose
-`atoms.constitution` list has more than one path contributes one constitution
-source per path, in the order the publisher declared them.
+out silently (it is a non-contribution, not an error). Contributions are
+ordered by effective molecule priority, then molecule ID, with paths from the
+same molecule retaining publisher declaration order.
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ def resolve_constitution_contributions(
         AtomIdCollisionError: If a molecule-id resolves to multiple (source, revision) pairs.
         ContributionFileNotFoundError: If a declared contribution file is not found.
     """
-    contributions: list[ResolvedConstitutionContribution] = []
+    pending: list[tuple[int, str, int, ResolvedConstitutionContribution]] = []
     seen: dict[str, tuple[str, str]] = {}
 
     for compound_entry in manifest.compounds:
@@ -143,8 +143,13 @@ def resolve_constitution_contributions(
                     context={"atom_id": molecule_id},
                 )
 
+            config_entry = compound_entry.config.get(molecule_id)
+            effective_priority = molecule_manifest.priority
+            if config_entry is not None and config_entry.priority is not None:
+                effective_priority = config_entry.priority
+
             constitution_paths = molecule_manifest.atoms.get("constitution", ())
-            for constitution_path in constitution_paths:
+            for path_index, constitution_path in enumerate(constitution_paths):
                 contribution_path = f"{publisher_entry.path}/{constitution_path}"
                 body = git_show.show_bytes(
                     repo_dir,
@@ -152,11 +157,15 @@ def resolve_constitution_contributions(
                     contribution_path,
                     not_found_error=ContributionFileNotFoundError,
                 )
-                contributions.append(
-                    ResolvedConstitutionContribution(
-                        source=ConstitutionSource(id=molecule_id, revision=revision, source=source),
-                        body=body,
-                    )
+                contribution = ResolvedConstitutionContribution(
+                    source=ConstitutionSource(
+                        id=molecule_id, revision=revision, source=source
+                    ),
+                    body=body,
+                )
+                pending.append(
+                    (effective_priority, molecule_id, path_index, contribution)
                 )
 
-    return contributions
+    pending.sort(key=lambda item: (item[0], item[1].encode("utf-8"), item[2]))
+    return [item[3] for item in pending]

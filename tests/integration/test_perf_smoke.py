@@ -66,7 +66,7 @@ def test_migrate_dry_run_completes_under_5s(self_migration_fixture: dict, tmp_pa
     assert elapsed < 5.0, f"haex migrate --dry-run took {elapsed:.2f}s, want < 5s"
 
 
-def test_install_refuses_missing_llm_under_1s(multi_source_constitution_fixture: dict) -> None:
+def test_install_refuses_multi_source_under_1s(multi_source_constitution_fixture: dict) -> None:
     consumer = multi_source_constitution_fixture["consumer"]
     state_root = multi_source_constitution_fixture["state_root"]
 
@@ -74,12 +74,11 @@ def test_install_refuses_missing_llm_under_1s(multi_source_constitution_fixture:
     proc = _run_haex(
         consumer,
         "install",
-        "--llm=none",
         state_root=state_root,
         timeout=1.0,
     )
     elapsed = time.monotonic() - start
 
-    assert proc.returncode == 4
-    assert b"key=llm-required-for-multi-source" in proc.stderr
+    assert proc.returncode == 2
+    assert b"key=constitution-already-adopted" in proc.stderr
     assert elapsed < 1.0, f"refusal took {elapsed:.2f}s, want < 1s"
