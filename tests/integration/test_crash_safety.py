@@ -134,12 +134,9 @@ def test_crash_at_boundary_converges_on_retry(
     assert again.returncode == 0, again.stderr.decode()
     assert (consumer / ".haex-hive" / "constitution.md").read_bytes() == constitution
     lock_data_2 = json.loads((consumer / ".haex-hive" / "install.lock").read_bytes())
-    assert (
-        lock_data_1["visibility_marker"]["generation_id"]
-        == lock_data_2["visibility_marker"]["generation_id"]
-    )
-    lock_data_1["visibility_marker"]["generation_id"] = None
-    lock_data_2["visibility_marker"]["generation_id"] = None
+    assert lock_data_1["generation_id"] == lock_data_2["generation_id"]
+    lock_data_1["generation_id"] = None
+    lock_data_2["generation_id"] = None
     assert lock_data_1 == lock_data_2
 
 
@@ -161,9 +158,9 @@ def test_rename_a_crash_restores_previous_before_retry_resolution(
     live = consumer / ".haex-hive"
     next_dir = consumer / ".haex-hive.next"
     prev_dir = consumer / ".haex-hive.prev"
-    prior_marker = json.loads((prev_dir / "visibility.json").read_bytes())
-    candidate_marker = json.loads((next_dir / "visibility.json").read_bytes())
-    assert prior_marker["generation_id"] != candidate_marker["generation_id"]
+    prior_lock = json.loads((prev_dir / "install.lock").read_bytes())
+    candidate_lock = json.loads((next_dir / "install.lock").read_bytes())
+    assert prior_lock["generation_id"] != candidate_lock["generation_id"]
 
     manifest_path = consumer / ".haex-hive.json"
     manifest_bytes = manifest_path.read_bytes()
@@ -176,7 +173,7 @@ def test_rename_a_crash_restores_previous_before_retry_resolution(
     assert live.exists()
     assert not next_dir.exists()
     assert not prev_dir.exists()
-    assert json.loads((live / "visibility.json").read_bytes()) == prior_marker
+    assert json.loads((live / "install.lock").read_bytes()) == prior_lock
 
     manifest_path.write_bytes(manifest_bytes)
     recovered = _run(consumer, state_root)

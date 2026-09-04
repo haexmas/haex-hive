@@ -12,8 +12,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from haex_hive.cli.main import INSTALLED_VERSION_STRING
-from haex_hive.constitution.assemble import assemble_single_source
+from haex_hive.constitution.assemble import CONSTITUTION_PATH, assemble_single_source
 from haex_hive.constitution.resolve import resolve_constitution_contributions
 from haex_hive.install import inflight
 from haex_hive.install.lock import OwnerToken
@@ -68,9 +67,7 @@ def _live_generation_id(repo_root: Path) -> str | None:
         lock = InstallLock.from_json(lock_path.read_bytes())
     except (OSError, ValueError, HaexError):
         return None
-    if lock.visibility_marker is None:
-        return None
-    return lock.visibility_marker.generation_id
+    return lock.generation_id
 
 
 def _is_no_op_single_source(
@@ -98,16 +95,16 @@ def _is_no_op_single_source(
         lock = InstallLock.from_json(lock_path.read_bytes())
     except (OSError, ValueError, HaexError):
         return False
-    if lock.constitution is None or len(lock.constitution.sources) != 1:
+    if len(lock.molecules) != 1:
         return False
-    recorded = lock.constitution.sources[0]
+    recorded = lock.molecules[0]
     if (
         recorded.id != source_id
         or recorded.revision != source_revision
         or recorded.source != source_url
     ):
         return False
-    return lock.participating_roots == (".haex-hive/",)
+    return recorded.paths == (CONSTITUTION_PATH,)
 
 
 def run(args: argparse.Namespace) -> int:
@@ -163,7 +160,6 @@ def run(args: argparse.Namespace) -> int:
             assemble_single_source(
                 contributions,
                 repo_root,
-                tool_version=INSTALLED_VERSION_STRING,
                 state_root=state_root,
             )
             new_generation_id = _live_generation_id(repo_root)

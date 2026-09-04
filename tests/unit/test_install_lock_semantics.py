@@ -1,4 +1,4 @@
-"""FR-030 semantic check on `constitution.sources[]` uniqueness + sort."""
+"""Semantic checks on install.lock's molecules[] (2026-09-03 amendment)."""
 
 from __future__ import annotations
 
@@ -7,78 +7,56 @@ import json
 import pytest
 
 from haex_hive.model.install_lock import InstallLock
-from haex_hive.util.errors import (
-    CredentialInUrlError,
-    InstallLockSchemaInvalidError,
-    InstallLockSourcesNotCanonicalError,
-)
+from haex_hive.util.errors import CredentialInUrlError, InstallLockSchemaInvalidError
 
 _BASE = {
     "haex_hive_version": "3",
-    "generated_by": "haex 2.0.0",
-    "constitution": {
-        "sources": [],
-        "assembled_by": {"tool": "haex", "version": "2.0.0"},
-    },
+    "generation_id": "g_20260831T142011Z_a4c2",
+    "molecules": [],
 }
 
 
-def _payload(sources: list[dict]) -> bytes:
-    """Build an install lock payload containing the supplied sources."""
+def _payload(molecules: list[dict]) -> bytes:
+    """Build an install lock payload containing the supplied molecules."""
     data = json.loads(json.dumps(_BASE))
-    data["constitution"]["sources"] = sources
+    data["molecules"] = molecules
     return json.dumps(data).encode("utf-8")
 
 
-def test_rejects_duplicate_ids() -> None:
-    """Reject duplicate constitution source identities."""
-    sources = [
-        {"id": "com.a.b", "revision": "0" * 40, "source": "https://github.com/a/b"},
-        {"id": "com.a.b", "revision": "0" * 40, "source": "https://github.com/a/b"},
-    ]
-    with pytest.raises(InstallLockSourcesNotCanonicalError):
-        InstallLock.from_json(_payload(sources))
+def _molecule(molecule_id: str, *, paths: list[str] | None = None) -> dict:
+    return {
+        "id": molecule_id,
+        "revision": "0" * 40,
+        "source": "https://github.com/a/b",
+        "paths": paths if paths is not None else [".haex-hive/constitution.md"],
+    }
 
 
 def test_rejects_wrong_sort_order() -> None:
-    """Reject constitution sources outside bytewise ID order."""
-    sources = [
-        {"id": "com.b.b", "revision": "0" * 40, "source": "https://github.com/b/b"},
-        {"id": "com.a.b", "revision": "0" * 40, "source": "https://github.com/a/b"},
-    ]
-    with pytest.raises(InstallLockSourcesNotCanonicalError):
-        InstallLock.from_json(_payload(sources))
+    """Reject molecules outside canonical (id, source, revision, paths) order."""
+    molecules = [_molecule("com.b.b"), _molecule("com.a.b")]
+    with pytest.raises(InstallLockSchemaInvalidError):
+        InstallLock.from_json(_payload(molecules))
 
 
-def test_rejects_credentials_in_constitution_source() -> None:
+def test_accepts_canonical_sort_order() -> None:
+    molecules = [_molecule("com.a.b"), _molecule("com.b.b")]
+    lock = InstallLock.from_json(_payload(molecules))
+    assert [m.id for m in lock.molecules] == ["com.a.b", "com.b.b"]
+
+
+def test_rejects_credentials_in_molecule_source() -> None:
     """Reject source URL userinfo before it can be stored or serialized."""
-    sources = [
+    molecules = [
         {
             "id": "com.a.b",
             "revision": "0" * 40,
             "source": "https://user:pass@example.com/publisher",
+            "paths": [".haex-hive/constitution.md"],
         }
     ]
     with pytest.raises(CredentialInUrlError):
-        InstallLock.from_json(_payload(sources))
-
-
-def test_rejects_credentials_in_atom_source() -> None:
-    """Reject credentials in an installed atom source before serialization."""
-    data = {
-        **_BASE,
-        "molecules": [
-            {
-                "id": "com.a.b",
-                "revision": "0" * 40,
-                "source": "https://user:pass@example.com/publisher",
-                "contributed_paths": [".haex-hive/constitution.md"],
-            }
-        ],
-        "participating_roots": [".haex-hive/"],
-    }
-    with pytest.raises(CredentialInUrlError):
-        InstallLock.from_json(json.dumps(data).encode())
+        InstallLock.from_json(_payload(molecules))
 
 
 def test_preserves_unknown_top_level_fields() -> None:
@@ -93,44 +71,14 @@ def test_preserves_unknown_top_level_fields() -> None:
     assert serialized["future_field"] == data["future_field"]
 
 
-def _molecule_lock_data(paths: list[str], roots: list[str] | None = None) -> dict:
-    """Build a lock payload for contributed-path containment checks."""
-    data = {
-        "haex_hive_version": "3",
-        "generated_by": "haex 3.0.0",
-        "molecules": [
-            {
-                "id": "com.example.molecule",
-                "source": "https://example.com/publisher",
-                "revision": "0" * 40,
-                "contributed_paths": paths,
-            }
-        ],
-    }
-    if roots is not None:
-        data["participating_roots"] = roots
-    return data
-
-
-def test_rejects_contributed_path_outside_participating_roots() -> None:
-    """Reject a non-empty contribution that is outside all output roots."""
-    data = _molecule_lock_data(["README.md"], [".haex-hive/"])
-
+def test_rejects_path_without_leading_dot_segment() -> None:
+    """A path must start with a dot-segment root; there is no separate root list."""
+    molecules = [_molecule("com.example.molecule", paths=["README.md"])]
     with pytest.raises(InstallLockSchemaInvalidError):
-        InstallLock.from_json(json.dumps(data).encode())
+        InstallLock.from_json(_payload(molecules))
 
 
-def test_rejects_contributed_path_without_participating_roots() -> None:
-    """Require roots whenever a molecule contributes a non-empty path."""
-    data = _molecule_lock_data([".haex-hive/constitution.md"])
-
-    with pytest.raises(InstallLockSchemaInvalidError):
-        InstallLock.from_json(json.dumps(data).encode())
-
-
-def test_allows_empty_contributed_paths_without_participating_roots() -> None:
-    """Keep empty contribution ledgers valid for locks without output roots."""
-    lock = InstallLock.from_json(json.dumps(_molecule_lock_data([])).encode())
-
-    assert lock.molecules is not None
-    assert lock.molecules[0].contributed_paths == ()
+def test_allows_empty_paths() -> None:
+    molecules = [_molecule("com.example.molecule", paths=[])]
+    lock = InstallLock.from_json(_payload(molecules))
+    assert lock.molecules[0].paths == ()

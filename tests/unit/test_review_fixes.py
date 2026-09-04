@@ -173,56 +173,12 @@ def test_install_lock_freezes_unknown_nested_values() -> None:
     # projection and remain immutable after they are stored.
     lock = InstallLock(
         haex_hive_version="3",
-        generated_by="haex 3.0.0",
+        generation_id="g_20260901T120000Z_abcd",
+        molecules=(),
         unknown_top_level={"future": {"nested": [1]}},
     )
     with pytest.raises(TypeError):
         lock.unknown_top_level["future"]["nested"][0] = 2
-
-
-def test_install_lock_migrates_pre_amendment_shape() -> None:
-    """Read a stale lock so interrupted installs can resume after the amendment."""
-    data = {
-        "haex_hive_version": "3",
-        "generated_by": "haex 3.0.0",
-        "constitution": {
-            "sources": [
-                {
-                    "id": "com.example.constitution",
-                    "revision": "0" * 40,
-                    "source": "https://example.com/publisher",
-                }
-            ],
-            "assembled_by": {"tool": "haex", "version": "3.0.0"},
-            "content_integrity": "sha256-" + "A" * 43,
-        },
-        "molecules": [
-            {
-                "id": "com.example.constitution",
-                "source": "https://example.com/publisher",
-                "revision": "0" * 40,
-                "content_integrity": "sha256-" + "B" * 43,
-                "contributed_paths": [".haex-hive/constitution.md"],
-            }
-        ],
-        "participating_roots": [
-            {"root": ".haex-hive/", "content_integrity": "sha256-" + "C" * 43}
-        ],
-        "visibility_marker": {
-            "generation_id": "g_20260901T120000Z_abcd",
-            "content_integrity": "sha256-" + "D" * 43,
-        },
-        "ownership": {"version": 1, "paths": []},
-    }
-
-    lock = InstallLock.from_json(json.dumps(data).encode())
-    migrated = json.loads(lock.to_json_bytes())
-
-    assert lock.participating_roots == (".haex-hive/",)
-    assert "ownership" not in migrated
-    assert "content_integrity" not in migrated["constitution"]
-    assert "content_integrity" not in migrated["molecules"][0]
-    assert "content_integrity" not in migrated["visibility_marker"]
 
 
 def test_install_lock_parse_failures_are_typed() -> None:

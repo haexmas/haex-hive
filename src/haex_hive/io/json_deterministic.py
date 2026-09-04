@@ -3,8 +3,8 @@
 Two flavours:
 
 - :func:`dumps` — the "pretty" form used for human-inspectable on-disk
-  artefacts (`install.lock`, `visibility.json`, pending merges): sorted
-  keys, `indent=2`, LF-only line endings, single trailing LF.
+  artefacts (`install.lock`): sorted keys, `indent=2`, LF-only line endings,
+  single trailing LF.
 - :func:`compact_json` — the "hash preimage" form used when a digest is
   computed over structured data: sorted keys, compact separators, no
   insignificant whitespace, no trailing newline. Returned bytes are what

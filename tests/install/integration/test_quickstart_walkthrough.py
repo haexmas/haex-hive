@@ -57,31 +57,32 @@ def _run_install(
     )
 
 
-def _load_consistent_metadata(
+def _load_stable_install_lock(
     repo_root: Path,
     *,
-    after_first_marker: Callable[[], None] | None = None,
+    after_first_read: Callable[[], None] | None = None,
     attempts: int = 3,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Read marker and lock metadata, retrying across a generation swap."""
-    marker_path = repo_root / ".haex-hive" / "visibility.json"
+) -> dict[str, Any]:
+    """Read install.lock, retrying across a generation swap.
+
+    install.lock is the sole publication record (2026-09-04 amendment): a
+    reader that races a concurrent rename-swap either sees the fully-old or
+    fully-new file (the swap is atomic), or a transient FileNotFoundError
+    while the directory rename is in flight. There is no second file to
+    cross-check against anymore.
+    """
     install_lock_path = repo_root / ".haex-hive" / "install.lock"
-    callback = after_first_marker
+    callback = after_first_read
     for _ in range(attempts):
         try:
-            marker_before = json.loads(marker_path.read_bytes())
-            if callback is not None:
-                callback()
-                callback = None
             install_lock = json.loads(install_lock_path.read_bytes())
-            marker_after = json.loads(marker_path.read_bytes())
         except (FileNotFoundError, json.JSONDecodeError):
             continue
-        if marker_before["generation_id"] != marker_after["generation_id"]:
+        if callback is not None:
+            callback()
+            callback = None
             continue
-        if marker_before["generation_id"] != install_lock["visibility_marker"]["generation_id"]:
-            raise RuntimeError("install.lock does not match visibility marker")
-        return marker_after, install_lock
+        return install_lock
     raise RuntimeError("could not read a stable installation generation")
 
 
@@ -98,8 +99,9 @@ def test_quickstart_walkthrough_single_source(
     assert first.returncode == 0, first.stderr
     assert first.stdout.startswith("installed generation g_")
     live = consumer / ".haex-hive"
-    for name in ("constitution.md", "install.lock", "visibility.json"):
+    for name in ("constitution.md", "install.lock"):
         assert (live / name).exists(), f"missing {name} after first install"
+    assert not (live / "visibility.json").exists()
 
     # Step 2 — idempotent re-install
     second = _run_install(consumer, state_root=state_root)
@@ -125,23 +127,20 @@ def test_quickstart_walkthrough_single_source(
         single_source_constitution_fixture["publisher"] / "constitution" / "constitution.md"
     ).read_bytes()
     assert (live / "constitution.md").read_bytes() == expected_constitution
-    recovered_marker = json.loads((live / "visibility.json").read_bytes())
     recovered_lock = json.loads((live / "install.lock").read_bytes())
-    assert recovered_marker["generation_id"] == recovered_lock["visibility_marker"]["generation_id"]
+    assert recovered_lock["generation_id"]
     assert not (consumer / ".haex-hive.next").exists()
     assert not prev_dir.exists()
 
     # Step 7 — reader consistency helper. Swap the live tree after the first
-    # marker read; the stable-read algorithm must retry instead of raising.
+    # install.lock read; the stable-read algorithm must retry instead of
+    # raising or returning a torn read.
     reader_next = consumer / ".haex-hive.reader-next"
     reader_old = consumer / ".haex-hive.reader-old"
     shutil.copytree(live, reader_next)
-    reader_marker = json.loads((reader_next / "visibility.json").read_bytes())
     reader_lock = json.loads((reader_next / "install.lock").read_bytes())
     reader_generation = "g_20990101T000000Z_0000"
-    reader_marker["generation_id"] = reader_generation
-    reader_lock["visibility_marker"]["generation_id"] = reader_generation
-    (reader_next / "visibility.json").write_text(json.dumps(reader_marker))
+    reader_lock["generation_id"] = reader_generation
     (reader_next / "install.lock").write_text(json.dumps(reader_lock))
 
     def swap_reader_generation() -> None:
@@ -150,8 +149,8 @@ def test_quickstart_walkthrough_single_source(
         reader_next.rename(live)
 
     try:
-        marker, lock = _load_consistent_metadata(
-            consumer, after_first_marker=swap_reader_generation
+        lock = _load_stable_install_lock(
+            consumer, after_first_read=swap_reader_generation
         )
     finally:
         if reader_old.exists():
@@ -159,9 +158,12 @@ def test_quickstart_walkthrough_single_source(
         if reader_next.exists():
             shutil.rmtree(reader_next)
 
-    assert marker["generation_id"] == lock["visibility_marker"]["generation_id"]
-    for root_name in marker["participating_roots"]:
-        assert (consumer / root_name.rstrip("/")).exists(), root_name
+    assert lock["generation_id"] == reader_generation
+    # Participating roots are derived from molecules[].paths[]'s leading
+    # dot-segments; there is no separate participating_roots list anymore.
+    root_names = {path.split("/", 1)[0] for m in lock["molecules"] for path in m["paths"]}
+    for root_name in root_names:
+        assert (consumer / root_name).exists(), root_name
 
 
 def test_quickstart_walkthrough_refuses_multiple_constitutions(

@@ -43,22 +43,20 @@ def test_successful_straight_copy(single_source_constitution_fixture: dict) -> N
 
     constitution = consumer / ".haex-hive" / "constitution.md"
     lock = consumer / ".haex-hive" / "install.lock"
-    marker = consumer / ".haex-hive" / "visibility.json"
     assert constitution.read_bytes() == b"# Example Constitution\n\nBe kind.\n"
+    assert not (consumer / ".haex-hive" / "visibility.json").exists()
 
     lock_data = json.loads(lock.read_text())
     assert lock_data["haex_hive_version"] == "3"
-    assert lock_data["constitution"]["sources"] == [
+    assert lock_data["molecules"] == [
         {
             "id": single_source_constitution_fixture["atom_id"],
-            "revision": single_source_constitution_fixture["commit_sha"],
             "source": single_source_constitution_fixture["canonical"],
+            "revision": single_source_constitution_fixture["commit_sha"],
+            "paths": [".haex-hive/constitution.md"],
         }
     ]
-    assert "content_integrity" not in lock_data["constitution"]
-    marker_data = json.loads(marker.read_text())
-    assert marker_data["participating_roots"] == [".haex-hive/"]
-    assert lock_data["visibility_marker"]["generation_id"] == marker_data["generation_id"]
+    assert lock_data["generation_id"]
 def test_active_writer_is_excluded(
     single_source_constitution_fixture: dict,
 ) -> None:

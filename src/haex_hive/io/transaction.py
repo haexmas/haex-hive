@@ -40,7 +40,6 @@ _IS_WINDOWS = sys.platform == "win32"
 CONSTITUTION_NAME = "constitution.md"
 INSTALL_LOCK_NAME = "install.lock"
 INSTALL_MUTEX_NAME = "install.mutex"
-VISIBILITY_NAME = "visibility.json"
 HAEX_HIVE_DIR = ".haex-hive"
 
 
@@ -134,8 +133,8 @@ def publish_generation(
     Args:
         live: The live output-root directory, e.g. `<repo_root>/.haex-hive`.
         files: Ordered iterable of `StagedFile` — writer discipline says
-            `install.lock` last of the non-marker files and `visibility.json`
-            last overall, but the swap itself is agnostic to ordering.
+            `install.lock` last, the sole publication record, but the swap
+            itself is agnostic to ordering.
         post_write_verify: Optional callback invoked after the swap completes;
             if it raises, the swap is rolled back and the exception re-raised.
         state_root: Device-local state root. When supplied, the identity

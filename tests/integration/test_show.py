@@ -96,7 +96,7 @@ def test_install_lock_schema_invalid_refuses(single_source_constitution_fixture:
 
     lock_path = consumer / ".haex-hive" / "install.lock"
     data = json.loads(lock_path.read_text())
-    del data["constitution"]["sources"]
+    del data["molecules"]
     lock_path.write_text(json.dumps(data))
 
     proc = _show(consumer, state_root=state_root)
@@ -104,25 +104,26 @@ def test_install_lock_schema_invalid_refuses(single_source_constitution_fixture:
     assert b"key=install-lock-schema-invalid" in proc.stderr
 
 
-def test_install_lock_sources_not_canonical_refuses(
+def test_install_lock_out_of_order_molecules_refuses(
     single_source_constitution_fixture: dict,
 ) -> None:
+    """molecules[] out of canonical (id, source, revision, paths) order refuses."""
     consumer = single_source_constitution_fixture["consumer"]
     state_root = single_source_constitution_fixture["state_root"]
     _assemble(consumer, state_root)
 
     lock_path = consumer / ".haex-hive" / "install.lock"
     data = json.loads(lock_path.read_text())
-    source = data["constitution"]["sources"][0]
-    data["constitution"]["sources"] = [
-        {**source, "id": "com.z.example.constitution"},
-        {**source, "id": "com.a.example.constitution"},
+    molecule = data["molecules"][0]
+    data["molecules"] = [
+        {**molecule, "id": "com.z.example.constitution"},
+        {**molecule, "id": "com.a.example.constitution"},
     ]
     lock_path.write_text(json.dumps(data))
 
     proc = _show(consumer, state_root=state_root)
     assert proc.returncode == 4
-    assert b"key=install-lock-sources-not-canonical" in proc.stderr
+    assert b"key=install-lock-schema-invalid" in proc.stderr
 
 
 def test_body_is_rendered_from_a_valid_lock(single_source_constitution_fixture: dict) -> None:

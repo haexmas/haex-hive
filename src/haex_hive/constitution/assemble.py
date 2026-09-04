@@ -7,7 +7,6 @@ to reconcile multiple constitution contributions into one document.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -17,18 +16,11 @@ from haex_hive.constitution.safety import (
     validate_no_plaintext_secrets,
 )
 from haex_hive.install.generation import allocate_generation_id
-from haex_hive.io import json_deterministic, transaction
-from haex_hive.model.install_lock import (
-    AssembledBy,
-    ConstitutionLockSection,
-    ConstitutionSource,
-    GenerationInputIdentity,
-    InstallLock,
-    VisibilityMarkerRef,
-)
+from haex_hive.io import transaction
+from haex_hive.model.install_lock import InstallLock, MoleculeEntry
 from haex_hive.util.errors import HaexError, PostWriteValidationError
 
-TOOL_NAME = "haex"
+CONSTITUTION_PATH = f"{transaction.HAEX_HIVE_DIR}/{transaction.CONSTITUTION_NAME}"
 
 
 def _read_existing_lock(repo_root: Path) -> InstallLock | None:
@@ -43,20 +35,18 @@ def _read_existing_lock(repo_root: Path) -> InstallLock | None:
         return InstallLock.from_json(lock_path.read_bytes())
     except (OSError, ValueError, HaexError):
         # Best-effort forward-compat preservation only; a corrupt or
-        # schema-incompatible existing lock (e.g. a pre-v3 lock read by the
-        # v3-only reader) is simply replaced wholesale by the fresh
+        # schema-incompatible existing lock (e.g. a pre-amendment lock read
+        # by the current reader) is simply replaced wholesale by the fresh
         # generation below.
         return None
 
 
 def _publish_constitution(
-    sources: tuple[ConstitutionSource, ...],
+    molecule: MoleculeEntry,
     body: bytes,
     repo_root: Path,
     *,
-    tool_version: str,
     state_root: Path | None = None,
-    generation_inputs: tuple[GenerationInputIdentity, ...] = (),
 ) -> None:
     """Publish the effective constitution and install.lock atomically.
 
@@ -65,10 +55,9 @@ def _publish_constitution(
     verification of the published outputs.
 
     Args:
-        sources: Constitution sources represented in the generated lock.
+        molecule: The single installed molecule this generation records.
         body: Effective constitution content to publish.
         repo_root: Repository root path.
-        tool_version: Tool version string for install.lock metadata.
 
     Raises:
         PostWriteValidationError: If the published files disagree.
@@ -78,65 +67,31 @@ def _publish_constitution(
         dict(existing_lock.unknown_top_level) if existing_lock is not None else {}
     )
 
-    existing_marker = existing_lock.visibility_marker if existing_lock is not None else None
-    generation_id = allocate_generation_id(
-        body,
-        existing_marker.generation_id if existing_marker is not None else None,
-    )
-    marker_identity = {
-        "haex_hive_version": "3",
-        "generation_id": generation_id,
-        "participating_roots": [".haex-hive/"],
-    }
+    existing_generation_id = existing_lock.generation_id if existing_lock is not None else None
+    generation_id = allocate_generation_id(body, existing_generation_id)
     lock = InstallLock(
         haex_hive_version="3",
-        generated_by=f"{TOOL_NAME} {tool_version}",
-        constitution=ConstitutionLockSection(
-            sources=sources,
-            assembled_by=AssembledBy(tool=TOOL_NAME, version=tool_version),
-        ),
-        participating_roots=(".haex-hive/",),
-        visibility_marker=VisibilityMarkerRef(
-            generation_id=generation_id,
-        ),
-        generation_inputs=tuple(
-            sorted(generation_inputs, key=lambda item: (item.kind, item.id))
-        )
-        or None,
+        generation_id=generation_id,
+        molecules=(molecule,),
         unknown_top_level=unknown_top_level,
     )
     lock_bytes = lock.to_json_bytes()
     # Validate the complete lock envelope before any staged bytes are published.
     InstallLock.from_json(lock_bytes)
-    visibility_bytes = json_deterministic.dumps(marker_identity)
 
     def post_write_verify() -> None:
-        """Verify the published constitution, lock, and marker agree.
+        """Verify the published install.lock matches the assembled generation.
 
         Raises:
             PostWriteValidationError: If digest mismatch detected.
         """
         lock_path = repo_root / transaction.HAEX_HIVE_DIR / transaction.INSTALL_LOCK_NAME
         published_lock = InstallLock.from_json(lock_path.read_bytes())
-        if (
-            published_lock.constitution is None
-            or published_lock.visibility_marker is None
-            or published_lock.visibility_marker.generation_id != generation_id
-            or published_lock.participating_roots != (".haex-hive/",)
+        if published_lock.generation_id != generation_id or published_lock.molecules != (
+            molecule,
         ):
             raise PostWriteValidationError(
                 message="published install.lock does not match the assembled generation",
-            )
-        marker = json.loads(
-            (repo_root / transaction.HAEX_HIVE_DIR / transaction.VISIBILITY_NAME)
-            .read_bytes()
-        )
-        if (
-            marker.get("generation_id") != generation_id
-            or marker != marker_identity
-        ):
-            raise PostWriteValidationError(
-                message="visibility.json does not match the published install.lock",
             )
 
     live_dir = repo_root / transaction.HAEX_HIVE_DIR
@@ -145,7 +100,6 @@ def _publish_constitution(
         [
             transaction.StagedFile(transaction.CONSTITUTION_NAME, body),
             transaction.StagedFile(transaction.INSTALL_LOCK_NAME, lock_bytes),
-            transaction.StagedFile(transaction.VISIBILITY_NAME, visibility_bytes),
         ],
         post_write_verify=post_write_verify,
         state_root=state_root,
@@ -157,14 +111,14 @@ def assemble_single_source(
     contributions: Sequence[ResolvedConstitutionContribution],
     repo_root: Path,
     *,
-    tool_version: str,
     state_root: Path | None = None,
 ) -> None:
     """Publish all constitution files from one molecule without merging sources.
 
     The v3 constitution category may contain multiple files. They retain the
     resolver's deterministic order and are separated by one newline in the
-    generated constitution. The lock records the molecule only once.
+    generated constitution. The lock records the molecule only once, with
+    `.haex-hive/constitution.md` as its sole contributed path.
     """
     if not contributions:
         raise ValueError("at least one constitution contribution is required")
@@ -181,10 +135,15 @@ def assemble_single_source(
         # though there is no adapter-produced candidate to police anymore.
         validate_no_concealment_instructions(contribution.body)
 
+    molecule = MoleculeEntry(
+        id=source.id,
+        source=source.source,
+        revision=source.revision,
+        paths=(CONSTITUTION_PATH,),
+    )
     _publish_constitution(
-        (source,),
+        molecule,
         b"\n".join(contribution.body for contribution in contributions),
         repo_root,
-        tool_version=tool_version,
         state_root=state_root,
     )

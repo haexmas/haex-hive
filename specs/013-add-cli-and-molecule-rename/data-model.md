@@ -83,7 +83,7 @@ Every entity below has its authoritative JSON Schema under [`contracts/`](contra
 - Keys of `atoms{}` are category names as documented by Spec 010 (compiler + adapters). Known categories: `constitution`, `workflow`, `hooks`, `skills`, `prompts`, `mcp`, and adapter-specific ones.
 - The value of each key is a non-empty, unique list of molecule-directory-relative POSIX paths. No absolute paths; no `..` segments.
 - A molecule contributing a constitution declares `atoms.constitution: [<path>]` (typically one file). Spec 014 (single-non-negotiable-prose) rule interpretation still applies to the *consumer*'s adopted set.
-- **Cross-category path overlap is refused**: no delivered path may appear in more than one category's list within a single molecule manifest's `atoms{}` map. JSON Schema's `uniqueItems` only detects intra-array duplicates, so the tool enforces this cross-array constraint at molecule-manifest load-time and refuses with `atoms-category-overlap` (per Spec 007's contract) before any publication. This is orthogonal to the `install.lock` `contributed_paths` uniqueness constraint, which covers the post-publication ledger.
+- **Cross-category path overlap is refused**: no delivered path may appear in more than one category's list within a single molecule manifest's `atoms{}` map. JSON Schema's `uniqueItems` only detects intra-array duplicates, so the tool enforces this cross-array constraint at molecule-manifest load-time and refuses with `atoms-category-overlap` (per Spec 007's contract) before any publication. This is orthogonal to the `install.lock` `paths` uniqueness constraint, which covers the post-publication ledger.
 
 ---
 
@@ -97,10 +97,10 @@ Field-level renames from v2 install-lock:
 
 | v2 field | v3 field | Notes |
 |---|---|---|
-| `atoms` (top-level array of records) | `molecules` | Array of `moleculeInstallRecord` (renamed from `atomInstallRecord`). |
-| `atomInstallRecord.id` | `moleculeInstallRecord.id` | Field name unchanged; enclosing record name renamed. |
+| `atoms` (top-level array of records) | `molecules` | Array of `MoleculeEntry` (renamed from `AtomInstallRecord`). |
+| `atomInstallRecord.id` | `MoleculeEntry.id` | Field name unchanged; enclosing record renamed and simplified. |
 
-Other fields (`constitution`, `generation_inputs`, `participating_roots`, `visibility_marker`, `generated_by`) are preserved from Spec 008 with the same semantics.
+**Superseded 2026-09-03** by Spec 008's own npm/pip-shape install.lock amendment (independent of the v2→v3 rename): `install.lock` now carries only `{haex_hive_version, generation_id, molecules[]}`, each entry `{id, source, revision, paths}`. `contributed_paths` is renamed to `paths`. The `constitution` block, `generated_by`, `participating_roots`, `generation_inputs`, and `visibility_marker` are all retired — constitution provenance and participating roots are now derived from `molecules[].paths[]` (see [contracts/install-lock.v3.schema.json](contracts/install-lock.v3.schema.json) and Spec 008's `spec.md`).
 
 ---
 

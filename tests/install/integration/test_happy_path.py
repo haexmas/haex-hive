@@ -1,10 +1,12 @@
 """T021 — `haex install` happy path (US1 MVP, Spec 008).
 
-A single-source constitution atom lands under `.haex-hive/` as three files
-(constitution.md, install.lock, visibility.json) published atomically by
-the rename-swap primitive. The lock records the atom's `(id, source,
-revision, contributed_paths)` and the marker's `generation_id` matches the
-lock's cross-reference.
+A single-source constitution atom lands under `.haex-hive/` as two files
+(constitution.md, install.lock) published atomically by the rename-swap
+primitive. The lock's `molecules[]` records the atom's `(id, source,
+revision, paths)` and the lock's own top-level `generation_id` (install.lock
+is the sole publication record; there is no separate visibility.json,
+generated_by, constitution block, or participating_roots since the
+2026-09-03 install.lock amendment).
 """
 
 from __future__ import annotations
@@ -40,7 +42,7 @@ def _run_install(repo_root: Path, state_root: Path) -> subprocess.CompletedProce
     )
 
 
-def test_happy_path_single_source_publishes_all_three_files(
+def test_happy_path_single_source_publishes_both_files(
     single_source_constitution_fixture: dict,
 ) -> None:
     """Install a single source and verify all published generation files."""
@@ -57,20 +59,18 @@ def test_happy_path_single_source_publishes_all_three_files(
     live = consumer / ".haex-hive"
     constitution = live / "constitution.md"
     lock_path = live / "install.lock"
-    marker_path = live / "visibility.json"
 
     assert constitution.read_bytes() == b"# Example Constitution\n\nBe kind.\n"
+    assert not (live / "visibility.json").exists()
 
     lock = json.loads(lock_path.read_text())
     assert lock["haex_hive_version"] == "3"
-    assert lock["constitution"]["sources"] == [
-        {"id": atom_id, "revision": commit_sha, "source": canonical}
+    assert lock["molecules"] == [
+        {
+            "id": atom_id,
+            "source": canonical,
+            "revision": commit_sha,
+            "paths": [".haex-hive/constitution.md"],
+        }
     ]
-    assert "content_integrity" not in lock["constitution"]
-    assert lock["participating_roots"] == [".haex-hive/"]
-
-    marker = json.loads(marker_path.read_text())
-    assert marker["haex_hive_version"] == "3"
-    assert marker["participating_roots"] == [".haex-hive/"]
-    assert marker["generation_id"] == lock["visibility_marker"]["generation_id"]
-    assert proc.stdout.strip().endswith(marker["generation_id"])
+    assert proc.stdout.strip().endswith(lock["generation_id"])
