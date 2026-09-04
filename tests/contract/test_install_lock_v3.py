@@ -66,7 +66,7 @@ def test_contributed_path_outside_participating_roots_is_rejected() -> None:
 def test_contributed_path_matching_second_participating_root_validates() -> None:
     """The path must match *any* configured root, not just the first one."""
     data = _with_molecules([".claude/skill.md"])
-    data["participating_roots"] = [".claude/", ".haex-hive/"]
+    data["participating_roots"] = [".haex-hive/", ".claude/"]
     validate(data, SCHEMA_NAME)
 
 
