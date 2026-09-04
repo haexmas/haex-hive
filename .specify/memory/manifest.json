@@ -1,9 +1,9 @@
 {
-  "haex_hive_version": "2",
+  "haex_hive_version": "3",
   "id": "com.github.haexmas.haex-hive.constitution",
   "version": "1.4.0",
   "priority": 10,
-  "contributes": {
-    "constitution": "constitution.md"
+  "atoms": {
+    "constitution": ["constitution.md"]
   }
 }

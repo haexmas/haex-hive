@@ -1,8 +1,8 @@
 {
   "active_feature": null,
-  "atoms": [
+  "compounds": [
     {
-      "includes": [
+      "molecules": [
         "com.github.haexmas.haex-hive.constitution"
       ],
       "revision": "336eaf1e5b1a86f76031b60b7f692da98682b9ac",
@@ -10,7 +10,7 @@
     }
   ],
   "groups": [],
-  "haex_hive_min_version": ">=2.0.0",
-  "haex_hive_version": "2",
+  "haex_hive_min_version": ">=3.0.0",
+  "haex_hive_version": "3",
   "identity": "com.github.haexmas.haex-hive"
 }
