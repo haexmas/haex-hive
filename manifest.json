@@ -1,7 +1,7 @@
 {
-  "haex_hive_version": "2",
+  "haex_hive_version": "3",
   "publisher": "com.github.haexmas.haex-hive",
-  "atoms": {
+  "molecules": {
     "com.github.haexmas.haex-hive.constitution": {
       "path": ".specify/memory",
       "version": "1.4.0"
