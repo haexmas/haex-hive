@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haexmas/haex-hive/schemas/install-lock.v3.schema.json",
+  "title": "haex-hive Install Lockfile v3",
+  "description": "Schema for `.haex-hive/install.lock` under v3 vocabulary. Renames v2 `atoms[]` to `molecules[]` and `atomInstallRecord` to `moleculeInstallRecord`. Semantics inherit from Spec 008.",
+  "type": "object",
+  "required": ["haex_hive_version", "generated_by"],
+  "properties": {
+    "haex_hive_version": { "const": "3" },
+    "generated_by": {
+      "type": "string",
+      "pattern": "^haex [0-9]+\\.[0-9]+\\.[0-9]+.*$",
+      "description": "e.g. 'haex 3.0.0'."
+    },
+    "constitution": {
+      "$ref": "#/$defs/constitutionBlock",
+      "description": "Constitution block. Present when the install includes at least one molecule contributing a constitution."
+    },
+    "molecules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/moleculeInstallRecord" },
+      "description": "One entry per adopted molecule whose contribution is recorded in this install. Renamed from v2 `atoms[]`."
+    },
+    "generation_inputs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/generationInputIdentity" },
+      "uniqueItems": true,
+      "description": "Immutable adapter and tool-configuration identities used to generate this publication; order MUST be `(kind, id)`-sorted."
+    },
+    "participating_roots": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/rootName" },
+      "uniqueItems": true,
+      "description": "MUST match `visibility.json.participating_roots` byte-identically at publication time."
+    },
+    "visibility_marker": {
+      "$ref": "#/$defs/visibilityMarkerRef",
+      "description": "Cross-reference to the `.haex-hive/visibility.json` marker this lock corresponds to (by `generation_id` only)."
+    }
+  },
+  "$defs": {
+    "rootName": {
+      "type": "string",
+      "pattern": "^(?!\\.\\.?/$)\\.[A-Za-z0-9._-]+/$",
+      "description": "Repo-relative directory with trailing slash, e.g. '.haex-hive/'."
+    },
+    "constitutionBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sources", "assembled_by"],
+      "properties": {
+        "sources": { "type": "array" },
+        "assembled_by": { "type": "object" }
+      }
+    },
+    "moleculeInstallRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source", "revision", "contributed_paths"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$",
+          "description": "Reverse-DNS molecule-id."
+        },
+        "source": {
+          "type": "string",
+          "format": "uri",
+          "description": "Publisher repo URL."
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "Full 40-char SHA per Principle IV."
+        },
+        "contributed_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "POSIX repo-relative paths written by this molecule under participating roots."
+        }
+      }
+    },
+    "generationInputIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "type": "string" },
+        "id": { "type": "string" }
+      }
+    },
+    "visibilityMarkerRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generation_id"],
+      "properties": {
+        "generation_id": { "type": "string" }
+      }
+    }
+  }
+}
