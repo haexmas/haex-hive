@@ -62,7 +62,7 @@ def test_happy_path_single_source_publishes_all_three_files(
     assert constitution.read_bytes() == b"# Example Constitution\n\nBe kind.\n"
 
     lock = json.loads(lock_path.read_text())
-    assert lock["haex_hive_version"] == "2"
+    assert lock["haex_hive_version"] == "3"
     assert lock["constitution"]["sources"] == [
         {"id": atom_id, "revision": commit_sha, "source": canonical}
     ]
@@ -70,7 +70,7 @@ def test_happy_path_single_source_publishes_all_three_files(
     assert lock["participating_roots"] == [".haex-hive/"]
 
     marker = json.loads(marker_path.read_text())
-    assert marker["haex_hive_version"] == "2"
+    assert marker["haex_hive_version"] == "3"
     assert marker["participating_roots"] == [".haex-hive/"]
     assert marker["generation_id"] == lock["visibility_marker"]["generation_id"]
     assert proc.stdout.strip().endswith(marker["generation_id"])

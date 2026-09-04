@@ -110,7 +110,7 @@ def test_crash_at_boundary_converges_on_retry(
         manifest_path = consumer / ".haex-hive.json"
         manifest_bytes = manifest_path.read_bytes()
         manifest = json.loads(manifest_bytes)
-        manifest["atoms"][0]["revision"] = "deadbeef" * 5
+        manifest["compounds"][0]["revision"] = "deadbeef" * 5
         manifest_path.write_bytes(json_deterministic.dumps(manifest))
 
         failed_retry = _run(consumer, state_root)
@@ -168,7 +168,7 @@ def test_rename_a_crash_restores_previous_before_retry_resolution(
     manifest_path = consumer / ".haex-hive.json"
     manifest_bytes = manifest_path.read_bytes()
     manifest = json.loads(manifest_bytes)
-    manifest["atoms"][0]["revision"] = "deadbeef" * 5
+    manifest["compounds"][0]["revision"] = "deadbeef" * 5
     manifest_path.write_bytes(json_deterministic.dumps(manifest))
 
     failed_retry = _run(consumer, state_root)

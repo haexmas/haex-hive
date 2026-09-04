@@ -29,6 +29,24 @@ def _is_uri(value: object) -> bool:
 
 Draft202012Validator.FORMAT_CHECKER.checks("uri")(_is_uri)
 
+_SCHEMA_BY_KIND = {
+    "consumer": "consumer-manifest.v3.schema.json",
+    "publisher": "publisher-manifest.v3.schema.json",
+    "molecule": "molecule-manifest.v3.schema.json",
+    "install-lock": "install-lock.v3.schema.json",
+}
+
+
+def schema_name_for_kind(kind: str) -> str:
+    """Return the v3 schema payload name for a manifest kind.
+
+    `kind` is one of "consumer", "publisher", "molecule", "install-lock".
+    """
+    try:
+        return _SCHEMA_BY_KIND[kind]
+    except KeyError:
+        raise KeyError(f"unknown manifest kind: {kind!r}") from None
+
 
 @dataclass(frozen=True)
 class SchemaError:
@@ -86,7 +104,7 @@ def _semantic_errors(data: Any, schema_name: str) -> list[SchemaError]:
         return []
 
     errors: list[SchemaError] = []
-    if schema_name == "install-lock.v2.schema.json":
+    if schema_name == "install-lock.v3.schema.json":
         _check_unique_keys(data, "participating_roots", "root", errors)
         _check_unique_keys(data.get("ownership"), "paths", "path", errors, prefix="/ownership")
         _check_generation_input_identities(data, errors)

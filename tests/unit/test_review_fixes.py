@@ -21,9 +21,9 @@ from haex_hive.migrate.transform import (
     _select_atom_for_path,
     migrate_v1_to_v2,
 )
-from haex_hive.model.atom_manifest import AtomManifest
 from haex_hive.model.consumer_manifest import ConsumerManifest
 from haex_hive.model.install_lock import InstallLock
+from haex_hive.model.molecule_manifest import MoleculeManifest
 from haex_hive.model.publisher_manifest import PublisherManifest
 from haex_hive.schema.validator import _json_pointer
 from haex_hive.util.errors import (
@@ -76,9 +76,12 @@ def test_missing_identity_is_an_identity_refusal() -> None:
 def test_invalid_atom_manifest_is_typed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    publisher = PublisherManifest.from_json(
-        b'{"haex_hive_version":"2","publisher":"com.example", "atoms": {'
-        b'"com.example.atom":{"path":"atom","version":"1.0.0"}}}'
+    # _select_atom_for_path reads the raw v2-era publisher shape directly
+    # (research.md D6): the migrate-only v1->v2 path never goes through the
+    # (now v3-only) PublisherManifest runtime model.
+    publisher = json.loads(
+        '{"haex_hive_version":"2","publisher":"com.example", "atoms": {'
+        '"com.example.atom":{"path":"atom","version":"1.0.0"}}}'
     )
     monkeypatch.setattr(
         "haex_hive.migrate.transform.git_show.show_bytes", lambda *args, **kwargs: b"{"
@@ -121,24 +124,23 @@ def test_diagnostics_quote_control_characters() -> None:
 
 
 def test_install_lock_freezes_unknown_nested_values() -> None:
-    lock = InstallLock.from_json(
-        json.dumps(
-            {
-                "haex_hive_version": "2",
-                "generated_by": "haex 2.0.0",
-                "future": {"nested": [1]},
-            }
-        ).encode()
+    # `additionalProperties: false` at install-lock.v3's root (T023) means no
+    # unknown top-level key can reach `from_json` anymore; construct the
+    # dataclass directly to exercise `unknown_top_level`'s freeze invariant.
+    lock = InstallLock(
+        haex_hive_version="3",
+        generated_by="haex 3.0.0",
+        unknown_top_level={"future": {"nested": [1]}},
     )
     with pytest.raises(TypeError):
         lock.unknown_top_level["future"]["nested"][0] = 2
 
 
-def test_install_lock_migrates_pre_amendment_v2_shape() -> None:
-    """Read old v2 locks so interrupted installs can resume after the amendment."""
+def test_install_lock_migrates_pre_amendment_shape() -> None:
+    """Read a stale lock so interrupted installs can resume after the amendment."""
     data = {
-        "haex_hive_version": "2",
-        "generated_by": "haex 2.0.0",
+        "haex_hive_version": "3",
+        "generated_by": "haex 3.0.0",
         "constitution": {
             "sources": [
                 {
@@ -147,10 +149,10 @@ def test_install_lock_migrates_pre_amendment_v2_shape() -> None:
                     "source": "https://example.com/publisher",
                 }
             ],
-            "assembled_by": {"tool": "haex", "version": "2.0.0"},
+            "assembled_by": {"tool": "haex", "version": "3.0.0"},
             "content_integrity": "sha256-" + "A" * 43,
         },
-        "atoms": [
+        "molecules": [
             {
                 "id": "com.example.constitution",
                 "source": "https://example.com/publisher",
@@ -175,7 +177,7 @@ def test_install_lock_migrates_pre_amendment_v2_shape() -> None:
     assert lock.participating_roots == (".haex-hive/",)
     assert "ownership" not in migrated
     assert "content_integrity" not in migrated["constitution"]
-    assert "content_integrity" not in migrated["atoms"][0]
+    assert "content_integrity" not in migrated["molecules"][0]
     assert "content_integrity" not in migrated["visibility_marker"]
 
 
@@ -186,30 +188,31 @@ def test_install_lock_parse_failures_are_typed() -> None:
 
 
 def test_models_freeze_nested_json_values() -> None:
-    atom = AtomManifest.from_json(
-        b'{"haex_hive_version":"2","id":"com.example.atom","version":"1.0.0",'
-        b'"contributes":{"constitution":"constitution.md"},"defaults":{"nested":{"x":1}}}'
+    molecule = MoleculeManifest.from_json(
+        b'{"haex_hive_version":"3","id":"com.example.atom","version":"1.0.0",'
+        b'"priority":100,"atoms":{"constitution":["constitution.md"]},'
+        b'"defaults":{"nested":{"x":1}}}'
     )
     with pytest.raises(TypeError):
-        atom.defaults["nested"]["x"] = 2
+        molecule.defaults["nested"]["x"] = 2
 
     consumer = ConsumerManifest.from_json(
-        b'{"haex_hive_version":"2","identity":"com.example.project","atoms":['
+        b'{"haex_hive_version":"3","identity":"com.example.project","compounds":['
         b'{"source":"https://example.com/publisher","revision":"' + b"0" * 40
-        + b'","includes":["com.example.atom"],"config":{"com.example.atom":'
+        + b'","molecules":["com.example.atom"],"config":{"com.example.atom":'
         b'{"values":{"nested":{"x":1}}}}}]}'
     )
     with pytest.raises(TypeError):
-        consumer.atoms[0].config["com.example.atom"].values["nested"]["x"] = 2
+        consumer.compounds[0].config["com.example.atom"].values["nested"]["x"] = 2
     before = consumer.to_json_bytes()
     assert consumer.to_json_bytes() == before
 
     publisher = PublisherManifest.from_json(
-        b'{"haex_hive_version":"2","publisher":"com.example","atoms":{'
+        b'{"haex_hive_version":"3","publisher":"com.example","molecules":{'
         b'"com.example.atom":{"path":"atom","version":"1.0.0"}}}'
     )
     with pytest.raises(TypeError):
-        publisher.atoms["com.example.other"] = publisher.atoms["com.example.atom"]
+        publisher.molecules["com.example.other"] = publisher.molecules["com.example.atom"]
 
 
 def test_json_pointer_escapes_tokens() -> None:

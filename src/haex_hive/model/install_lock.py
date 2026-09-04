@@ -1,15 +1,17 @@
-"""InstallLock v2 — the on-disk contract for `.haex-hive/install.lock`.
+"""InstallLock v3 — the on-disk contract for `.haex-hive/install.lock`.
 
 Spec 007 landed the constitution section; Spec 008 adds `atoms`, immutable
-`generation_inputs`, `participating_roots`, and `visibility_marker`. Every
-field is a first-class dataclass here so writers get a compile-time-visible
-surface and readers get validated shapes on load.
+`generation_inputs`, `participating_roots`, and `visibility_marker`. Spec 013
+renames the top-level `atoms[]` array to `molecules[]` and `AtomInstallRecord`
+to `MoleculeInstallRecord`. Every field is a first-class dataclass here so
+writers get a compile-time-visible surface and readers get validated shapes
+on load.
 
 The still-present `unknown_top_level` bag preserves *actually* unknown
 fields (anything the schema doesn't yet describe) across a read/write
 round-trip — under the project's pre-user policy we don't need it for
 Spec 007-vintage records (they refuse at schema validation), but we do
-need it if we ever ship a v3 field a downstream v2 reader must survive.
+need it if we ever ship a v4 field a downstream v3 reader must survive.
 """
 
 from __future__ import annotations
@@ -49,8 +51,8 @@ class ConstitutionLockSection:
 
 
 @dataclass(frozen=True)
-class AtomInstallRecord:
-    """One adopted atom's sealed contribution (data-model.md §AtomInstallRecord)."""
+class MoleculeInstallRecord:
+    """One adopted molecule's sealed contribution (data-model.md §MoleculeInstallRecord)."""
 
     id: str
     source: str
@@ -86,15 +88,15 @@ class InstallLock:
     haex_hive_version: str
     generated_by: str
     constitution: ConstitutionLockSection | None = None
-    atoms: tuple[AtomInstallRecord, ...] | None = None
+    molecules: tuple[MoleculeInstallRecord, ...] | None = None
     generation_inputs: tuple[GenerationInputIdentity, ...] | None = None
     participating_roots: tuple[str, ...] | None = None
     visibility_marker: VisibilityMarkerRef | None = None
     unknown_top_level: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.atoms is not None:
-            object.__setattr__(self, "atoms", tuple(self.atoms))
+        if self.molecules is not None:
+            object.__setattr__(self, "molecules", tuple(self.molecules))
         if self.generation_inputs is not None:
             inputs = tuple(self.generation_inputs)
             object.__setattr__(self, "generation_inputs", inputs)
@@ -121,8 +123,8 @@ class InstallLock:
     def from_json(raw: bytes) -> InstallLock:
         try:
             data = json.loads(raw.decode("utf-8"))
-            data = _migrate_pre_amendment_v2(data)
-            schema_validator.validate(data, "install-lock.v2.schema.json")
+            data = _migrate_pre_amendment_v3(data)
+            schema_validator.validate(data, "install-lock.v3.schema.json")
         except (UnicodeError, ValueError) as exc:
             detail = (
                 f": {exc}"
@@ -131,14 +133,14 @@ class InstallLock:
             )
             raise InstallLockSchemaInvalidError(
                 message=(
-                    "install.lock is not valid against install-lock.v2.schema.json"
+                    "install.lock is not valid against install-lock.v3.schema.json"
                     + detail
                 ),
-                context={"schema": "install-lock.v2.schema.json"},
+                context={"schema": "install-lock.v3.schema.json"},
             ) from exc
 
         constitution = _parse_constitution(data.get("constitution"))
-        atoms = _parse_atoms(data.get("atoms"))
+        molecules = _parse_molecules(data.get("molecules"))
         generation_inputs = _parse_generation_inputs(data.get("generation_inputs"))
         participating_roots = _parse_participating_roots(data.get("participating_roots"))
         visibility_marker = _parse_visibility_marker(data.get("visibility_marker"))
@@ -147,7 +149,7 @@ class InstallLock:
             "haex_hive_version",
             "generated_by",
             "constitution",
-            "atoms",
+            "molecules",
             "generation_inputs",
             "participating_roots",
             "visibility_marker",
@@ -157,7 +159,7 @@ class InstallLock:
             haex_hive_version=data["haex_hive_version"],
             generated_by=data["generated_by"],
             constitution=constitution,
-            atoms=atoms,
+            molecules=molecules,
             generation_inputs=generation_inputs,
             participating_roots=participating_roots,
             visibility_marker=visibility_marker,
@@ -179,8 +181,8 @@ class InstallLock:
                     for s in self.constitution.sources
                 ],
             }
-        if self.atoms is not None:
-            obj["atoms"] = [_serialize_atom(atom) for atom in self.atoms]
+        if self.molecules is not None:
+            obj["molecules"] = [_serialize_molecule(m) for m in self.molecules]
         if self.generation_inputs is not None:
             obj["generation_inputs"] = [
                 _serialize_generation_input(item) for item in self.generation_inputs
@@ -196,10 +198,10 @@ class InstallLock:
         return json_deterministic.dumps(obj)
 
 
-def _migrate_pre_amendment_v2(data: Any) -> Any:
-    """Normalize the pre-amendment v2 lock shape for the current reader.
+def _migrate_pre_amendment_v3(data: Any) -> Any:
+    """Normalize a stale pre-amendment lock shape for the current reader.
 
-    Older v2 locks persisted output digests, root records, and an ownership
+    Older locks persisted output digests, root records, and an ownership
     inventory. Those fields were deliberately retired by the trust-git
     amendment. They must be removed before validating the current schema so a
     crashed install can still resume and replace the old lock atomically.
@@ -214,15 +216,15 @@ def _migrate_pre_amendment_v2(data: Any) -> Any:
         constitution.pop("content_integrity", None)
         migrated["constitution"] = constitution
 
-    atoms = migrated.get("atoms")
-    if isinstance(atoms, list):
-        migrated["atoms"] = [
+    molecules = migrated.get("molecules")
+    if isinstance(molecules, list):
+        migrated["molecules"] = [
             (
                 {key: value for key, value in item.items() if key != "content_integrity"}
                 if isinstance(item, dict)
                 else item
             )
-            for item in atoms
+            for item in molecules
         ]
 
     roots = migrated.get("participating_roots")
@@ -260,11 +262,11 @@ def _parse_constitution(section: Any) -> ConstitutionLockSection | None:
     )
 
 
-def _parse_atoms(raw: Any) -> tuple[AtomInstallRecord, ...] | None:
+def _parse_molecules(raw: Any) -> tuple[MoleculeInstallRecord, ...] | None:
     if raw is None:
         return None
     return tuple(
-        AtomInstallRecord(
+        MoleculeInstallRecord(
             id=item["id"],
             source=CanonicalSourceUrl.validate(item["source"]),
             revision=item["revision"],
@@ -302,12 +304,12 @@ def _parse_visibility_marker(raw: Any) -> VisibilityMarkerRef | None:
     )
 
 
-def _serialize_atom(atom: AtomInstallRecord) -> dict[str, Any]:
+def _serialize_molecule(molecule: MoleculeInstallRecord) -> dict[str, Any]:
     return {
-        "id": atom.id,
-        "source": atom.source,
-        "revision": atom.revision,
-        "contributed_paths": list(atom.contributed_paths),
+        "id": molecule.id,
+        "source": molecule.source,
+        "revision": molecule.revision,
+        "contributed_paths": list(molecule.contributed_paths),
     }
 
 

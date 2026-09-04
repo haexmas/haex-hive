@@ -86,11 +86,60 @@
     "generationInputIdentity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "id"],
+      "required": ["kind", "id", "revision", "serialization"],
       "properties": {
-        "kind": { "type": "string" },
-        "id": { "type": "string" }
+        "kind": { "type": "string", "enum": ["adapter", "tool-config"] },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "revision": {
+          "oneOf": [
+            { "type": "string", "pattern": "^git:[0-9a-f]{40}$" },
+            { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+          ]
+        },
+        "serialization": { "$ref": "#/$defs/serializationProfile" }
       }
+    },
+    "serializationProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "encoding", "newline", "key_order", "indent", "ensure_ascii"],
+      "properties": {
+        "format": { "type": "string", "enum": ["json", "text", "toml"] },
+        "encoding": { "const": "UTF-8" },
+        "newline": { "const": "LF" },
+        "key_order": { "type": "string", "enum": ["lexicographic-utf8", "not-applicable"] },
+        "indent": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "null" }
+          ]
+        },
+        "ensure_ascii": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "format": { "const": "json" } } },
+          "then": {
+            "properties": {
+              "key_order": { "const": "lexicographic-utf8" },
+              "ensure_ascii": { "const": false }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "format": { "enum": ["text", "toml"] } } },
+          "then": {
+            "properties": {
+              "key_order": { "const": "not-applicable" },
+              "indent": { "const": null },
+              "ensure_ascii": { "const": false }
+            }
+          }
+        }
+      ]
     },
     "visibilityMarkerRef": {
       "type": "object",

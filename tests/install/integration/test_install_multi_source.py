@@ -132,7 +132,7 @@ def test_accept_merged_pending_mismatch_refuses_and_retains_pending(
     # Drift the manifest after pending-state was written: drop one included atom.
     manifest_path = consumer / ".haex-hive.json"
     data = json.loads(manifest_path.read_text())
-    data["atoms"][0]["includes"] = [multi_source_constitution_fixture["atom_id_a"]]
+    data["compounds"][0]["molecules"] = [multi_source_constitution_fixture["atom_id_a"]]
     manifest_path.write_text(json.dumps(data))
 
     candidate_path = tmp_path / "constitution.md.candidate"

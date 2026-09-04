@@ -78,7 +78,7 @@ def test_dropping_atom_republishes_with_reduced_atom_set(
 
     manifest_path = consumer / ".haex-hive.json"
     manifest = json.loads(manifest_path.read_text())
-    manifest["atoms"][0]["includes"] = [atom_id_a]
+    manifest["compounds"][0]["molecules"] = [atom_id_a]
     manifest_path.write_text(json.dumps(manifest, indent=2))
 
     second = _run_haex(consumer, state_root=state_root)
@@ -116,7 +116,7 @@ def test_second_delete_orphans_is_a_noop(
 
     manifest_path = consumer / ".haex-hive.json"
     manifest = json.loads(manifest_path.read_text())
-    manifest["atoms"][0]["includes"] = [atom_id_a]
+    manifest["compounds"][0]["molecules"] = [atom_id_a]
     manifest_path.write_text(json.dumps(manifest, indent=2))
 
     drop = _run_haex(consumer, state_root=state_root)

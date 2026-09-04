@@ -1,12 +1,12 @@
-"""T008 — contract test for install-lock v2 (Spec 008 shape).
+"""T008 — contract test for install-lock v3 (Spec 008 shape, renamed by Spec 013).
 
 Assertions
 - The three MVP shapes validate: minimal Spec-008 constitution-only shape, a
-  Spec-008 full shape with atoms + participating_roots + visibility_marker +
+  Spec-008 full shape with molecules + participating_roots + visibility_marker +
   generation_inputs.
-- Negative cases prove the schema tightens where Spec 008 needs it: atoms items
-  without `source` are rejected, generation-input identities are unique and
-  sorted, and retired integrity fields are rejected.
+- Negative cases prove the schema tightens where Spec 008 needs it: molecule
+  records without `source` are rejected, generation-input identities are unique
+  and sorted, and retired integrity fields are rejected.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import pytest
 from haex_hive.schema import loader
 from haex_hive.schema.validator import SchemaValidationError, validate
 
-SCHEMA_NAME = "install-lock.v2.schema.json"
+SCHEMA_NAME = "install-lock.v3.schema.json"
 
 _GENERATION_ID = "g_20260831T142011Z_a4c2"
 
@@ -24,7 +24,7 @@ _GENERATION_ID = "g_20260831T142011Z_a4c2"
 def _minimal_spec_008_shape() -> dict:
     """Build the minimal Spec 008 constitution-only install lock shape."""
     return {
-        "haex_hive_version": "2",
+        "haex_hive_version": "3",
         "generated_by": "haex 2.0.0",
         "constitution": {
             "sources": [
@@ -42,7 +42,7 @@ def _minimal_spec_008_shape() -> dict:
 def _spec_008_shape() -> dict:
     """Build a complete valid Spec 008 install lock shape."""
     base = _minimal_spec_008_shape()
-    base["atoms"] = [
+    base["molecules"] = [
         {
             "id": "com.example.publisher.constitution",
             "source": "https://github.com/example/publisher",
@@ -77,7 +77,7 @@ def _spec_008_shape() -> dict:
 def test_schema_loads() -> None:
     """Ensure the vendored install-lock schema is available."""
     schema = loader.load(SCHEMA_NAME)
-    assert schema["title"].startswith("haex-hive Install Lockfile v2")
+    assert schema["title"].startswith("haex-hive Install Lockfile v3")
 
 
 def test_minimal_spec_008_shape_validates() -> None:
@@ -91,9 +91,9 @@ def test_full_spec_008_shape_validates() -> None:
 
 
 def test_atom_missing_source_is_rejected() -> None:
-    """Require a publisher source on every installed atom record."""
+    """Require a publisher source on every installed molecule record."""
     data = _spec_008_shape()
-    del data["atoms"][0]["source"]
+    del data["molecules"][0]["source"]
     with pytest.raises(SchemaValidationError):
         validate(data, SCHEMA_NAME)
 
@@ -115,9 +115,9 @@ def test_retired_content_integrity_is_rejected_in_constitution() -> None:
 
 
 def test_retired_content_integrity_is_rejected_in_atom() -> None:
-    """Reject retired output-integrity fields in atom records."""
+    """Reject retired output-integrity fields in molecule records."""
     data = _spec_008_shape()
-    data["atoms"][0]["content_integrity"] = "sha256-" + "A" * 43
+    data["molecules"][0]["content_integrity"] = "sha256-" + "A" * 43
     with pytest.raises(SchemaValidationError):
         validate(data, SCHEMA_NAME)
 
@@ -205,8 +205,8 @@ def test_serialization_profile_accepts_format_specific_shape(format_name: str) -
 
 
 def test_invalid_atom_source_uri_is_rejected() -> None:
-    """Reject malformed atom source URIs."""
+    """Reject malformed molecule source URIs."""
     data = _spec_008_shape()
-    data["atoms"][0]["source"] = "http://[invalid"
+    data["molecules"][0]["source"] = "http://[invalid"
     with pytest.raises(SchemaValidationError):
         validate(data, SCHEMA_NAME)

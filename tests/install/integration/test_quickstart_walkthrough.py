@@ -182,7 +182,7 @@ def test_quickstart_walkthrough_delete_orphan(
 
     manifest_path = consumer / ".haex-hive.json"
     manifest = json.loads(manifest_path.read_text())
-    manifest["atoms"][0]["includes"] = [atom_id_a]
+    manifest["compounds"][0]["molecules"] = [atom_id_a]
     manifest_path.write_text(json.dumps(manifest, indent=2))
 
     drop = _run_install(consumer, state_root=state_root)

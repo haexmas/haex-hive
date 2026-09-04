@@ -22,7 +22,7 @@ class VisibilityMarker:
 
     generation_id: str
     participating_roots: tuple[str, ...]
-    haex_hive_version: str = "2"
+    haex_hive_version: str = "3"
     written_at: str | None = None
 
     def __post_init__(self) -> None:

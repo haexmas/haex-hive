@@ -11,7 +11,6 @@ from pathlib import Path
 
 from haex_hive.cli.diagnostics import emit_refuse
 from haex_hive.migrate import detect, sidecar, transform
-from haex_hive.schema import validator as schema_validator
 from haex_hive.util import exit_codes
 from haex_hive.util.errors import HaexError, UsageError
 
@@ -98,7 +97,7 @@ def run(args: argparse.Namespace) -> int:
         return refusal.exit_code
 
     try:
-        schema_validator.validate(json.loads(v2_bytes.decode("utf-8")), "haex-hive.v2.schema.json")
+        transform.validate_v2_consumer_manifest(json.loads(v2_bytes.decode("utf-8")))
     except Exception as exc:
         if write_mode:
             sidecar.invalidate_stale_sidecar(repo_root)
