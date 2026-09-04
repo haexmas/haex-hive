@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 from haex_hive.cli.main import INSTALLED_VERSION_STRING
-from haex_hive.constitution.assemble import assemble_multi_source, assemble_single_source
+from haex_hive.constitution.assemble import assemble_single_source
 from haex_hive.constitution.resolve import resolve_constitution_contributions
 from haex_hive.install import inflight
 from haex_hive.install.lock import OwnerToken
@@ -23,7 +23,11 @@ from haex_hive.io.writer_lock import ConstitutionWriterLock
 from haex_hive.model.consumer_manifest import ConsumerManifest
 from haex_hive.model.install_lock import InstallLock
 from haex_hive.util import exit_codes
-from haex_hive.util.errors import HaexError, NoSourcesDeclaredError
+from haex_hive.util.errors import (
+    ConstitutionAlreadyAdoptedError,
+    HaexError,
+    NoSourcesDeclaredError,
+)
 
 
 def _load_consumer_manifest(repo_root: Path) -> ConsumerManifest:
@@ -35,7 +39,10 @@ def _load_consumer_manifest(repo_root: Path) -> ConsumerManifest:
             context={"path": str(manifest_path)},
             diagnostic_key="haex-hive-json-missing",
             exit_code=exit_codes.INCOMPLETE_TRANSACTION,
-            hint="Run `haex migrate` to produce a v3 file, then retry.",
+            hint=(
+                "A v3 .haex-hive.json is required; v2-to-v3 migration is not "
+                "available yet."
+            ),
         )
     raw = manifest_path.read_bytes()
     try:
@@ -45,7 +52,10 @@ def _load_consumer_manifest(repo_root: Path) -> ConsumerManifest:
             message=f".haex-hive.json is not a valid v3 manifest: {exc}",
             diagnostic_key="haex-hive-json-invalid",
             exit_code=exit_codes.INCOMPLETE_TRANSACTION,
-            hint="Run `haex migrate` to produce a valid v3 file.",
+            hint=(
+                "A v3 .haex-hive.json is required; v2-to-v3 migration is not "
+                "available yet."
+            ),
         ) from exc
 
 
@@ -109,63 +119,53 @@ def run(args: argparse.Namespace) -> int:
         paths = transaction_paths(repo_root, state_root)
         with ConstitutionWriterLock(paths.mutex, OwnerToken.emit()):
             live_root = repo_root / transaction.HAEX_HIVE_DIR
-            inflight.clean_stale_siblings(live_root)
+            # A missing live tree with a retained previous generation is the
+            # one recovery step that must precede resolution: a failed retry
+            # must not leave the repository without its last good generation.
             inflight.restore_previous_generation(live_root)
+            inflight.clean_stale_siblings(live_root)
 
             manifest = _load_consumer_manifest(repo_root)
             contributions = resolve_constitution_contributions(manifest, state_root)
             if not contributions:
                 raise NoSourcesDeclaredError(message="no constitution sources declared")
 
-            accept_merged_path = getattr(args, "accept_merged", None)
-            llm_method = getattr(args, "llm", None)
-
-            if accept_merged_path is not None:
-                return assemble_multi_source(
-                    contributions,
-                    repo_root,
-                    llm_method=llm_method,
-                    accept_merged_path=accept_merged_path,
-                    tool_version=INSTALLED_VERSION_STRING,
-                    state_root=state_root,
+            if len(contributions) != 1:
+                molecule_ids = sorted(
+                    {contribution.source.id for contribution in contributions}
+                )
+                raise ConstitutionAlreadyAdoptedError(
+                    message=(
+                        "multiple constitution contributions are not supported; "
+                        f"currently resolved molecules: {', '.join(molecule_ids)}"
+                    ),
+                    context={"molecules": ",".join(molecule_ids)},
                 )
 
-            if len(contributions) == 1:
-                contribution = contributions[0]
-                if _is_no_op_single_source(
-                    repo_root,
-                    contribution.body,
-                    contribution.source.id,
-                    contribution.source.revision,
-                    contribution.source.source,
-                ):
-                    inflight.clean_stale_siblings(
-                        repo_root / transaction.HAEX_HIVE_DIR,
-                        remove_prev=True,
-                    )
-                    sys.stdout.write("no changes\n")
-                    return exit_codes.SUCCESS
-
-                assemble_single_source(
-                    contribution,
-                    repo_root,
-                    tool_version=INSTALLED_VERSION_STRING,
-                    state_root=state_root,
+            contribution = contributions[0]
+            if _is_no_op_single_source(
+                repo_root,
+                contribution.body,
+                contribution.source.id,
+                contribution.source.revision,
+                contribution.source.source,
+            ):
+                inflight.clean_stale_siblings(
+                    repo_root / transaction.HAEX_HIVE_DIR,
+                    remove_prev=True,
                 )
-                new_generation_id = _live_generation_id(repo_root)
-                sys.stdout.write(
-                    f"installed generation {new_generation_id}\n"
-                )
+                sys.stdout.write("no changes\n")
                 return exit_codes.SUCCESS
 
-            return assemble_multi_source(
-                contributions,
+            assemble_single_source(
+                contribution,
                 repo_root,
-                llm_method=llm_method,
-                accept_merged_path=None,
                 tool_version=INSTALLED_VERSION_STRING,
                 state_root=state_root,
             )
+            new_generation_id = _live_generation_id(repo_root)
+            sys.stdout.write(f"installed generation {new_generation_id}\n")
+            return exit_codes.SUCCESS
     except HaexError:
         raise
     except (OSError, ValueError) as exc:

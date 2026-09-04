@@ -1,19 +1,7 @@
-"""T046 — dropping an atom republishes with the reduced atom set (US4).
-
-Under the constitution-only MVP, "atom files" means the merged
-constitution body. Dropping one of two constitution-contributing atoms
-transitions the install from the multi-source `--accept-merged` path to
-the single-source fast path; the resulting `.haex-hive/constitution.md`
-is byte-for-byte the remaining atom's contribution and `install.lock`'s
-`constitution.sources[]` shrinks to a single entry. Under R1 rename-swap
-the whole `.haex-hive/` is replaced atomically, so any file that a
-removed atom would have contributed is absent from the new generation by
-construction.
-"""
+"""Regression coverage for the retired multi-source publication path."""
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -25,105 +13,31 @@ import pytest
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git binary required")
 
 
-def _run_haex(
-    repo_root: Path,
-    *args: str,
-    state_root: Path,
-) -> subprocess.CompletedProcess:
+def _run_install(repo_root: Path, *, state_root: Path) -> subprocess.CompletedProcess[str]:
+    """Run install against a fixture with an isolated state directory."""
     env = os.environ.copy()
     env["HAEX_HIVE_STATE"] = str(state_root)
     return subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "haex_hive",
-            "--repo-root",
-            str(repo_root),
-            "install",
-            *args,
-        ],
+        [sys.executable, "-m", "haex_hive", "--repo-root", str(repo_root), "install"],
         capture_output=True,
         text=True,
         env=env,
     )
 
 
-def test_dropping_atom_republishes_with_reduced_atom_set(
-    multi_source_constitution_fixture: dict, tmp_path: Path
+def test_multi_source_install_refuses_without_deleting_existing_outputs(
+    multi_source_constitution_fixture: dict,
 ) -> None:
+    """A refused multi-source install must not delete a previous generation."""
     consumer: Path = multi_source_constitution_fixture["consumer"]
     state_root: Path = multi_source_constitution_fixture["state_root"]
-    atom_id_a = multi_source_constitution_fixture["atom_id_a"]
-    atom_id_b = multi_source_constitution_fixture["atom_id_b"]
-
-    pending = _run_haex(consumer, "--llm=file", state_root=state_root)
-    assert pending.returncode == 5, pending.stderr
-
-    merged = b"# Merged Constitution\n\nBe kind.\nBe bold.\n"
-    candidate_path = tmp_path / "merged.md"
-    candidate_path.write_bytes(merged)
-
-    first = _run_haex(
-        consumer, "--accept-merged", str(candidate_path), state_root=state_root
-    )
-    assert first.returncode == 0, first.stderr
-
     live = consumer / ".haex-hive"
-    lock_before = json.loads((live / "install.lock").read_text())
-    assert sorted(s["id"] for s in lock_before["constitution"]["sources"]) == sorted(
-        [atom_id_a, atom_id_b]
-    )
-    assert (live / "constitution.md").read_bytes() == merged
-    generation_id_before = lock_before["visibility_marker"]["generation_id"]
+    live.mkdir()
+    constitution = live / "constitution.md"
+    constitution.write_bytes(b"existing\n")
 
-    manifest_path = consumer / ".haex-hive.json"
-    manifest = json.loads(manifest_path.read_text())
-    manifest["compounds"][0]["molecules"] = [atom_id_a]
-    manifest_path.write_text(json.dumps(manifest, indent=2))
+    refused = _run_install(consumer, state_root=state_root)
 
-    second = _run_haex(consumer, state_root=state_root)
-    assert second.returncode == 0, second.stderr
-    assert second.stdout.startswith("installed generation g_")
-
-    assert (live / "constitution.md").read_bytes() == b"# Constitution A\n\nBe kind.\n"
-
-    lock_after = json.loads((live / "install.lock").read_text())
-    assert [s["id"] for s in lock_after["constitution"]["sources"]] == [atom_id_a]
-    assert lock_after["visibility_marker"]["generation_id"] != generation_id_before
-
-    marker = json.loads((live / "visibility.json").read_text())
-    assert marker["generation_id"] == lock_after["visibility_marker"]["generation_id"]
-    assert marker["participating_roots"] == [".haex-hive/"]
-
-
-def test_second_delete_orphans_is_a_noop(
-    multi_source_constitution_fixture: dict, tmp_path: Path
-) -> None:
-    """After a drop+reinstall converges, a third install is idempotent."""
-    consumer: Path = multi_source_constitution_fixture["consumer"]
-    state_root: Path = multi_source_constitution_fixture["state_root"]
-    atom_id_a = multi_source_constitution_fixture["atom_id_a"]
-
-    pending = _run_haex(consumer, "--llm=file", state_root=state_root)
-    assert pending.returncode == 5, pending.stderr
-    merged = b"# Merged Constitution\n\nBe kind.\nBe bold.\n"
-    candidate_path = tmp_path / "merged.md"
-    candidate_path.write_bytes(merged)
-    accept = _run_haex(
-        consumer, "--accept-merged", str(candidate_path), state_root=state_root
-    )
-    assert accept.returncode == 0, accept.stderr
-
-    manifest_path = consumer / ".haex-hive.json"
-    manifest = json.loads(manifest_path.read_text())
-    manifest["compounds"][0]["molecules"] = [atom_id_a]
-    manifest_path.write_text(json.dumps(manifest, indent=2))
-
-    drop = _run_haex(consumer, state_root=state_root)
-    assert drop.returncode == 0, drop.stderr
-    lock_after_drop = (consumer / ".haex-hive" / "install.lock").read_bytes()
-
-    idempotent = _run_haex(consumer, state_root=state_root)
-    assert idempotent.returncode == 0, idempotent.stderr
-    assert idempotent.stdout.strip() == "no changes"
-    assert (consumer / ".haex-hive" / "install.lock").read_bytes() == lock_after_drop
+    assert refused.returncode == 2, refused.stderr
+    assert "key=constitution-already-adopted" in refused.stderr
+    assert constitution.read_bytes() == b"existing\n"

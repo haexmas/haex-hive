@@ -35,19 +35,6 @@ def _assemble(consumer: Path, state_root: Path) -> None:
     assert proc.returncode == 0, proc.stderr.decode()
 
 
-def _assemble_multi(consumer: Path, state_root: Path, merged: bytes) -> None:
-    candidate = f"Content-Length: {len(merged)}\n".encode("ascii") + merged
-    confirm = b"--haex-confirm: yes\n"
-    proc = _run_haex(
-        consumer,
-        "install",
-        "--llm=stdio",
-        state_root=state_root,
-        stdin_bytes=candidate + confirm,
-    )
-    assert proc.returncode == 0, proc.stderr.decode()
-
-
 def _show(consumer: Path, *args: str, state_root: Path) -> subprocess.CompletedProcess:
     return _run_haex(consumer, "constitution", "show", *args, state_root=state_root)
 
@@ -118,16 +105,19 @@ def test_install_lock_schema_invalid_refuses(single_source_constitution_fixture:
 
 
 def test_install_lock_sources_not_canonical_refuses(
-    multi_source_constitution_fixture: dict,
+    single_source_constitution_fixture: dict,
 ) -> None:
-    consumer = multi_source_constitution_fixture["consumer"]
-    state_root = multi_source_constitution_fixture["state_root"]
-    merged = b"# Merged Constitution\n\nBe kind.\nBe bold.\n"
-    _assemble_multi(consumer, state_root, merged)
+    consumer = single_source_constitution_fixture["consumer"]
+    state_root = single_source_constitution_fixture["state_root"]
+    _assemble(consumer, state_root)
 
     lock_path = consumer / ".haex-hive" / "install.lock"
     data = json.loads(lock_path.read_text())
-    data["constitution"]["sources"].reverse()
+    source = data["constitution"]["sources"][0]
+    data["constitution"]["sources"] = [
+        {**source, "id": "com.z.example.constitution"},
+        {**source, "id": "com.a.example.constitution"},
+    ]
     lock_path.write_text(json.dumps(data))
 
     proc = _show(consumer, state_root=state_root)

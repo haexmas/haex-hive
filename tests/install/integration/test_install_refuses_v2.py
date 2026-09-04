@@ -32,8 +32,8 @@ def _run_install(repo_root: Path, state_root: Path) -> subprocess.CompletedProce
     )
 
 
-def test_v2_consumer_refuses_and_names_haex_migrate(tmp_path: Path) -> None:
-    """A v2 `.haex-hive.json` is something the operator owns and can migrate themselves."""
+def test_v2_consumer_refuses_with_unavailable_migration_hint(tmp_path: Path) -> None:
+    """A v2 consumer is refused because v2-to-v3 migration is not available yet."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     (consumer / ".haex-hive.json").write_text(
@@ -48,7 +48,7 @@ def test_v2_consumer_refuses_and_names_haex_migrate(tmp_path: Path) -> None:
 
     proc = _run_install(consumer, tmp_path / "state")
     assert proc.returncode != 0
-    assert "haex migrate" in proc.stderr
+    assert "v2-to-v3 migration is not available yet" in proc.stderr
     assert not (consumer / ".haex-hive").exists()
 
 

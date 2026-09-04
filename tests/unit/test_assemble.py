@@ -77,6 +77,7 @@ def test_publish_allocates_generation_id_after_existing_generation(
                 },
                 "participating_roots": [".haex-hive/"],
                 "visibility_marker": {"generation_id": existing_generation_id},
+                "future_field": {"enabled": True},
             }
         ).encode()
     )
@@ -105,6 +106,7 @@ def test_publish_allocates_generation_id_after_existing_generation(
     new_generation_id = captured["visibility_marker"]["generation_id"]
     assert new_generation_id != existing_generation_id
     assert new_generation_id > existing_generation_id
+    assert captured["future_field"] == {"enabled": True}
 
 
 def test_generation_input_profiles_match_payload_formats() -> None:

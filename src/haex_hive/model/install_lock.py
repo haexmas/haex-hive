@@ -30,6 +30,18 @@ from haex_hive.util.errors import (
     InstallLockSourcesNotCanonicalError,
 )
 
+_KNOWN_TOP_LEVEL_FIELDS = frozenset(
+    {
+        "haex_hive_version",
+        "generated_by",
+        "constitution",
+        "molecules",
+        "generation_inputs",
+        "participating_roots",
+        "visibility_marker",
+    }
+)
+
 
 @dataclass(frozen=True)
 class ConstitutionSource:
@@ -124,7 +136,25 @@ class InstallLock:
         try:
             data = json.loads(raw.decode("utf-8"))
             data = _migrate_pre_amendment_v3(data)
-            schema_validator.validate(data, "install-lock.v3.schema.json")
+            if isinstance(data, dict):
+                # Keep unknown top-level fields so a v3 reader can round-trip
+                # fields introduced by a newer lock schema. The v3 schema has
+                # additionalProperties=false, so validate only its known
+                # projection while retaining the complete unknown bag.
+                unknown = {
+                    key: value
+                    for key, value in data.items()
+                    if key not in _KNOWN_TOP_LEVEL_FIELDS
+                }
+                validation_data = {
+                    key: value
+                    for key, value in data.items()
+                    if key in _KNOWN_TOP_LEVEL_FIELDS
+                }
+            else:
+                unknown = {}
+                validation_data = data
+            schema_validator.validate(validation_data, "install-lock.v3.schema.json")
         except (UnicodeError, ValueError) as exc:
             detail = (
                 f": {exc}"
@@ -145,16 +175,6 @@ class InstallLock:
         participating_roots = _parse_participating_roots(data.get("participating_roots"))
         visibility_marker = _parse_visibility_marker(data.get("visibility_marker"))
 
-        known = {
-            "haex_hive_version",
-            "generated_by",
-            "constitution",
-            "molecules",
-            "generation_inputs",
-            "participating_roots",
-            "visibility_marker",
-        }
-        unknown = {k: v for k, v in data.items() if k not in known}
         return InstallLock(
             haex_hive_version=data["haex_hive_version"],
             generated_by=data["generated_by"],

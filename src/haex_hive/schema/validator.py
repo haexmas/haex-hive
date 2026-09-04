@@ -108,6 +108,7 @@ def _semantic_errors(data: Any, schema_name: str) -> list[SchemaError]:
         _check_unique_keys(data, "participating_roots", "root", errors)
         _check_unique_keys(data.get("ownership"), "paths", "path", errors, prefix="/ownership")
         _check_generation_input_identities(data, errors)
+        _check_contributed_paths(data, errors)
     elif schema_name == "visibility-marker.v1.schema.json":
         roots = data.get("participating_roots")
         _check_unique_keys(data, "participating_roots", "root", errors)
@@ -127,6 +128,51 @@ def _semantic_errors(data: Any, schema_name: str) -> list[SchemaError]:
                 )
             )
     return errors
+
+
+def _check_contributed_paths(data: dict[str, Any], errors: list[SchemaError]) -> None:
+    """Ensure every non-empty contributed path is inside a published root."""
+    molecules = data.get("molecules")
+    if not isinstance(molecules, list):
+        return
+
+    roots = data.get("participating_roots")
+    configured_roots = (
+        roots
+        if isinstance(roots, list) and all(isinstance(root, str) for root in roots)
+        else None
+    )
+    for molecule_index, molecule in enumerate(molecules):
+        if not isinstance(molecule, dict):
+            continue
+        paths = molecule.get("contributed_paths")
+        if not isinstance(paths, list):
+            continue
+        for path_index, path in enumerate(paths):
+            # Structural validation owns empty/non-string path diagnostics.
+            # An empty contributed_paths array remains valid without roots.
+            if not isinstance(path, str) or not path:
+                continue
+            if not configured_roots:
+                errors.append(
+                    SchemaError(
+                        field_path=f"/molecules/{molecule_index}/contributed_paths/{path_index}",
+                        message=(
+                            "non-empty contributed paths require "
+                            "participating_roots"
+                        ),
+                    )
+                )
+            elif not any(path.startswith(root) for root in configured_roots):
+                errors.append(
+                    SchemaError(
+                        field_path=f"/molecules/{molecule_index}/contributed_paths/{path_index}",
+                        message=(
+                            "contributed path must begin with a configured "
+                            "participating root"
+                        ),
+                    )
+                )
 
 
 def _check_generation_input_identities(

@@ -78,12 +78,10 @@ def _build_parser() -> argparse.ArgumentParser:
     show = constitution_sub.add_parser("show", help="print effective constitution")
     show.add_argument("--no-preface", action="store_true")
 
-    install = subparsers.add_parser(
+    subparsers.add_parser(
         "install",
-        help="resolve `.haex-hive.json` atoms and publish a new generation (Spec 008)",
+        help="resolve `.haex-hive.json` molecules and publish a new generation (Spec 008)",
     )
-    install.add_argument("--llm", choices=["stdio", "file", "none"])
-    install.add_argument("--accept-merged", type=Path)
 
     return parser
 

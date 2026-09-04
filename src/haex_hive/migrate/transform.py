@@ -210,10 +210,33 @@ def _select_atom_for_path(
     contributes_key = _ROLE_TO_CONTRIBUTES[role]
     path_segments = _relative_path_segments(v1_path)
 
+    raw_atoms = publisher.get("atoms")
+    if not isinstance(raw_atoms, dict):
+        raise MissingPublisherManifestError(
+            message="publisher manifest atoms must be an object",
+            context={"sha_short": revision[:12]},
+        )
+
     matches: list[str] = []
-    for atom_id, entry in publisher.get("atoms", {}).items():
-        entry_path = entry["path"]
-        atom_segments = _relative_path_segments(entry_path)
+    for atom_id, entry in raw_atoms.items():
+        if not isinstance(entry, dict):
+            raise MissingAtomManifestError(
+                message=f"publisher atom entry {atom_id!r} must be an object",
+                context={"atom_id": str(atom_id)},
+            )
+        entry_path = entry.get("path")
+        if not isinstance(entry_path, str):
+            raise MissingAtomManifestError(
+                message=f"publisher atom entry {atom_id!r} has no string path",
+                context={"atom_id": str(atom_id)},
+            )
+        try:
+            atom_segments = _relative_path_segments(entry_path)
+        except ValueError as exc:
+            raise MissingAtomManifestError(
+                message=f"publisher atom entry {atom_id!r} has an invalid path",
+                context={"atom_id": str(atom_id), "path": entry_path},
+            ) from exc
         if path_segments[: len(atom_segments)] != atom_segments:
             continue
         atom_manifest_bytes = git_show.show_bytes(
@@ -231,7 +254,18 @@ def _select_atom_for_path(
                 message=f"atom manifest at {entry_path!r} is invalid",
                 context={"path": entry_path, "sha_short": revision[:12]},
             ) from exc
-        contributes = atom_data.get("contributes") or {}
+        if "contributes" not in atom_data:
+            contributes = {}
+        else:
+            contributes = atom_data["contributes"]
+            if not isinstance(contributes, dict):
+                raise MissingAtomManifestError(
+                    message=(
+                        f"atom manifest at {entry_path!r} has a malformed "
+                        "contributes object"
+                    ),
+                    context={"path": entry_path, "sha_short": revision[:12]},
+                )
         declared = contributes.get(contributes_key)
         if declared is None:
             continue
