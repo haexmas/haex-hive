@@ -105,16 +105,68 @@ Policy may mark any capability class as `require-confirmation`. The relay holds 
 
 Any cross-device command must name a target device by alias. Aliases are assigned when a device is added to the trusted network: the master-signed attestation binds the alias to the initial `nostr_pubkey` and `iroh_node_id` pair. In the chat surface, aliases are typed with an `@`-mention convention (e.g. `@laptop-home`); the LLM sees the mention as a routed instruction, and the same explicit-target skill governs resolution and confirmation regardless of whether the target was typed as `@alias`, chosen from a picker, or supplied by another tool. A skill enforces this: the resolved target (alias plus `nostr_pubkey` plus `iroh_node_id`, both stable across sessions and both drawn from the current device attestation) is shown to the operator before dispatch. The signed intent payload carries `target_nostr_pubkey`, `target_iroh_node_id`, and the attestation epoch that was current at resolution time; the receiver validates all three against its own current attestation before executing. An alias rebinding between confirmation and dispatch therefore cannot silently route an authorized command to a different device: the alias is used for display and lookup only, never as the authorization binding. Alias uniqueness within the operator's device registry is enforced by the master signing at most one active attestation per alias, and rebinding requires a fresh master-signed attestation with a new epoch. When the command carries a file transfer, the ticket fingerprint of the accompanying `blob.offer` is shown alongside; pure control commands have no ticket at this stage. Stale presence is surfaced.
 
-## 3. Integration with the existing haex-hive core
+## 3. Harness model and haex-hive core integration
 
-The speckit-driven harness core is not replaced; the personal agent is a new consumer of it.
+### Environment-scoped harnesses
 
-- **Handoff contract**: unchanged. A task delegated to another device still carries a harness pin and lockfile hash. The receiver still runs `haex install` at that pin before starting the agent session. What changes is the transport of the handoff manifest: it can now travel as a signed Nostr command event between the operator's own devices, and the harness materialization happens locally on the receiving device before the agent turn begins.
-- **Manifest v2/v3**: the current declarations (skills, hooks, prompts, MCP servers) are unchanged. The declaration of which capabilities the agent runtime exposes to remote devices needs a normative home, and the two candidate placements have different downstream consequences that the follow-up spec MUST decide, not defer: (a) keeping the declaration inside the manifest bumps the schema version, extends canonicalization, and covers the field with both the install transaction and the handoff hash, or (b) keeping it in a separate versioned runtime-capability artifact requires an explicit binding to the handoff, either by hashing the artifact from the manifest or by carrying a second pinned entry in the handoff manifest. Leaving both open at implementation time is not permitted; the follow-up spec picks one and this design does not.
-- **Install transaction**: unchanged. Installation of the harness on any device is still atomic with a lockfile, orphan deletion and integrity checks.
-- **Compiler and adapters**: the Tauri agent runtime is a new adapter target. The compiler emits per-tool artifacts as it does today; a new adapter emits the runtime's configuration file. This is future spec 010-follow-up work, not this document.
-- **Environment plane** (Scope Realignment Decision 2): unchanged. The Tauri build's own toolchain is declared via the same environment block. No provider is installed by haex-hive.
-- **Speckit workflow** (ADR 0009): unchanged. Everything in Section 2 must pass through `/speckit-specify` before any implementation.
+Every LLM interaction happens in some **environment**, meaning a host process with its own tool space: the Tauri app itself, an IDE with an AI assistant (VSCode, JetBrains), a terminal LLM CLI (`claude`, `codex`, `gemini`). Each environment consumes exactly one harness at a time; harnesses do not merge, layer, or cascade across environments. The question "what is active where" is answered by making the environment itself the boundary.
+
+Typical mapping:
+
+- **Tauri app** → Jarvis harness. The operator's personal assistant with general skills, MCPs, prompts, and hooks. Active whenever the operator chats in the Tauri UI.
+- **IDE (VSCode, JetBrains, ...)** → coding harness. Code-aware skills, project-specific MCPs, coding-oriented constitution. Active whenever the operator uses the IDE's AI assistant.
+- **Terminal LLM CLI** → typically the coding harness, or a specialized shell harness.
+
+Jarvis is **not** implicitly present in the IDE. To reach Jarvis from the IDE, the operator writes `@jarvis <message>`; see below.
+
+### Placement: user-global vs project-local
+
+Harnesses live in one of two roots, both using the same manifest format:
+
+- **User-global**: `~/.haex-hive/` (or platform equivalent). Materialized on Tauri-app first launch and on updates. Natural home for the Jarvis harness.
+- **Project-local**: `<repo>/.haex-hive/`. Materialized when the operator opens the project. Natural home for a coding harness scoped to that project (this is the classic haex-hive placement).
+
+Combinations follow: a user-global harness may also target an IDE (a default coding harness for sessions outside any repo); a project-local harness may in principle target the Tauri app (rare in practice). The two dominant cases are (user-global, Tauri app) and (project-local, IDE).
+
+### Cross-environment addressing: `@jarvis` and the bridge tool
+
+From a non-Jarvis environment, the operator addresses another agent by `@`-mention. The coding harness ships a **bridge MCP tool** (working name: `jarvis-bridge`) that the environment's LLM sees among its available tools, and the tool resolves the mention:
+
+1. The LLM parses `@<name> <message>` in a turn and calls the bridge tool with the mention name and message.
+2. The bridge tool resolves `<name>`:
+   - If it resolves to the local Jarvis (typically `@jarvis`), the bridge routes to the Tauri app on the same device via a local transport (Unix socket, Named Pipe, or localhost).
+   - If it resolves to a device alias in the operator's registry (e.g. `@home-server`), the bridge forwards the call cross-device as a signed Nostr command event per Section 2.
+3. The receiving Tauri app authenticates the caller (see below), applies its policy, runs the Jarvis turn, returns the answer as an MCP tool result to the calling LLM, which surfaces it to the operator.
+
+Bridging is directional at v1: from a non-Jarvis environment into Jarvis. The reverse (Jarvis reaching into an open IDE session) is a later extension.
+
+### Caller authentication for cross-environment MCP calls
+
+The Tauri app verifies that an incoming MCP call really comes from a legitimate caller in a legitimate environment on a legitimate device. Two cases:
+
+- **Same device**: on first setup the Tauri app issues a **signed session token** bound to `(device_id, environment_id, install_time)`. The token is materialized into the environment-side bridge config by the coding-harness install. The bridge presents the token on every MCP call; the Tauri app verifies the signature and looks the token up in its own registry. Token issuance is user-confirmed once (a prompt "allow VSCode on this device to talk to Jarvis"), not per call. Tokens are rotatable and revocable; uninstalling the bridge triggers a revocation event on the Tauri side.
+- **Different device**: the cross-device call travels as a signed Nostr command event per Section 2. The device attestation is the auth path; no separate token is needed. The environment id still travels in the payload so the policy engine can distinguish `laptop:vscode` from `laptop:shell`.
+
+### Policy shape: `(device, environment, capability)`
+
+The policy engine authorizes on the triple `(source_device, source_environment, capability_class)`. Example rules:
+
+- `laptop:vscode` may call `jarvis.ask`, `jarvis.remember`, `jarvis.retrieve_note`.
+- `workstation:shell` may call `jarvis.ask` only.
+- `phone:tauri` may call any capability marked `personal`; anything marked `write` requires confirmation.
+
+The confirmation-authority mechanic from Section 2 still applies to write-marked calls, whether the caller is another own-device Jarvis or a local IDE.
+
+### What the existing haex-hive core provides, unchanged
+
+The speckit-driven core is not replaced; the personal agent and the harness model above extend its scope without changing its shape.
+
+- **Handoff contract**: unchanged. A delegated task still carries a harness pin and lockfile hash; the receiver still runs `haex install` at that pin before starting the agent session. Applies to both user-global (Jarvis) and project-local (coding) harnesses. Cross-device transport is Section 2's signed Nostr command event.
+- **Manifest v2/v3**: current declarations (skills, hooks, prompts, MCP servers) are unchanged. Gains a **target-environment declaration**: a harness names the environments it is intended for so the compiler dispatches per target. The runtime-capability declaration for cross-device MCP exposure remains the must-decide item from earlier (in-manifest schema bump vs. separate versioned artifact); leaving both interpretations open at implementation time is still not permitted.
+- **Install transaction**: unchanged. Atomic materialization at the chosen install root, lockfile, orphan deletion, integrity checks.
+- **Compiler and adapters**: adapter surface expands with one new target, the Tauri agent runtime. The other targets (Claude Code, Codex, Gemini CLI, IDE extensions) stay as they are today.
+- **Environment plane** (Scope Realignment Decision 2): unchanged. Applies to build toolchains for a project's toolset; independent of the harness model above.
+- **Speckit workflow** (ADR 0009): unchanged. Everything in this section must land through numbered specs before any code moves.
 
 ## 4. What Nostr does that iroh does not, and vice versa
 
@@ -146,6 +198,7 @@ Recorded here so the follow-up ADR and specs know their scope:
     - Reconnection semantics on iroh endpoint address change: same session continues under the existing authorization, or fresh authorization is required.
     - Codec negotiation and bandwidth adaptation within a session.
     - Optional in-session blob capture (for example, saving a video call to a persistent blob mid-stream).
+12. Cross-environment addressing internals: bridge MCP tool schema (name, arguments, session-token transport in the call), session-token lifecycle (issuance flow, rotation, revocation on uninstall, encrypted at-rest storage on the environment side), environment identifier derivation (install-path-based, human-declared, or a combination), and handling of multiple concurrent instances of the same environment kind (two VSCode windows on the same device: shared environment id or per-window).
 
 ## 6. Follow-up work
 
@@ -158,6 +211,9 @@ Ordered by the earliest thing that must exist for the rest to have a normative h
 5. **Speckit spec for the `blob.offer` announcement, ticket lifecycle, and iroh accept-handler.**
 6. **Speckit spec for the MCP-to-Nostr adapter** and remote capability advertisement.
 7. **Speckit spec for the Tauri runtime adapter** produced by the compiler.
+8. **Speckit spec for the harness model and environment declarations**: environment enumeration, target-environment field in the manifest, placement conventions (user-global vs project-local), and the mapping of environments to compiler adapters.
+9. **Speckit spec for the bridge MCP and same-device caller auth**: bridge tool schema, signed session-token protocol, installation and revocation lifecycle, at-rest storage on the environment side.
+10. **Speckit spec for the `(device, environment, capability)` policy engine**, covering both cross-device MCP calls and cross-environment MCP calls under one authorization model.
 
 Mobile scope, encryption-at-rest choice, and provider-model adapters are further follow-ups whose priority is set once the specs above are in flight.
 
