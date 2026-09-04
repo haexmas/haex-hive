@@ -188,27 +188,6 @@ class PostWriteValidationError(HaexError):
 
 
 @dataclass
-class LlmRequiredForMultiSourceError(HaexError):
-    diagnostic_key: str = "llm-required-for-multi-source"
-    exit_code: int = exit_codes.VALIDATION_REFUSE
-    hint: str = "Run on a device with LLM access, or pass --llm=file for the two-phase flow."
-
-
-@dataclass
-class MergeNotConfirmedError(HaexError):
-    diagnostic_key: str = "merge-not-confirmed"
-    exit_code: int = exit_codes.MERGE_NOT_CONFIRMED
-    hint: str = "Send `--haex-confirm: yes\\n` after reviewing the candidate."
-
-
-@dataclass
-class PendingMergeInputsMismatchError(HaexError):
-    diagnostic_key: str = "pending-merge-inputs-mismatch"
-    exit_code: int = exit_codes.PENDING_MERGE_INPUTS_MISMATCH
-    hint: str = "Re-run `haex install --llm=file` to refresh pending inputs."
-
-
-@dataclass
 class ConstitutionWriterBusyError(HaexError):
     diagnostic_key: str = "constitution-writer-busy"
     exit_code: int = exit_codes.WRITER_BUSY

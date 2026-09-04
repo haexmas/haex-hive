@@ -18,12 +18,11 @@ INPUT_REFUSE = 2
 # missing contribution file, missing install.lock for show).
 IO_REFUSE = 3
 
-# 4 — validation / LLM refuse (post-migration schema failure, multi-source
-# `--llm=none`, corrupt install.lock in show).
+# 4 — validation refuse (post-migration schema failure, corrupt install.lock
+# in show).
 VALIDATION_REFUSE = 4
 
-# 5 — system refuse / pending merge state (missing `.haex-hive.json` or
-# version mismatch; assemble writes a pending merge and exits 5).
+# 5 — system refuse (missing `.haex-hive.json` or version mismatch).
 SYSTEM_REFUSE = 5
 
 # 6 — post-write validation failure (content integrity mismatch).
@@ -45,12 +44,6 @@ INSTALL_LOCK_BUSY = WRITER_BUSY
 # 10 — plaintext secret detected in a source, candidate, pending payload,
 # or lock payload.
 PLAINTEXT_SECRET = 10
-
-# 11 — stdio merge candidate not explicitly confirmed.
-MERGE_NOT_CONFIRMED = 11
-
-# 12 — pending merge inputs no longer match the fresh manifest resolution.
-PENDING_MERGE_INPUTS_MISMATCH = 12
 
 # 13 — terminal-unsafe contribution encountered on the stdio path.
 TERMINAL_UNSAFE_CONTRIBUTION = 13
