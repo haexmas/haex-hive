@@ -84,21 +84,30 @@ haex add https://github.com/haexmas/atoms
 
 The command lists the available molecule ids and prompts you to pick one or more. On non-TTY invocations, this form refuses; scripts must pass explicit ids or `--all`.
 
-### Review-gated constitution merge
+### Single constitution per repository
 
-When adopting a molecule that contributes a constitution and there is already an adopted constitution-contributing molecule in `.haex-hive.json`, `haex install` invoked by `haex add` triggers the review-gated `--llm=file` two-phase flow. `haex add` writes the manifest edit, runs install in `--llm=file` mode, and prints:
+haex-hive enforces the rule from ADR 0010 and Spec 014: a repository adopts **exactly one** prose atom with `binding: non-negotiable`. When you try to adopt a molecule that contributes a constitution and `.haex-hive.json` already resolves to another constitution-contributing molecule, `haex add` refuses at the CLI boundary with:
 
 ```
-constitution-review-pending: review at .haex-hive/pending/<candidate>
+constitution-already-adopted: <currently-adopted-id>
 ```
 
-Complete adoption with:
+Recovery is either:
 
 ```bash
-haex install --accept-merged .haex-hive/pending/<candidate>
+# Option A: replace the current constitution atom with the new one
+haex remove <currently-adopted-id>
+haex add <source-url> <new-molecule-id>
 ```
 
-This second command is the Principle VI review gate. `haex add` never bypasses it.
+or:
+
+```
+# Option B: combine the two constitutions into one prose atom externally,
+# adopt that single atom, and drop the two originals.
+```
+
+haex-hive does not merge constitutions and ships no `--llm=file` or `--accept-merged` path in Spec 013. Merging two rule sets is an editorial decision the operator makes outside the tool.
 
 ---
 
@@ -146,6 +155,6 @@ The lock file is created once by the tool on first use and never renamed or dele
 | `molecule-id-not-in-source` | A named molecule id is not in the publisher manifest at that SHA. | Check spelling and case; the publisher may have renamed. |
 | `interactive-selection-unavailable` | No molecule ids, no `--all`, and stdin is not a TTY. | Pass explicit molecule ids or `--all`. |
 | `workflow-molecule-already-adopted` | The added set includes a workflow molecule; a different one is already adopted. | `haex remove <current-workflow-molecule-id>` first. |
-| `constitution-review-pending` | A review-gated merge is required. | `haex install --accept-merged <candidate>`. |
+| `constitution-already-adopted` | The added set includes a constitution-contributing molecule; a different one is already adopted. | `haex remove <current-constitution-id>` first, or combine the two constitutions into one atom externally. haex-hive does not merge. |
 | `unknown-molecule-id` | `haex remove` was called with an id not present in any compound. | Check spelling; nothing changed. |
-| `manifest-lock-contended` | Another process holds `.haex-hive.json.lock`. | Wait and retry; investigate stuck processes if it persists. |
+| `manifest-lock-contended` | The manifest lock could not be acquired within the timeout window (default 30 s). | Wait and retry, or invoke with a longer `--lock-timeout=<sec>`. Use `--lock-timeout=0` for fail-fast. Investigate stuck processes if it persists. |
