@@ -8,10 +8,10 @@ from typing import Any
 
 _KNOWN_SCHEMAS = frozenset(
     {
-        "haex-hive.v2.schema.json",
-        "publisher-manifest.v2.schema.json",
-        "atom-manifest.v2.schema.json",
-        "install-lock.v2.schema.json",
+        "consumer-manifest.v3.schema.json",
+        "publisher-manifest.v3.schema.json",
+        "molecule-manifest.v3.schema.json",
+        "install-lock.v3.schema.json",
         "visibility-marker.v1.schema.json",
     }
 )

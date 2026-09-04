@@ -101,6 +101,13 @@ class AtomIdCollisionError(HaexError):
 
 
 @dataclass
+class MoleculeAtomsCategoryOverlapError(HaexError):
+    diagnostic_key: str = "atoms-category-overlap"
+    exit_code: int = exit_codes.VALIDATION_REFUSE
+    hint: str = "A delivered path may appear in only one atoms{} category."
+
+
+@dataclass
 class VersionBelowMinError(HaexError):
     diagnostic_key: str = "haex-hive-version-below-min"
     exit_code: int = exit_codes.SYSTEM_REFUSE

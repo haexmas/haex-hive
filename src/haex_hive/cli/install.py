@@ -27,7 +27,7 @@ from haex_hive.util.errors import HaexError, NoSourcesDeclaredError
 
 
 def _load_consumer_manifest(repo_root: Path) -> ConsumerManifest:
-    """Load and validate the consumer's v2 harness manifest."""
+    """Load and validate the consumer's v3 harness manifest."""
     manifest_path = repo_root / ".haex-hive.json"
     if not manifest_path.exists():
         raise HaexError(
@@ -35,17 +35,17 @@ def _load_consumer_manifest(repo_root: Path) -> ConsumerManifest:
             context={"path": str(manifest_path)},
             diagnostic_key="haex-hive-json-missing",
             exit_code=exit_codes.INCOMPLETE_TRANSACTION,
-            hint="Run `haex migrate` to produce a v2 file, then retry.",
+            hint="Run `haex migrate` to produce a v3 file, then retry.",
         )
     raw = manifest_path.read_bytes()
     try:
         return ConsumerManifest.from_json(raw)
     except (ValueError, KeyError) as exc:
         raise HaexError(
-            message=f".haex-hive.json is not a valid v2 manifest: {exc}",
+            message=f".haex-hive.json is not a valid v3 manifest: {exc}",
             diagnostic_key="haex-hive-json-invalid",
             exit_code=exit_codes.INCOMPLETE_TRANSACTION,
-            hint="Run `haex migrate` to produce a valid v2 file.",
+            hint="Run `haex migrate` to produce a valid v3 file.",
         ) from exc
 
 

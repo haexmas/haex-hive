@@ -95,7 +95,7 @@ def test_changed_source_url_republishes_lock(
 
     manifest_path = consumer / ".haex-hive.json"
     manifest = json.loads(manifest_path.read_text())
-    manifest["atoms"][0]["source"] = new_source
+    manifest["compounds"][0]["source"] = new_source
     manifest_path.write_text(json.dumps(manifest, indent=2))
 
     second = _run_install(consumer, state_root)

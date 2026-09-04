@@ -1,8 +1,11 @@
-"""D11 two-step contribution resolution: PublisherManifest -> PublisherAtomEntry -> AtomManifest.
+"""D11 two-step contribution resolution: PublisherManifest -> PublisherMoleculeEntry
+-> MoleculeManifest.
 
-Every atom-id in every `atoms[].includes[]` MUST resolve; an atom that
-resolves but does not declare `contributes.constitution` is filtered out
-silently (it is a non-contribution, not an error).
+Every molecule-id in every `compounds[].molecules[]` MUST resolve; a molecule
+that resolves but does not declare an `atoms.constitution` list is filtered
+out silently (it is a non-contribution, not an error). A molecule whose
+`atoms.constitution` list has more than one path contributes one constitution
+source per path, in the order the publisher declared them.
 """
 
 from __future__ import annotations
@@ -13,9 +16,9 @@ from pathlib import Path
 from haex_hive.git import revparse as git_revparse
 from haex_hive.git import show as git_show
 from haex_hive.migrate.transform import clone_dir
-from haex_hive.model.atom_manifest import AtomManifest
 from haex_hive.model.consumer_manifest import ConsumerManifest
 from haex_hive.model.install_lock import ConstitutionSource
+from haex_hive.model.molecule_manifest import MoleculeManifest
 from haex_hive.model.publisher_manifest import PublisherManifest
 from haex_hive.model.source_url import CanonicalSourceUrl
 from haex_hive.util.errors import (
@@ -38,15 +41,15 @@ class ResolvedConstitutionContribution:
 def resolve_constitution_contributions(
     manifest: ConsumerManifest, state_root: Path
 ) -> list[ResolvedConstitutionContribution]:
-    """Resolve constitution contributions from consumer manifest atoms.
+    """Resolve constitution contributions from consumer manifest compounds.
 
-    For each atom entry, fetches the publisher manifest and atom manifest from
-    the cloned publisher repo, validates consistency, and collects constitution
-    contributions. Atoms that resolve but do not declare `contributes.constitution`
-    are silently filtered out.
+    For each compound entry, fetches the publisher manifest and molecule
+    manifest from the cloned publisher repo, validates consistency, and
+    collects constitution contributions. Molecules that resolve but do not
+    declare an `atoms.constitution` list are silently filtered out.
 
     Args:
-        manifest: Consumer manifest containing atom entries with source/revision/includes.
+        manifest: Consumer manifest containing compound entries with source/revision/molecules.
         state_root: Path to haex-hive state directory containing publisher clones.
 
     Returns:
@@ -55,16 +58,16 @@ def resolve_constitution_contributions(
     Raises:
         PublisherCloneUnavailableError: If a publisher clone is not found.
         MissingPublisherManifestError: If publisher manifest is missing or invalid.
-        MissingAtomManifestError: If atom manifest is missing, invalid, or inconsistent.
-        AtomIdCollisionError: If an atom-id resolves to multiple (source, revision) pairs.
+        MissingAtomManifestError: If molecule manifest is missing, invalid, or inconsistent.
+        AtomIdCollisionError: If a molecule-id resolves to multiple (source, revision) pairs.
         ContributionFileNotFoundError: If a declared contribution file is not found.
     """
     contributions: list[ResolvedConstitutionContribution] = []
     seen: dict[str, tuple[str, str]] = {}
 
-    for atom_entry in manifest.atoms:
-        source = CanonicalSourceUrl.validate(atom_entry.source)
-        revision = atom_entry.revision
+    for compound_entry in manifest.compounds:
+        source = CanonicalSourceUrl.validate(compound_entry.source)
+        revision = compound_entry.revision
         repo_dir = clone_dir(state_root, source)
         if not repo_dir.is_dir():
             raise PublisherCloneUnavailableError(
@@ -87,70 +90,73 @@ def resolve_constitution_contributions(
                 context={"source": source, "sha_short": revision[:12]},
             ) from exc
 
-        for atom_id in atom_entry.includes:
+        for molecule_id in compound_entry.molecules:
             key = (source, revision)
-            if atom_id in seen and seen[atom_id] != key:
+            if molecule_id in seen and seen[molecule_id] != key:
                 raise AtomIdCollisionError(
                     message=(
-                        f"atom-id {atom_id!r} resolves to two different (source, revision) pairs"
+                        f"molecule-id {molecule_id!r} resolves to two different "
+                        "(source, revision) pairs"
                     ),
-                    context={"atom_id": atom_id},
+                    context={"atom_id": molecule_id},
                 )
-            seen[atom_id] = key
+            seen[molecule_id] = key
 
-            publisher_entry = publisher.atoms.get(atom_id)
+            publisher_entry = publisher.molecules.get(molecule_id)
             if publisher_entry is None:
                 raise MissingAtomManifestError(
-                    message=f"publisher {publisher.publisher!r} does not declare atom {atom_id!r}",
-                    context={"atom_id": atom_id, "publisher": publisher.publisher},
+                    message=(
+                        f"publisher {publisher.publisher!r} does not declare "
+                        f"molecule {molecule_id!r}"
+                    ),
+                    context={"atom_id": molecule_id, "publisher": publisher.publisher},
                 )
 
-            atom_bytes = git_show.show_bytes(
+            molecule_bytes = git_show.show_bytes(
                 repo_dir,
                 revision,
                 f"{publisher_entry.path}/manifest.json",
                 not_found_error=MissingAtomManifestError,
             )
             try:
-                atom_manifest = AtomManifest.from_json(atom_bytes)
+                molecule_manifest = MoleculeManifest.from_json(molecule_bytes)
             except (ValueError, KeyError) as exc:
                 raise MissingAtomManifestError(
-                    message=f"atom manifest for {atom_id!r} is invalid: {exc}",
-                    context={"atom_id": atom_id},
+                    message=f"molecule manifest for {molecule_id!r} is invalid: {exc}",
+                    context={"atom_id": molecule_id},
                 ) from exc
 
-            if atom_manifest.id != atom_id:
+            if molecule_manifest.id != molecule_id:
                 raise MissingAtomManifestError(
                     message=(
-                        f"atom manifest id {atom_manifest.id!r} does not match "
-                        f"publisher key {atom_id!r}"
+                        f"molecule manifest id {molecule_manifest.id!r} does not match "
+                        f"publisher key {molecule_id!r}"
                     ),
-                    context={"atom_id": atom_id, "manifest_id": atom_manifest.id},
+                    context={"atom_id": molecule_id, "manifest_id": molecule_manifest.id},
                 )
-            if atom_manifest.version != publisher_entry.version:
+            if molecule_manifest.version != publisher_entry.version:
                 raise MissingAtomManifestError(
                     message=(
-                        f"atom {atom_id!r} version {atom_manifest.version!r} does not match "
-                        f"publisher-declared version {publisher_entry.version!r}"
+                        f"molecule {molecule_id!r} version {molecule_manifest.version!r} "
+                        f"does not match publisher-declared version {publisher_entry.version!r}"
                     ),
-                    context={"atom_id": atom_id},
+                    context={"atom_id": molecule_id},
                 )
 
-            if atom_manifest.contributes is None or atom_manifest.contributes.constitution is None:
-                continue
-
-            contribution_path = f"{publisher_entry.path}/{atom_manifest.contributes.constitution}"
-            body = git_show.show_bytes(
-                repo_dir,
-                revision,
-                contribution_path,
-                not_found_error=ContributionFileNotFoundError,
-            )
-            contributions.append(
-                ResolvedConstitutionContribution(
-                    source=ConstitutionSource(id=atom_id, revision=revision, source=source),
-                    body=body,
+            constitution_paths = molecule_manifest.atoms.get("constitution", ())
+            for constitution_path in constitution_paths:
+                contribution_path = f"{publisher_entry.path}/{constitution_path}"
+                body = git_show.show_bytes(
+                    repo_dir,
+                    revision,
+                    contribution_path,
+                    not_found_error=ContributionFileNotFoundError,
                 )
-            )
+                contributions.append(
+                    ResolvedConstitutionContribution(
+                        source=ConstitutionSource(id=molecule_id, revision=revision, source=source),
+                        body=body,
+                    )
+                )
 
     return contributions

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from haex_hive.model.atom_id import AtomId
+from haex_hive.model.molecule_id import MoleculeId
 
 
 @pytest.mark.parametrize(
@@ -15,7 +15,7 @@ from haex_hive.model.atom_id import AtomId
     ],
 )
 def test_accepts_valid(value: str) -> None:
-    assert AtomId.parse(value) == value
+    assert MoleculeId.parse(value) == value
 
 
 @pytest.mark.parametrize(
@@ -35,10 +35,10 @@ def test_accepts_valid(value: str) -> None:
 )
 def test_rejects_invalid(value: str) -> None:
     with pytest.raises(ValueError):
-        AtomId.parse(value)
+        MoleculeId.parse(value)
 
 
 def test_rejects_over_length() -> None:
     long = "a" * 254
     with pytest.raises(ValueError):
-        AtomId.parse(long)
+        MoleculeId.parse(long)

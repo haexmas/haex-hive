@@ -10,16 +10,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from jsonschema import Draft202012Validator
+
 from haex_hive.constitution.safety import validate_no_plaintext_secrets
 from haex_hive.git import remote as git_remote
 from haex_hive.git import revparse as git_revparse
 from haex_hive.git import show as git_show
 from haex_hive.io import json_deterministic
-from haex_hive.model.atom_id import AtomId
-from haex_hive.model.publisher_manifest import PublisherManifest
+from haex_hive.model.molecule_id import MoleculeId
 from haex_hive.model.repo_relative_path import RepoRelativePath
 from haex_hive.model.source_url import canonicalize
-from haex_hive.schema import validator as schema_validator
 from haex_hive.util.errors import (
     AtomIdCollisionError,
     IdentityMismatchError,
@@ -38,6 +38,93 @@ _ROLE_TO_CONTRIBUTES = {
 
 _GITHUB_IDENTITY_RE = re.compile(r"^github\.com/([^/]+)/([^/]+)$")
 
+# Private to the migrate module (research.md D6): the shared package schema
+# set went v3-only under Spec 013 (D1), but migrate_v1_to_v2's own output
+# contract is unchanged and still targets v2. This mirrors the retired
+# haex-hive.v2.schema.json contract for the post-migration sanity check only.
+_V2_CONSUMER_MANIFEST_SCHEMA: dict[str, Any] = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["haex_hive_version", "identity", "atoms"],
+    "properties": {
+        "haex_hive_version": {"const": "2"},
+        "haex_hive_min_version": {"$ref": "#/$defs/versionConstraint"},
+        "identity": {"$ref": "#/$defs/atomId"},
+        "atoms": {"type": "array", "items": {"$ref": "#/$defs/atomEntry"}},
+        "groups": {"type": "array", "items": {"type": "string"}},
+        "active_feature": {"type": ["string", "null"]},
+        "identity_note": {"type": "string"},
+    },
+    "$defs": {
+        "atomId": {
+            "type": "string",
+            "pattern": (
+                r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+                r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$"
+            ),
+            "minLength": 3,
+            "maxLength": 253,
+        },
+        "versionConstraint": {
+            "type": "string",
+            "pattern": r"^(?:>=)?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$",
+        },
+        "canonicalSourceUrl": {
+            "type": "string",
+            "pattern": (
+                r"^(?!.*\.git$)(?:https|ssh):\/\/[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?"
+                r"(?::[0-9]+)?(?:\/[A-Za-z0-9._~!$&'()*+,;=:%-]+)+$"
+            ),
+        },
+        "fullSha40": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "atomEntry": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["source", "revision", "includes"],
+            "properties": {
+                "source": {"$ref": "#/$defs/canonicalSourceUrl"},
+                "revision": {"$ref": "#/$defs/fullSha40"},
+                "track": {"type": "string", "minLength": 1},
+                "includes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": True,
+                    "items": {"$ref": "#/$defs/atomId"},
+                },
+                "config": {
+                    "type": "object",
+                    "additionalProperties": {"$ref": "#/$defs/configEntry"},
+                    "propertyNames": {"$ref": "#/$defs/atomId"},
+                },
+            },
+        },
+        "configEntry": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "priority": {"type": "integer"},
+                "values": {"type": "object"},
+            },
+        },
+    },
+}
+
+
+def validate_v2_consumer_manifest(data: dict[str, Any]) -> None:
+    """Validate migrate_v1_to_v2's own output against the retired v2 shape.
+
+    Raises `ValueError` naming the first violation, mirroring
+    `schema.validator.SchemaValidationError`'s message shape closely enough
+    for `cli/migrate.py`'s `post-migration-schema-invalid` diagnostic.
+    """
+    validator = Draft202012Validator(_V2_CONSUMER_MANIFEST_SCHEMA)
+    errors = sorted(validator.iter_errors(data), key=lambda e: list(e.absolute_path))
+    if errors:
+        first = errors[0]
+        path = "/" + "/".join(str(token) for token in first.absolute_path)
+        raise ValueError(f"{path or '/'}: {first.message}")
+
 
 def clone_dir(state_root: Path, canonical_source: str) -> Path:
     digest = hashlib.sha256(canonical_source.encode("utf-8")).hexdigest()[:16]
@@ -49,9 +136,9 @@ def _convert_identity(v1_identity: str) -> str:
     if match:
         owner, repo = match.groups()
         candidate = f"com.github.{owner.lower()}.{repo.lower()}"
-        return AtomId.parse_identity(candidate)
+        return MoleculeId.parse_identity(candidate)
     try:
-        return AtomId.parse_identity(v1_identity)
+        return MoleculeId.parse_identity(v1_identity)
     except ValueError as exc:
         raise IdentityMismatchError(
             message=f"identity {v1_identity!r} is neither GitHub-style nor a reverse-DNS ID: {exc}",
@@ -107,33 +194,42 @@ class _ResolvedEntry:
 
 
 def _select_atom_for_path(
-    publisher: PublisherManifest,
+    publisher: dict[str, Any],
     repo_dir: Path,
     revision: str,
     role: str,
     v1_path: str,
 ) -> str:
+    """Match a v1 contribution path to its v2-era atom-id.
+
+    `publisher` is the raw parsed JSON of a v2-era publisher root manifest
+    (`{"atoms": {atom_id: {"path": ...}}}`), read independently of the
+    (now v3-only) `PublisherManifest` runtime model per research.md D6: this
+    migrate-only reader must keep understanding older shapes on its own.
+    """
     contributes_key = _ROLE_TO_CONTRIBUTES[role]
     path_segments = _relative_path_segments(v1_path)
 
     matches: list[str] = []
-    for atom_id, entry in publisher.atoms.items():
-        atom_segments = _relative_path_segments(entry.path)
+    for atom_id, entry in publisher.get("atoms", {}).items():
+        entry_path = entry["path"]
+        atom_segments = _relative_path_segments(entry_path)
         if path_segments[: len(atom_segments)] != atom_segments:
             continue
         atom_manifest_bytes = git_show.show_bytes(
             repo_dir,
             revision,
-            f"{entry.path}/manifest.json",
+            f"{entry_path}/manifest.json",
             not_found_error=MissingAtomManifestError,
         )
         try:
             atom_data = json.loads(atom_manifest_bytes.decode("utf-8"))
-            schema_validator.validate(atom_data, "atom-manifest.v2.schema.json")
+            if not isinstance(atom_data, dict):
+                raise ValueError("atom manifest root must be a JSON object")
         except (UnicodeError, ValueError) as exc:
             raise MissingAtomManifestError(
-                message=f"atom manifest at {entry.path!r} is invalid",
-                context={"path": entry.path, "sha_short": revision[:12]},
+                message=f"atom manifest at {entry_path!r} is invalid",
+                context={"path": entry_path, "sha_short": revision[:12]},
             ) from exc
         contributes = atom_data.get("contributes") or {}
         declared = contributes.get(contributes_key)
@@ -210,7 +306,15 @@ def _resolve_v1_entry(
         "manifest.json",
         not_found_error=MissingPublisherManifestError,
     )
-    publisher = PublisherManifest.from_json(publisher_bytes)
+    try:
+        publisher = json.loads(publisher_bytes.decode("utf-8"))
+        if not isinstance(publisher, dict):
+            raise ValueError("publisher manifest root must be a JSON object")
+    except (UnicodeError, ValueError) as exc:
+        raise MissingPublisherManifestError(
+            message=f"publisher manifest at {raw_source!r}@{full_sha[:12]} is invalid",
+            context={"source": raw_source, "sha_short": full_sha[:12]},
+        ) from exc
 
     atom_id = _select_atom_for_path(publisher, publisher_dir, full_sha, role, path)
 

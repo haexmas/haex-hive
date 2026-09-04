@@ -47,7 +47,7 @@ def test_successful_straight_copy(single_source_constitution_fixture: dict) -> N
     assert constitution.read_bytes() == b"# Example Constitution\n\nBe kind.\n"
 
     lock_data = json.loads(lock.read_text())
-    assert lock_data["haex_hive_version"] == "2"
+    assert lock_data["haex_hive_version"] == "3"
     assert lock_data["constitution"]["sources"] == [
         {
             "id": single_source_constitution_fixture["atom_id"],
@@ -80,7 +80,7 @@ def test_unavailable_pinned_sha_refuses_untouched(single_source_constitution_fix
 
     manifest_path = consumer / ".haex-hive.json"
     data = json.loads(manifest_path.read_text())
-    data["atoms"][0]["revision"] = "deadbeef" * 5
+    data["compounds"][0]["revision"] = "deadbeef" * 5
     manifest_path.write_text(json.dumps(data))
 
     proc = _run_haex(consumer, state_root=state_root)
@@ -110,9 +110,9 @@ def test_contribution_file_absent_refuses(tmp_path: Path, git_binary: str) -> No
     (publisher / "manifest.json").write_text(
         json.dumps(
             {
-                "haex_hive_version": "2",
+                "haex_hive_version": "3",
                 "publisher": "com.github.example.broken-publisher",
-                "atoms": {atom_id: {"path": "c", "version": "1.0.0"}},
+                "molecules": {atom_id: {"path": "c", "version": "1.0.0"}},
             }
         )
     )
@@ -120,10 +120,11 @@ def test_contribution_file_absent_refuses(tmp_path: Path, git_binary: str) -> No
     (publisher / "c" / "manifest.json").write_text(
         json.dumps(
             {
-                "haex_hive_version": "2",
+                "haex_hive_version": "3",
                 "id": atom_id,
                 "version": "1.0.0",
-                "contributes": {"constitution": "missing.md"},
+                "priority": 100,
+                "atoms": {"constitution": ["missing.md"]},
             }
         )
     )
@@ -143,9 +144,9 @@ def test_contribution_file_absent_refuses(tmp_path: Path, git_binary: str) -> No
     (consumer / ".haex-hive.json").write_text(
         json.dumps(
             {
-                "haex_hive_version": "2",
+                "haex_hive_version": "3",
                 "identity": "com.github.example.consumer",
-                "atoms": [{"source": canonical, "revision": sha, "includes": [atom_id]}],
+                "compounds": [{"source": canonical, "revision": sha, "molecules": [atom_id]}],
             }
         )
     )
@@ -162,9 +163,9 @@ def test_no_sources_declared_refuses(tmp_path: Path) -> None:
     (consumer / ".haex-hive.json").write_text(
         json.dumps(
             {
-                "haex_hive_version": "2",
+                "haex_hive_version": "3",
                 "identity": "com.github.example.consumer",
-                "atoms": [],
+                "compounds": [],
             }
         )
     )

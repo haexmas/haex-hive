@@ -63,7 +63,7 @@ def test_publish_allocates_generation_id_after_existing_generation(
     (live / transaction.INSTALL_LOCK_NAME).write_bytes(
         json.dumps(
             {
-                "haex_hive_version": "2",
+                "haex_hive_version": "3",
                 "generated_by": "haex 2.0.0",
                 "constitution": {
                     "sources": [

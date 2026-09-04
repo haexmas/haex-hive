@@ -100,7 +100,7 @@ def self_migration_fixture(tmp_path: Path, git_binary: str) -> dict:
 
 @pytest.fixture
 def single_source_constitution_fixture(tmp_path: Path, git_binary: str) -> dict:
-    """Publisher repo with exactly one constitution atom, plus a v2 consumer repo."""
+    """Publisher repo with exactly one constitution molecule, plus a v3 consumer repo."""
 
     atom_id = "com.github.example.publisher.constitution"
     canonical = "https://github.com/example/publisher"
@@ -113,9 +113,9 @@ def single_source_constitution_fixture(tmp_path: Path, git_binary: str) -> dict:
     (publisher / "manifest.json").write_text(
         json.dumps(
             {
-                "haex_hive_version": "2",
+                "haex_hive_version": "3",
                 "publisher": "com.github.example.publisher",
-                "atoms": {
+                "molecules": {
                     atom_id: {"path": "constitution", "version": "1.0.0"},
                 },
             },
@@ -126,10 +126,11 @@ def single_source_constitution_fixture(tmp_path: Path, git_binary: str) -> dict:
     (publisher / "constitution" / "manifest.json").write_text(
         json.dumps(
             {
-                "haex_hive_version": "2",
+                "haex_hive_version": "3",
                 "id": atom_id,
                 "version": "1.0.0",
-                "contributes": {"constitution": "constitution.md"},
+                "priority": 100,
+                "atoms": {"constitution": ["constitution.md"]},
             },
             sort_keys=True,
         )
@@ -153,13 +154,13 @@ def single_source_constitution_fixture(tmp_path: Path, git_binary: str) -> dict:
     (consumer / ".haex-hive.json").write_text(
         json.dumps(
             {
-                "haex_hive_version": "2",
+                "haex_hive_version": "3",
                 "identity": "com.github.example.consumer",
-                "atoms": [
+                "compounds": [
                     {
                         "source": canonical,
                         "revision": commit_sha,
-                        "includes": [atom_id],
+                        "molecules": [atom_id],
                     }
                 ],
             },
@@ -179,7 +180,7 @@ def single_source_constitution_fixture(tmp_path: Path, git_binary: str) -> dict:
 
 @pytest.fixture
 def multi_source_constitution_fixture(tmp_path: Path, git_binary: str) -> dict:
-    """Publisher repo with two constitution atoms, plus a v2 consumer repo referencing both."""
+    """Publisher repo with two constitution molecules, plus a v3 consumer repo referencing both."""
 
     canonical = "https://github.com/example/multi-publisher"
     atom_id_a = "com.github.example.multi-publisher.atom-a"
@@ -193,9 +194,9 @@ def multi_source_constitution_fixture(tmp_path: Path, git_binary: str) -> dict:
     (publisher / "manifest.json").write_text(
         json.dumps(
             {
-                "haex_hive_version": "2",
+                "haex_hive_version": "3",
                 "publisher": "com.github.example.multi-publisher",
-                "atoms": {
+                "molecules": {
                     atom_id_a: {"path": "atom-a", "version": "1.0.0"},
                     atom_id_b: {"path": "atom-b", "version": "1.0.0"},
                 },
@@ -212,10 +213,11 @@ def multi_source_constitution_fixture(tmp_path: Path, git_binary: str) -> dict:
         (atom_dir / "manifest.json").write_text(
             json.dumps(
                 {
-                    "haex_hive_version": "2",
+                    "haex_hive_version": "3",
                     "id": atom_id,
                     "version": "1.0.0",
-                    "contributes": {"constitution": "constitution.md"},
+                    "priority": 100,
+                    "atoms": {"constitution": ["constitution.md"]},
                 },
                 sort_keys=True,
             )
@@ -237,13 +239,13 @@ def multi_source_constitution_fixture(tmp_path: Path, git_binary: str) -> dict:
     (consumer / ".haex-hive.json").write_text(
         json.dumps(
             {
-                "haex_hive_version": "2",
+                "haex_hive_version": "3",
                 "identity": "com.github.example.consumer",
-                "atoms": [
+                "compounds": [
                     {
                         "source": canonical,
                         "revision": commit_sha,
-                        "includes": [atom_id_a, atom_id_b],
+                        "molecules": [atom_id_a, atom_id_b],
                     }
                 ],
             },

@@ -11,8 +11,6 @@ from pathlib import Path
 
 import pytest
 
-from haex_hive.schema.validator import validate
-
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git binary required")
 
 
@@ -68,7 +66,8 @@ def test_path1_migrate_produces_schema_valid_v2(
     assert sidecar.exists()
 
     data = json.loads(sidecar.read_text())
-    validate(data, "haex-hive.v2.schema.json")  # zero warnings: raises on any violation
+    # The v2 schema payload was retired by Spec 013 (v3-only tool); the
+    # migrate_v1_to_v2 transform itself is unchanged and still targets v2.
     assert data["haex_hive_version"] == "2"
 
     sidecar.replace(consumer / ".haex-hive.json")

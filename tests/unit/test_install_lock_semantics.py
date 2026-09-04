@@ -10,7 +10,7 @@ from haex_hive.model.install_lock import InstallLock
 from haex_hive.util.errors import CredentialInUrlError, InstallLockSourcesNotCanonicalError
 
 _BASE = {
-    "haex_hive_version": "2",
+    "haex_hive_version": "3",
     "generated_by": "haex 2.0.0",
     "constitution": {
         "sources": [],
@@ -63,7 +63,7 @@ def test_rejects_credentials_in_atom_source() -> None:
     """Reject credentials in an installed atom source before serialization."""
     data = {
         **_BASE,
-        "atoms": [
+        "molecules": [
             {
                 "id": "com.a.b",
                 "revision": "0" * 40,

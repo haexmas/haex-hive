@@ -1,4 +1,8 @@
-"""ConsumerManifest — parsed `.haex-hive.json` v2."""
+"""ConsumerManifest — parsed `.haex-hive.json` v3.
+
+Renamed from v2 by Spec 013: top-level `atoms[]` -> `compounds[]`,
+per-entry `includes[]` -> `molecules[]`, `AtomEntry` -> `CompoundEntry`.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +14,7 @@ from typing import Any
 
 from haex_hive.io import json_deterministic
 from haex_hive.model._immutable import freeze_json, thaw_json
-from haex_hive.model.atom_id import AtomId
+from haex_hive.model.molecule_id import MoleculeId
 from haex_hive.model.source_url import canonicalize
 from haex_hive.model.version_constraint import VersionConstraint
 from haex_hive.schema import validator as schema_validator
@@ -25,10 +29,10 @@ class ConfigEntry:
 
 
 @dataclass(frozen=True)
-class AtomEntry:
+class CompoundEntry:
     source: str
     revision: str
-    includes: tuple[str, ...]
+    molecules: tuple[str, ...]
     track: str | None = None
     config: Mapping[str, ConfigEntry] = field(default_factory=dict)
 
@@ -37,7 +41,7 @@ class AtomEntry:
 class ConsumerManifest:
     haex_hive_version: str
     identity: str
-    atoms: tuple[AtomEntry, ...]
+    compounds: tuple[CompoundEntry, ...]
     haex_hive_min_version: VersionConstraint | None = None
     groups: tuple[str, ...] = ()
     active_feature: str | None = None
@@ -46,42 +50,42 @@ class ConsumerManifest:
     @staticmethod
     def from_json(raw: bytes) -> ConsumerManifest:
         data = json.loads(raw.decode("utf-8"))
-        schema_validator.validate(data, "haex-hive.v2.schema.json")
+        schema_validator.validate(data, "consumer-manifest.v3.schema.json")
 
-        AtomId.parse_identity(data["identity"])
+        MoleculeId.parse_identity(data["identity"])
         min_version = None
         if "haex_hive_min_version" in data:
             min_version = VersionConstraint.parse(data["haex_hive_min_version"])
 
-        atoms: list[AtomEntry] = []
-        for entry in data.get("atoms", []):
+        compounds: list[CompoundEntry] = []
+        for entry in data.get("compounds", []):
             source = entry["source"]
             canonical = canonicalize(source)
             if canonical != source:
                 raise ValueError(
-                    f"atoms[].source must be canonical: got {source!r}, expected {canonical!r}"
+                    f"compounds[].source must be canonical: got {source!r}, expected {canonical!r}"
                 )
             if not _SHA40_RE.match(entry["revision"]):
                 raise ValueError(
-                    f"atoms[].revision must be 40 lowercase hex: {entry['revision']!r}"
+                    f"compounds[].revision must be 40 lowercase hex: {entry['revision']!r}"
                 )
-            includes = tuple(AtomId.parse(a) for a in entry["includes"])
-            if len(set(includes)) != len(includes):
-                raise ValueError("atoms[].includes must be unique")
+            molecules = tuple(MoleculeId.parse(m) for m in entry["molecules"])
+            if len(set(molecules)) != len(molecules):
+                raise ValueError("compounds[].molecules must be unique")
             config: dict[str, ConfigEntry] = {}
             for key, value in entry.get("config", {}).items():
-                AtomId.parse(key)
-                if key not in set(includes):
-                    raise ValueError(f"atoms[].config[{key!r}] not resolved via includes")
+                MoleculeId.parse(key)
+                if key not in set(molecules):
+                    raise ValueError(f"compounds[].config[{key!r}] not resolved via molecules")
                 config[key] = ConfigEntry(
                     priority=value.get("priority"),
                     values=freeze_json(value.get("values", {})),
                 )
-            atoms.append(
-                AtomEntry(
+            compounds.append(
+                CompoundEntry(
                     source=source,
                     revision=entry["revision"],
-                    includes=includes,
+                    molecules=molecules,
                     track=entry.get("track"),
                     config=freeze_json(config),
                 )
@@ -90,7 +94,7 @@ class ConsumerManifest:
         return ConsumerManifest(
             haex_hive_version=data["haex_hive_version"],
             identity=data["identity"],
-            atoms=tuple(atoms),
+            compounds=tuple(compounds),
             haex_hive_min_version=min_version,
             groups=tuple(data.get("groups", [])),
             active_feature=data.get("active_feature"),
@@ -101,10 +105,16 @@ class ConsumerManifest:
         obj: dict[str, Any] = {
             "haex_hive_version": self.haex_hive_version,
             "identity": self.identity,
-            "atoms": [
+            "compounds": [
                 {
-                    **({"source": a.source, "revision": a.revision, "includes": list(a.includes)}),
-                    **({"track": a.track} if a.track else {}),
+                    **(
+                        {
+                            "source": c.source,
+                            "revision": c.revision,
+                            "molecules": list(c.molecules),
+                        }
+                    ),
+                    **({"track": c.track} if c.track else {}),
                     **(
                         {
                             "config": {
@@ -112,14 +122,14 @@ class ConsumerManifest:
                                     **({"priority": v.priority} if v.priority is not None else {}),
                                     **({"values": thaw_json(v.values)} if v.values else {}),
                                 }
-                                for k, v in a.config.items()
+                                for k, v in c.config.items()
                             }
                         }
-                        if a.config
+                        if c.config
                         else {}
                     ),
                 }
-                for a in self.atoms
+                for c in self.compounds
             ],
         }
         if self.haex_hive_min_version is not None:

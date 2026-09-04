@@ -100,12 +100,12 @@ def _publish_constitution(
         existing_marker.generation_id if existing_marker is not None else None,
     )
     marker_identity = {
-        "haex_hive_version": "2",
+        "haex_hive_version": "3",
         "generation_id": generation_id,
         "participating_roots": [".haex-hive/"],
     }
     lock = InstallLock(
-        haex_hive_version="2",
+        haex_hive_version="3",
         generated_by=f"{TOOL_NAME} {tool_version}",
         constitution=ConstitutionLockSection(
             sources=sources,
