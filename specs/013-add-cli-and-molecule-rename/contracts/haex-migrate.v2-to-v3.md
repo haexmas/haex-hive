@@ -52,8 +52,8 @@ haex migrate [--dry-run|--check]
 
 - `haex_hive_version`: `"2"` → `"3"`.
 - `contributes` scalar map → `atoms` category map with list values.
-  - Each scalar `contributes.<category> = "<path>"` becomes `atoms.<category> = ["<path>"]`.
-  - A directory-form contribution (`contributes.<category> = "<dir>/"`) expands deterministically to the list of regular files within that directory, sorted lexically.
+  - Each scalar `contributes.<category> = "<path>"` (a single file path with no trailing slash) becomes `atoms.<category> = ["<path>"]`.
+  - Directory-form contributions (`contributes.<category> = "<dir>/"`, ending in `/`) are NOT expanded by the migrator. The transform refuses such an input with `directory-form-contributes-unsupported`, names every affected category, and asks the operator to enumerate the intended files in the source manifest before running migrate again. This preserves the byte-identical-determinism guarantee below by keeping the transform a pure function of the input manifest bytes, independent of filesystem state at migration time.
 - `priority` missing → default to `100`. Existing integer priorities preserved unchanged.
 - Other fields (`id`, `version`, `config_schema`, `defaults`) preserved.
 - No profile-composition list is emitted.
@@ -67,8 +67,8 @@ haex migrate [--dry-run|--check]
 
 ## Determinism
 
-- The transform is a pure function of the input bytes. Same input yields byte-identical proposals across satellites and OSes.
-- Sort order in expanded directory listings is Unicode code-point lexicographic on POSIX-normalized paths.
+- The transform is a pure function of the input manifest bytes. Same input yields byte-identical proposals across satellites and OSes.
+- The transform does not read any file outside the input manifest itself. Directory-form v2 `contributes` entries would require the migrator to enumerate a filesystem tree; those are refused (see previous section) to keep the "input bytes -> output bytes" purity intact.
 
 ## Idempotency (FR-011)
 
@@ -94,12 +94,22 @@ haex migrate [--dry-run|--check]
 | Key | Meaning |
 |---|---|
 | `unsupported-min-version-constraint` | `haex_hive_min_version` has a major other than `2.x.y` or `>=2.x.y`. Nothing written. |
-| `directory-expansion-empty` | A directory-form v2 `contributes` entry names an empty directory. Nothing written. |
+| `directory-form-contributes-unsupported` | A v2 molecule manifest declares one or more directory-form `contributes.<category> = "<dir>/"` entries. Nothing written; the operator normalizes each entry to an explicit file list in the source manifest before re-running migrate. |
 | `proposal-validation-failed` | A produced proposal did not validate against the corresponding v3 schema. All proposals from the invocation are removed. |
 | `proposal-target-conflict` | A proposal target path already exists and its content differs from the freshly computed proposal. Nothing new is written; the operator resolves the conflict manually. |
 
 ## Exit codes
 
-- `0`: transform complete; proposals emitted (write mode) or would be emitted (`--dry-run`/`--check`).
-- `1`: transform ran, but at least one input was already v3 (no proposal) and at least one refusal-key case triggered on another input.
-- `2`: hard refusal per a refusal key above; no proposals kept.
+The invocation classifies every input into exactly one outcome, then picks the exit code by precedence.
+
+Per-input outcomes:
+
+- **noop**: the input was already at `haex_hive_version: "3"`; no proposal emitted.
+- **proposal**: the input was v1 or v2; a valid proposal was emitted (in write mode) or would have been emitted (in `--dry-run`/`--check`).
+- **refused**: the input matched a refusal key; no proposal for that input.
+
+Invocation exit codes, in precedence order (first match wins):
+
+- `2` — hard refusal: at least one input was **refused**, and no **proposal** was emitted for any other input. Every temporary file the invocation produced is removed.
+- `1` — mixed: at least one input was **refused** AND at least one other input yielded a **proposal**. Emitted proposals are kept; refused inputs are named in the diagnostic. Enables staged review workflows.
+- `0` — success: no input was **refused**. This includes the pure no-op case where every input is already v3 (all outcomes are **noop**; the invocation prints a short "already at v3" summary and exits 0).

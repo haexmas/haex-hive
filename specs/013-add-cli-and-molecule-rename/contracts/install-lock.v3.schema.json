@@ -4,6 +4,7 @@
   "title": "haex-hive Install Lockfile v3",
   "description": "Schema for `.haex-hive/install.lock` under v3 vocabulary. Renames v2 `atoms[]` to `molecules[]` and `atomInstallRecord` to `moleculeInstallRecord`. Semantics inherit from Spec 008.",
   "type": "object",
+  "additionalProperties": false,
   "required": ["haex_hive_version", "generated_by"],
   "properties": {
     "haex_hive_version": { "const": "3" },
@@ -76,10 +77,9 @@
         },
         "contributed_paths": {
           "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "POSIX repo-relative paths written by this molecule under participating roots."
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/repoRelativePath" },
+          "description": "Unique POSIX repo-relative paths written by this molecule under participating roots. Each path must start with a participating root name (as listed in `participating_roots`); this semantic relationship is enforced by the tool at load time, since JSON Schema alone cannot express it."
         }
       }
     },
@@ -99,6 +99,12 @@
       "properties": {
         "generation_id": { "type": "string" }
       }
+    },
+    "repoRelativePath": {
+      "type": "string",
+      "pattern": "^(?!(?:\\.{1,2})(?:/|$))[^\\u0000-\\u001F\\u007F/\\\\]+(?:/(?!(?:\\.{1,2})(?:/|$))[^\\u0000-\\u001F\\u007F/\\\\]+)*$",
+      "minLength": 1,
+      "description": "Repository-relative POSIX path: no leading/trailing slash, no control characters, no empty, `.`, or `..` segments, no backslashes."
     }
   }
 }

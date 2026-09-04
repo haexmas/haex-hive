@@ -20,13 +20,15 @@ haex remove <molecule-id>[,<molecule-id>...]
 ### Successful retraction
 
 1. Acquire the permanent advisory manifest lock at `.haex-hive.json.lock`.
-2. Read `.haex-hive.json`. For every named molecule id, scan every entry in `compounds[]` and remove the id from the entry's `molecules[]` array.
-3. Drop any compound whose `molecules[]` became empty.
-4. If nothing changed (every named id was already absent), refuse with `unknown-molecule-id` naming the missing ids; do not modify `.haex-hive.json`.
-5. Otherwise write the updated `.haex-hive.json` via `.haex-hive.json.tmp` + rename-in-place.
+2. Read `.haex-hive.json`. **Preflight**: verify that every named molecule id is present in at least one compound's `molecules[]` array. If any named id is absent from every compound, refuse with `unknown-molecule-id` naming **every** missing id in the diagnostic (not just the first), release the lock, and exit before any manifest mutation. `.haex-hive.json` is not modified.
+3. For every named molecule id (all of which the preflight has confirmed as present), scan every entry in `compounds[]` and remove the id from the entry's `molecules[]` array.
+4. Drop any compound whose `molecules[]` became empty.
+5. Write the updated `.haex-hive.json` via `.haex-hive.json.tmp` + rename-in-place.
 6. Call `haex install` in-process with the held manifest-lock context so delete-orphans (Spec 008 US3) removes files contributed only by the retracted molecules.
 7. On install success: report the retracted molecule ids and the participating output roots that changed. Exit 0.
 8. Release the manifest lock.
+
+**All-or-nothing semantics**: a mixed request like `haex remove <present-id>,<absent-id>` refuses at step 2 without removing `<present-id>`. The operator either fixes the typo and retries, or invokes `haex remove <present-id>` explicitly. This preserves the "no state change on refusal" contract in the exit-code table.
 
 ### Workflow-molecule fallback
 
