@@ -4,6 +4,11 @@
 **Date**: 2026-09-02
 **Purpose**: Dataclass-level shapes and relationships for the workflow subpackage. Every persisted format has a matching contract under [contracts/](./contracts/); this file records the in-memory shapes.
 
+> **Superseded in part by ADR 0010** (2026-09-04) — see [spec.md](./spec.md)'s
+> status banner. The pipeline diagram below still shows a
+> `compose_constitution_candidate` / `review_gate --llm=file` step. Do not
+> implement against it; this needs a redesign pass once Spec 010 lands.
+
 ---
 
 ## Entities

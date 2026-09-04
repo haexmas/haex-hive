@@ -2,7 +2,19 @@
 
 **Feature Branch**: `011-simplify-workflow-molecule` (rewrite of the previously-merged spec on the same slot)
 **Created**: 2026-09-02 (original), 2026-09-02 (simplified re-specification)
-**Status**: Draft (simplification amendment)
+**Status**: Draft (simplification amendment). **Never implemented** — no code
+under `src/haex_hive/` handles `atoms.workflow` as of 2026-09-04.
+**Superseded in part by ADR 0010** (2026-09-04): this spec's constitution-
+fragment mechanism (FR-004, US1's independent test, SC-002) assumes the
+multi-source LLM merge (`haex install --llm=file` / `--accept-merged`),
+which ADR 0010 retired. The replacement — the workflow molecule's
+constitution fragment becoming `binding: recommended` prose compiled into
+`CLAUDE.md`/`AGENTS.md` instead of merged into `.haex-hive/constitution.md`
+— depends on Spec 010 (compiler + adapters), which does not exist yet. Do
+not implement FR-004 or its acceptance scenarios as currently written; this
+spec needs a redesign pass once Spec 010 lands. `quickstart.md`'s "First
+install" section and `data-model.md`'s pipeline diagram carry the same
+stale mechanism and need the same redesign.
 **Input**: User description: "haex-hive gains a workflow molecule whose v3 manifest delivers workflow, constitution, extension, and hook files through its `atoms` category map; a project adopts it via `.haex-hive.json.compounds[]` pinned to a specific revision; on `haex install` the files publish under `.specify/workflows/<molecule-id>/`, the constitution fragment merges into `.haex-hive/constitution.md` via the existing multi-source flow, and the adopted workflow molecule becomes automatically binding."
 
 **Authoritative requirements source**: [docs/plans/2026-09-02-spec-011-speckit-workflow-atom-design.md](../../docs/plans/2026-09-02-spec-011-speckit-workflow-atom-design.md) for requirements preserved by this amendment. This amendment supersedes conflicting passages in that design document, specifically all requirements for `workflow-registry.json`, `active_workflow`, `extension_contributions` provenance, and workflow coexistence; FR-005 below is authoritative for local extension ownership and regeneration.

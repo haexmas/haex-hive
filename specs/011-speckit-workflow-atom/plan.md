@@ -3,6 +3,12 @@
 **Branch**: `011-plan-simplified` | **Date**: 2026-09-02 | **Spec**: [spec.md](./spec.md)
 **Input**: Feature specification from `/specs/011-speckit-workflow-atom/spec.md`
 
+> **Superseded in part by ADR 0010** (2026-09-04) — see [spec.md](./spec.md)'s
+> status banner. Every "constitution merge" / `--llm=file` + `--accept-merged`
+> reference below (including the Constitution Check's Principle VI row)
+> describes the retired mechanism. Do not implement against it; this plan
+> needs a redesign pass once Spec 010 lands.
+
 ## Summary
 
 Under the 2026-09-02 simplification amendment (PR #54 merged), Spec 011 delivers a workflow molecule that a project pins via `.haex-hive.json.compounds[]` to bind a specific speckit workflow. On `haex install` the molecule's `atoms.workflow` file publishes at `.specify/workflows/<molecule-id>/workflow.yml`, its hook files publish under the reserved namespace `.specify/extensions/workflow-molecules/<molecule-id>/`, its constitution fragment merges into the shared `## Workflow-Contributed Rules` section of `.haex-hive/constitution.md`, and its extensions fragment merges with the consumer-owned `.specify/extensions.local.yml` to regenerate the deterministic output `.specify/extensions.yml`. Binding is implicit from adoption: one workflow molecule in `.haex-hive.json` -> that workflow is binding; none -> the bundled speckit workflow is binding. Adopting two workflow molecules refuses with `key=multiple-workflow-molecules-refused`. No registry file, no `active_workflow` selector, no provenance cache; the reader helper `resolve_active_workflow(repo_root)` inspects `.haex-hive.json` directly.

@@ -3,6 +3,12 @@
 **Feature**: Spec 011 (simplified, PR #54 merged)
 **Audience**: satellite operators adopting a workflow molecule; downstream tooling authors verifying reader consistency.
 
+> **Superseded in part by ADR 0010** (2026-09-04) — see [spec.md](./spec.md)'s
+> status banner. The "## 3. First install" section below still walks the
+> retired `haex install --llm=file` / `--accept-merged` two-phase flow. Do
+> not follow it as written; this quickstart needs a redesign pass once
+> Spec 010 lands.
+
 ## Prerequisites
 
 - `haex` CLI installed and functional (Spec 007 + Spec 008 landed).
