@@ -5,11 +5,14 @@ from __future__ import annotations
 import json
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from haex_hive.cli import install as install_cli
 from haex_hive.cli.diagnostics import emit_refuse
 from haex_hive.cli.main import main
+from haex_hive.constitution.resolve import ResolvedConstitutionContribution
 from haex_hive.constitution.safety import (
     validate_no_plaintext_secrets,
     validate_terminal_safe_display,
@@ -22,7 +25,7 @@ from haex_hive.migrate.transform import (
     migrate_v1_to_v2,
 )
 from haex_hive.model.consumer_manifest import ConsumerManifest
-from haex_hive.model.install_lock import InstallLock
+from haex_hive.model.install_lock import ConstitutionSource, InstallLock
 from haex_hive.model.molecule_manifest import MoleculeManifest
 from haex_hive.model.publisher_manifest import PublisherManifest
 from haex_hive.schema.validator import _json_pointer
@@ -226,6 +229,41 @@ def test_install_lock_parse_failures_are_typed() -> None:
     with pytest.raises(InstallLockSchemaInvalidError) as exc_info:
         InstallLock.from_json(b"{")
     assert exc_info.value.__cause__ is not None
+
+
+def test_install_allows_multiple_paths_from_one_molecule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A multi-file constitution from one molecule is not a multi-source install."""
+    (tmp_path / ".haex-hive.json").write_text('{"identity":"com.example.project"}')
+    source = ConstitutionSource(
+        id="com.example.constitution",
+        revision="0" * 40,
+        source="https://example.com/publisher",
+    )
+    contributions = [
+        ResolvedConstitutionContribution(source=source, body=b"first"),
+        ResolvedConstitutionContribution(source=source, body=b"second"),
+    ]
+    captured: list[list[ResolvedConstitutionContribution]] = []
+
+    monkeypatch.setattr(install_cli, "default_state_root", lambda: tmp_path / "state")
+    monkeypatch.setattr(install_cli, "_load_consumer_manifest", lambda root: object())
+    monkeypatch.setattr(
+        install_cli,
+        "resolve_constitution_contributions",
+        lambda manifest, state_root: contributions,
+    )
+    monkeypatch.setattr(install_cli, "_is_no_op_single_source", lambda *args: False)
+    monkeypatch.setattr(install_cli, "_live_generation_id", lambda root: "generation")
+    monkeypatch.setattr(
+        install_cli,
+        "assemble_single_source",
+        lambda resolved, root, **kwargs: captured.append(list(resolved)),
+    )
+
+    assert install_cli.run(SimpleNamespace(repo_root=str(tmp_path))) == 0
+    assert captured == [contributions]
 
 
 def test_models_freeze_nested_json_values() -> None:
