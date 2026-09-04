@@ -2,55 +2,22 @@
   "constitution": {
     "assembled_by": {
       "tool": "haex",
-      "version": "2.0.0"
+      "version": "3.0.0"
     },
     "sources": [
       {
         "id": "com.github.haexmas.haex-hive.constitution",
-        "revision": "336eaf1e5b1a86f76031b60b7f692da98682b9ac",
-        "source": "https://github.com/haexmas/haex-hive"
-      },
-      {
-        "id": "com.github.haexmas.haex-hive.graphify-first-authoring",
-        "revision": "a83ef22cf171133cd62a26be489cc791aec0b053",
+        "revision": "fc05d7aa6ca454a6f057f17d59d8a289e897399f",
         "source": "https://github.com/haexmas/haex-hive"
       }
     ]
   },
-  "generated_by": "haex 2.0.0",
-  "generation_inputs": [
-    {
-      "id": "com.haex.hive.adapter.file",
-      "kind": "adapter",
-      "revision": "git:1c4a6cbce2526282a82e73db98e5e43fafded8d2",
-      "serialization": {
-        "encoding": "UTF-8",
-        "ensure_ascii": false,
-        "format": "text",
-        "indent": null,
-        "key_order": "not-applicable",
-        "newline": "LF"
-      }
-    },
-    {
-      "id": "com.haex.hive.tool-config.file",
-      "kind": "tool-config",
-      "revision": "sha256:67b109fa87495115999ad06e237daa3f6b61c0b56f983d54318300ce89a69def",
-      "serialization": {
-        "encoding": "UTF-8",
-        "ensure_ascii": false,
-        "format": "json",
-        "indent": null,
-        "key_order": "lexicographic-utf8",
-        "newline": "LF"
-      }
-    }
-  ],
-  "haex_hive_version": "2",
+  "generated_by": "haex 3.0.0",
+  "haex_hive_version": "3",
   "participating_roots": [
     ".haex-hive/"
   ],
   "visibility_marker": {
-    "generation_id": "g_20260902T121516Z_1cf8"
+    "generation_id": "g_20260904T111222Z_b6df"
   }
 }

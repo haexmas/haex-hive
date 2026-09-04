@@ -56,7 +56,7 @@ def _live_generation_id(repo_root: Path) -> str | None:
         return None
     try:
         lock = InstallLock.from_json(lock_path.read_bytes())
-    except (OSError, ValueError):
+    except (OSError, ValueError, HaexError):
         return None
     if lock.visibility_marker is None:
         return None
@@ -86,7 +86,7 @@ def _is_no_op_single_source(
         return False
     try:
         lock = InstallLock.from_json(lock_path.read_bytes())
-    except (OSError, ValueError):
+    except (OSError, ValueError, HaexError):
         return False
     if lock.constitution is None or len(lock.constitution.sources) != 1:
         return False
