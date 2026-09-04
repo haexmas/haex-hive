@@ -30,7 +30,7 @@ until an explicit migration has passed review.
 - **The runtime code path that collects, sorts, and validates `generation_inputs[]`**: retired.
 - **`install.lock.generated_by`** field (e.g. `"haex-hive/1.4.0"`): retired. npm/pip lock files carry no equivalent; producing-version identity is derivable from git history if ever needed.
 - **`install.lock.participating_roots[]`** field: retired. Readers derive the effective set as the union of `paths[]` prefixes across all installed molecules; no explicit list needed. The FR-005 reader invariant (all participating roots present) reframes as "every path recorded in `install.lock.molecules[].paths[]` MUST exist on disk before the installation is treated as available".
-- **`install.lock.constitution` block** (`sources[]`, `assembled_by`): retired. Constitution provenance is derivable from the subset of `molecules[]` whose `paths[]` contains `.haex-hive/constitution.md`. Per ADR 0010, that subset's cardinality is always 0 or 1 by construction (`haex install` refuses with `key=constitution-already-adopted` before ever resolving a second constitution-contributing molecule); the `assembled_by` metadata carries no reader-side load.
+- **`install.lock.constitution` block** (`sources[]`, `assembled_by`): retired. Constitution provenance is derivable from the subset of `molecules[]` whose `paths[]` contains `.haex-hive/constitution.md`. Per ADR 0010, that subset's cardinality is always 0 or 1 by construction (`haex install` refuses with `key=constitution-already-adopted` after resolution detects two or more constitution-contributing molecules and before publication); the `assembled_by` metadata carries no reader-side load.
 
 **Retained in `install.lock` after this amendment**:
 

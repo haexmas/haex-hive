@@ -55,18 +55,19 @@ then adoptable as an ordinary single-source molecule at a pinned SHA.
 Remove the multi-source LLM merge, and align with the operator's one-workflow /
 one-constitution rule that this document was written under.
 
-**A repository adopts exactly one prose atom with `binding: non-negotiable`.**
-That atom is the constitution. `.haex-hive/constitution.md` is a byte-for-byte
-copy of its source file, byte-identical on every satellite that resolves the
-same pinned SHA. No merge, no concatenation, no reconciliation.
+**A repository adopts exactly one constitution-contributing molecule with
+`binding: non-negotiable`.** That molecule is the constitution source. It may
+declare multiple constitution files; each file is preserved byte-for-byte and
+the files are composed in deterministic declaration order. Distinct molecules
+are never merged or reconciled into the constitution.
 
-`haex install` refuses when the resolved atom graph carries two or more prose
-atoms with `binding: non-negotiable`. The refusal is
-`key=constitution-already-adopted`[^1], analogous to Spec 011's
-`multiple-workflow-molecules-refused`, and names the conflicting atoms and
-their sources. The exit code is the existing `INPUT_REFUSE` (2). An operator
-who wants a reconciled document produces it themselves and adopts the result
-as a single-source molecule.
+`haex install` refuses when resolution finds two or more distinct
+constitution-contributing molecules with `binding: non-negotiable`. The
+refusal is `key=constitution-already-adopted`[^1], analogous to Spec 011's
+`multiple-workflow-molecules-refused`, and names the conflicting molecule IDs.
+The exit code is the existing `INPUT_REFUSE` (2). An operator who wants a
+reconciled document produces it themselves and adopts the result as a
+single-source molecule.
 
 [^1]: This ADR originally proposed the key `multiple-non-negotiable-prose-refused`.
     Spec 013 (2026-09-04) shipped the equivalent refusal under the key
@@ -89,8 +90,8 @@ Concretely:
   multi-source merge branches from `constitution/assemble.py`.
 - Remove the error keys `llm-required-for-multi-source`, `merge-not-confirmed`
   and `pending-merge-inputs-mismatch`.
-- Add the refusal key `multiple-non-negotiable-prose-refused`[^1] alongside
-  Spec 011's `multiple-workflow-molecules-refused`.
+- Add the refusal key `constitution-already-adopted`[^1] alongside Spec 011's
+  `multiple-workflow-molecules-refused`.
 - Narrow exit code 4 to validation refusals and exit code 5 to system refusals;
   both keep their other meanings and neither is renumbered. Code 7 remains
   exclusively the incomplete-transaction result; it is not a second system

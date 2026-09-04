@@ -292,9 +292,12 @@ against this paragraph until Spec 011 is rewritten.
 above becomes an `### Per-step session isolation` subsection under the
 byline heading, so no header conflict occurs.~~
 
-## Adoption flow
+## Adoption flow (superseded; pending Spec 011 redesign)
 
-Documented in `haexmas/atoms/README.md` and mirrored in this design for the plan.
+The following flow is retained as historical design context only. It is
+superseded by ADR 0010 and the pending Spec 011 redesign: Spec 010's compiler
+and adapters do not exist yet, so these steps are not operational guidance and
+must not guide implementation or an operator-run adoption.
 
 1. Adopt the molecule in `.haex-hive.json.compounds[]`:
 
@@ -308,10 +311,10 @@ Documented in `haexmas/atoms/README.md` and mirrored in this design for the plan
      }]
    }
    ```
-2. Run `haex install` for this design's single constitution contribution. `run()` selects `assemble_single_source(...)`, which publishes deterministically and writes no pending merge state. If the consumer has two or more constitution contributions, `haex install` refuses outright with `key=constitution-already-adopted` (exit 2) per [ADR 0010](../../docs/adr/0010-drop-multi-source-llm-constitution-merge.md); there is no merge, no concatenation, no model invocation, and no interactive confirmation path.
-3. Verify the v3 publication directly: `.specify/workflows/com.github.haexmas.atoms.speckit-session-hopper/workflow.yml` exists and matches the `atoms.workflow` contribution; `.specify/extensions/workflow-molecules/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh` is the expected regular file, has byte-identical published content, and is executable under the actual hook-runner semantics. Invoke the hook exactly as the runner does for a representative step, requiring successful exit and the expected prompt/marker output. If any assertion fails, do not treat the adoption as successful; the resolver must report the failure rather than consult a registry.
+2. **Superseded; do not run.** The former flow would have run `haex install` for this design's single constitution contribution and selected `assemble_single_source(...)`. Its publication and refusal behavior are pending the Spec 011 redesign; the command is not an operational adoption instruction.
+3. **Superseded; do not run.** The former flow would have verified the v3 workflow and hook outputs directly. Their paths, publication mechanism, and hook-runner integration remain pending the Spec 010 compiler/adapters and Spec 011 redesign; no current adoption may be treated as successful from these assertions.
 
-Post-adoption state:
+Post-adoption state (superseded; pending redesign; not current behavior):
 
 - `.specify/workflows/com.github.haexmas.atoms.speckit-session-hopper/workflow.yml` published.
 - `.specify/extensions/workflow-molecules/com.github.haexmas.atoms.speckit-session-hopper/before-step.sh` published.
