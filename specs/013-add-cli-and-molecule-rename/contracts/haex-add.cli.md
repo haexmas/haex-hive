@@ -9,6 +9,7 @@
 haex add <source-url> [<molecule-id>[,<molecule-id>...]]
          [--revision=<SHA>]
          [--all]
+         [--lock-timeout=<sec>]
 ```
 
 ## Arguments
@@ -19,6 +20,7 @@ haex add <source-url> [<molecule-id>[,<molecule-id>...]]
 | `<molecule-id>[,<molecule-id>...]` | optional positional | One or more reverse-DNS molecule ids to adopt. Comma-separated on a single positional argument. When omitted, either `--all` or an interactive TTY prompt selects. |
 | `--revision=<SHA>` | optional flag | Full 40-hex commit SHA to pin. When omitted, resolves via `git ls-remote <source-url> HEAD`. |
 | `--all` | optional flag | Adopt every molecule listed by the publisher manifest at the resolved revision. Mutually exclusive with positional molecule ids. |
+| `--lock-timeout=<sec>` | optional flag | Manifest-lock acquisition timeout in seconds. Default: 30. `0` = fail-fast (refuse immediately on contention). See FR-028. |
 
 ## Behavior
 
@@ -37,7 +39,7 @@ haex add <source-url> [<molecule-id>[,<molecule-id>...]]
    - Same source, different revision: replace the existing compound with the new one atomically after the new publisher manifest has validated.
    - No existing compound for this source: append.
 7. Write the updated `.haex-hive.json` via `.haex-hive.json.tmp` + rename-in-place.
-8. Call `haex install` in-process with the held manifest-lock context. Any diagnostic surfaced by install (missing publisher clone, invalid molecule manifest, delete-orphans conflict, review-gated constitution merge) surfaces here with its own exit code.
+8. Call `haex install` in-process with the held manifest-lock context. Any diagnostic surfaced by install (missing publisher clone, invalid molecule manifest, delete-orphans conflict, etc.) surfaces here with its own exit code. Note: multi-source constitution merges are refused pre-write in step 6 (`constitution-already-adopted`), so install never sees a review-pending state under Spec 013.
 9. On install success: report the resolved SHA, the added molecule ids, and the participating output roots that changed. Exit 0.
 10. Release the manifest lock.
 
@@ -52,17 +54,18 @@ haex add <source-url> [<molecule-id>[,<molecule-id>...]]
 | `molecule-id-not-in-source` | A positional molecule-id is not listed in the publisher manifest at that revision. Nothing written. | 2 |
 | `interactive-selection-unavailable` | No positional ids, no `--all`, and stdin is not a TTY. Nothing written. | 2 |
 | `workflow-molecule-already-adopted` | The added molecule set includes a workflow molecule while `.haex-hive.json` already resolves to a different workflow molecule. Names the currently adopted workflow molecule; asks the operator to `haex remove <current-id>` first. Nothing written. | 2 |
-| `constitution-review-pending` | The underlying `haex install` produced a `--llm=file` review candidate. The manifest edit persists; the operator finishes adoption with `haex install --accept-merged <candidate>`. | 5 (matches Spec 008) |
-| `install-transaction-failed` | Underlying `haex install` failed for any other reason. Manifest edit is rolled back atomically under the still-held manifest lock; a rollback failure surfaces the recovery path. | matches install |
-| `manifest-lock-contended` | Another process holds `.haex-hive.json.lock`; the invocation was configured to refuse rather than wait. Nothing written. | 6 |
+| `constitution-already-adopted` | The added molecule set includes a constitution-contributing molecule while `.haex-hive.json` already resolves to another constitution-contributing molecule. Names the currently adopted constitution-contributing molecule; asks the operator to `haex remove <current-id>` first, or to combine the two constitutions into one atom externally. haex-hive does NOT perform multi-source constitution merges (ADR 0010, Spec 014). Nothing written. | 2 |
+| `install-transaction-failed` | Underlying `haex install` failed for any reason. Manifest edit is rolled back atomically under the still-held manifest lock; a rollback failure surfaces the recovery path. | matches install |
+| `manifest-lock-contended` | The manifest lock at `.haex-hive.json.lock` could not be acquired within the timeout window (default 30 s, operator-overridable via `--lock-timeout=<sec>`, `0` = fail-fast). Nothing written. | 6 |
 
 ## Exit codes
 
 - `0`: adoption complete; install succeeded.
 - `2`: input validation refused; no state changed.
-- `5`: constitution review pending (manifest edit persists; follow up with `haex install --accept-merged`).
-- `6`: lock contention.
+- `6`: manifest-lock timeout (`manifest-lock-contended`).
 - Other: propagated from `haex install` per Spec 008.
+
+Note: exit code `5` is intentionally not used by Spec 013. A prior draft reserved it for a `constitution-review-pending` state that is now retired (see the top-level Refusal Keys row for `constitution-already-adopted`).
 
 ## Determinism
 
@@ -72,6 +75,6 @@ haex add <source-url> [<molecule-id>[,<molecule-id>...]]
 ## Non-goals
 
 - **`haex update`**: bump pins without changing the molecule set. Deferred.
-- **`haex add --accept-merged`**: single-command adoption plus constitution-merge acceptance. Deferred; two-line flow suffices for MVP.
+- **Multi-source constitution merge**: retired by ADR 0010 and Spec 014. Spec 013 refuses pre-write with `constitution-already-adopted`. No `--llm=file` or `--accept-merged` path exists.
 - **Central molecule registry**: `<source-url>` remains a direct git URL.
 - **Offline mode**: no offline path; a network failure to `git ls-remote`/`git clone` surfaces as `source-url-invalid` or `revision-not-found`.

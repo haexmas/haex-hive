@@ -7,6 +7,7 @@
 
 ```
 haex remove <molecule-id>[,<molecule-id>...]
+            [--lock-timeout=<sec>]
 ```
 
 ## Arguments
@@ -14,6 +15,7 @@ haex remove <molecule-id>[,<molecule-id>...]
 | Argument | Kind | Meaning |
 |---|---|---|
 | `<molecule-id>[,<molecule-id>...]` | required positional | One or more reverse-DNS molecule ids to retract. Comma-separated on a single positional argument. |
+| `--lock-timeout=<sec>` | optional flag | Manifest-lock acquisition timeout in seconds. Default: 30. `0` = fail-fast. See FR-028. |
 
 ## Behavior
 
@@ -40,7 +42,7 @@ When the retracted set includes the currently adopted workflow molecule, the ens
 |---|---|---|
 | `unknown-molecule-id` | A named molecule id is not present in any current compound. Nothing written. | 2 |
 | `install-transaction-failed` | Underlying `haex install` failed. Manifest edit is rolled back atomically under the still-held manifest lock. | matches install |
-| `manifest-lock-contended` | Another process holds `.haex-hive.json.lock`. Nothing written. | 6 |
+| `manifest-lock-contended` | The manifest lock at `.haex-hive.json.lock` could not be acquired within the timeout window (default 30 s, operator-overridable via `--lock-timeout=<sec>`, `0` = fail-fast). Nothing written. | 6 |
 
 ## Exit codes
 

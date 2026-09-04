@@ -111,15 +111,18 @@ The spec left no `NEEDS CLARIFICATION` markers, so the entries below are the loa
 
 ---
 
-## D9: Interaction with the review-gated constitution merge
+## D9: Interaction with the single-constitution rule (superseded by Spec 013 Clarification, 2026-09-04)
 
-**Decision**: When the underlying `haex install` invoked by `haex add` needs the review-gated constitution-merge path (per Principle VI v1.3.0 and ADR 0010's `--llm=file` two-phase flow), `haex add` (a) lets the manifest edit persist under the still-held manifest lock, (b) runs install in `--llm=file` mode, (c) prints the review candidate path, and (d) exits with the `constitution-review-pending` diagnostic. The operator finishes adoption with a follow-up `haex install --accept-merged <candidate>`. `haex add` does not automate past Principle VI.
+**Decision (as clarified 2026-09-04)**: `haex add` refuses at the CLI boundary with `constitution-already-adopted` when the added molecule set includes a constitution-contributing molecule AND the consumer's existing `compounds[]` already resolves to another constitution-contributing molecule. haex-hive does NOT perform multi-source constitution merges. The `--llm=file` two-phase flow and `haex install --accept-merged` are retired by ADR 0010 and NOT re-introduced by Spec 013. The operator combines two constitutions externally into one prose atom if needed.
 
-**Rationale**: Principle VI is NON-NEGOTIABLE. A "one-command adoption" that skipped the review gate would violate it. The two-line flow (`haex add ...` then `haex install --accept-merged <candidate>`) is acceptable at MVP per the spec's Assumption; a single-command shortcut is deferred (Open Question 1 in the design preview).
+**Rationale**: Principle VI is NON-NEGOTIABLE and ADR 0010 removed the multi-source LLM merge as the mechanism that would have violated it in practice. Spec 014 formalizes the "exactly one prose atom with `binding: non-negotiable` per repository" rule. `haex add` therefore refuses pre-write when it would break that rule; no manifest edit persists, no review candidate is produced. This is the cleanest way to keep the tool a pure function of pinned inputs.
 
-**Alternatives considered**:
-- **`haex add --accept-merged <candidate>`**. Deferred: complicates the CLI surface and only saves one command in a corner case. Revisit if the two-line UX chafes in practice.
-- **Refuse `haex add` when a constitution merge would be needed**. Rejected: less operator-friendly than the two-line flow, forces the operator to reason about merge conditions at add time.
+**Alternatives considered (rejected)**:
+- **`haex add --accept-merged <candidate>`** (single-command sugar for a merge flow). Rejected: presumes a merge path that no longer exists.
+- **Automated in-tool merge with review candidate**. Rejected: retired by ADR 0010; would need a fresh amendment to reintroduce.
+- **Silent replacement (auto-remove the existing constitution atom)**. Rejected: too destructive; the operator must consciously choose which constitution rules a repository.
+
+**Prior-version note**: an earlier draft of this decision described a `haex add`-yields-to-`--llm=file` path. That draft is superseded by the 2026-09-04 clarification in [spec.md](./spec.md) `## Clarifications` and by ADR 0010; retained here in prose only to prevent confusion if reviewers see the earlier PR diff.
 
 ---
 
