@@ -16,8 +16,11 @@ Refusal keys: ``source-url-invalid`` (git remote not reachable) and
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from haex_hive.migrate.transform import clone_dir
@@ -84,21 +87,29 @@ def ensure_object(source_url: str, sha: str, state_root: Path) -> Path:
     repo_dir.parent.mkdir(parents=True, exist_ok=True)
 
     if not repo_dir.is_dir():
-        repo_dir.mkdir(parents=True)
-        init = _run_git("init", "-q", "--bare", cwd=repo_dir)
-        if init.returncode != 0:
-            raise SourceUrlInvalidError(
-                message=f"git init failed for {canonical!r}: {init.stderr.strip()}",
-                context={"source": canonical},
-            )
-        remote = _run_git("remote", "add", "origin", canonical, cwd=repo_dir)
-        if remote.returncode != 0:
-            raise SourceUrlInvalidError(
-                message=(
-                    f"git remote add origin {canonical!r} failed: {remote.stderr.strip()}"
-                ),
-                context={"source": canonical},
-            )
+        temp_dir = Path(
+            tempfile.mkdtemp(prefix=f".{repo_dir.name}.tmp-", dir=str(repo_dir.parent))
+        )
+        try:
+            init = _run_git("init", "-q", "--bare", cwd=temp_dir)
+            if init.returncode != 0:
+                raise SourceUrlInvalidError(
+                    message=f"git init failed for {canonical!r}: {init.stderr.strip()}",
+                    context={"source": canonical},
+                )
+            remote = _run_git("remote", "add", "origin", canonical, cwd=temp_dir)
+            if remote.returncode != 0:
+                raise SourceUrlInvalidError(
+                    message=(
+                        f"git remote add origin {canonical!r} failed: "
+                        f"{remote.stderr.strip()}"
+                    ),
+                    context={"source": canonical},
+                )
+            os.replace(temp_dir, repo_dir)
+        except BaseException:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise
 
     have = _run_git("cat-file", "-e", sha, cwd=repo_dir)
     if have.returncode == 0:
@@ -119,7 +130,7 @@ def ensure_object(source_url: str, sha: str, state_root: Path) -> Path:
                 message=f"revision {sha} not found at {canonical!r}: {stderr}",
                 context={"source": canonical, "revision": sha},
             )
-        raise RevisionNotFoundError(
+        raise SourceUrlInvalidError(
             message=f"git fetch of {sha} at {canonical!r} failed: {stderr}",
             context={"source": canonical, "revision": sha},
         )

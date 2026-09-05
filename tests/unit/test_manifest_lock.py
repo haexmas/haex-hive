@@ -20,6 +20,19 @@ def _hold_lock(lock_path: str, seconds: float, ready_file: str) -> None:
         time.sleep(seconds)
 
 
+def _await_ready(
+    ready: Path, child: multiprocessing.Process, timeout: float = 10.0
+) -> None:
+    """Wait for a lock-holder child, failing if it exits or stalls."""
+    deadline = time.monotonic() + timeout
+    while not ready.exists():
+        if not child.is_alive():
+            raise AssertionError("lock-holder child exited before signalling ready")
+        if time.monotonic() >= deadline:
+            raise AssertionError("lock-holder child did not signal ready in time")
+        time.sleep(0.02)
+
+
 def test_lock_file_created_if_absent(tmp_path: Path) -> None:
     lock_path = tmp_path / ".haex-hive.json.lock"
     assert not lock_path.exists()
@@ -45,8 +58,7 @@ def test_bounded_wait_succeeds_when_lock_frees_in_time(tmp_path: Path) -> None:
     child = ctx.Process(target=_hold_lock, args=(str(lock_path), 0.5, str(ready)))
     child.start()
     try:
-        while not ready.exists():
-            time.sleep(0.02)
+        _await_ready(ready, child)
         with ManifestLockContext(lock_path, timeout_seconds=5.0):
             pass
     finally:
@@ -61,8 +73,7 @@ def test_contention_after_timeout_refuses(tmp_path: Path) -> None:
     child = ctx.Process(target=_hold_lock, args=(str(lock_path), 3.0, str(ready)))
     child.start()
     try:
-        while not ready.exists():
-            time.sleep(0.02)
+        _await_ready(ready, child)
         with (
             pytest.raises(ManifestLockContendedError) as exc_info,
             ManifestLockContext(lock_path, timeout_seconds=0.2),
@@ -81,8 +92,7 @@ def test_fail_fast_with_zero_timeout(tmp_path: Path) -> None:
     child = ctx.Process(target=_hold_lock, args=(str(lock_path), 2.0, str(ready)))
     child.start()
     try:
-        while not ready.exists():
-            time.sleep(0.02)
+        _await_ready(ready, child)
         start = time.monotonic()
         with (
             pytest.raises(ManifestLockContendedError),

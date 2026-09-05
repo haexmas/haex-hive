@@ -291,5 +291,6 @@ class ManifestRollbackFailedError(HaexError):
     diagnostic_key: str = "manifest-rollback-failed"
     exit_code: int = exit_codes.POST_WRITE_VALIDATION
     hint: str = (
-        "Restore `.haex-hive.json` from `.haex-hive.json.bak` before releasing the lock."
+        "Restore `.haex-hive.json` manually (for example from version control) "
+        "before re-running `haex add`/`haex remove`."
     )

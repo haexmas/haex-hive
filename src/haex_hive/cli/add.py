@@ -17,6 +17,8 @@ from haex_hive.git import publisher_fetch
 from haex_hive.git import show as git_show
 from haex_hive.install.manifest_lock import (
     DEFAULT_LOCK_TIMEOUT_SECONDS,
+    MANIFEST_LOCK_NAME,
+    MANIFEST_NAME,
     ManifestLockContext,
 )
 from haex_hive.install.write_and_reinstall import write_and_reinstall
@@ -133,6 +135,8 @@ def _prompt_interactive(publisher: PublisherManifest) -> tuple[str, ...]:
             selected.append(available[idx - 1])
         else:
             selected.append(token)
+    if not selected:
+        raise UsageError(message="molecule selection was empty after parsing")
     return tuple(selected)
 
 
@@ -326,7 +330,7 @@ def run(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root).resolve()
     state_root = default_state_root()
 
-    manifest_path = repo_root / ".haex-hive.json"
+    manifest_path = repo_root / MANIFEST_NAME
     if not manifest_path.exists():
         raise HaexError(
             message=(
@@ -339,7 +343,7 @@ def run(args: argparse.Namespace) -> int:
         )
 
     lock = ManifestLockContext(
-        repo_root / ".haex-hive.json.lock",
+        repo_root / MANIFEST_LOCK_NAME,
         timeout_seconds=args.lock_timeout,
     )
     with lock:

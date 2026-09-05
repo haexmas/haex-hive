@@ -34,6 +34,8 @@ _WINDOWS_LOCK_LENGTH = 1
 _POLL_INTERVAL_SECONDS = 0.05
 
 DEFAULT_LOCK_TIMEOUT_SECONDS = 30.0
+MANIFEST_NAME = ".haex-hive.json"
+MANIFEST_LOCK_NAME = ".haex-hive.json.lock"
 
 
 class ManifestLockContext:
