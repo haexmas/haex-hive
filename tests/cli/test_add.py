@@ -1,0 +1,261 @@
+"""T063 — CLI tests for `haex add` (Spec 013)."""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+from haex_hive.util.errors import (
+    InteractiveSelectionUnavailableError,
+    MoleculeIdNotInSourceError,
+    UsageError,
+    WorkflowMoleculeAlreadyAdoptedError,
+)
+
+_HELLO_ID = "com.example.publisher.hello"
+_WORLD_ID = "com.example.publisher.world"
+
+
+@pytest.fixture
+def two_molecule_publisher(tmp_path: Path, haex_add_helpers):
+    return haex_add_helpers["make_publisher"](
+        tmp_path,
+        {
+            _HELLO_ID: {
+                "path": "hello",
+                "version": "1.0.0",
+                "atoms": {"constitution": ["constitution.md"]},
+            },
+            _WORLD_ID: {
+                "path": "world",
+                "version": "1.0.0",
+                "atoms": {"skills": ["skill.md"]},
+            },
+        },
+    )
+
+
+def test_happy_path_adopts_single_molecule(
+    tmp_path, two_molecule_publisher, monkeypatch, haex_add_helpers
+) -> None:
+    canonical, head, state_root = two_molecule_publisher
+    consumer = haex_add_helpers["make_consumer"](tmp_path)
+
+    rc = haex_add_helpers["run_add"](
+        consumer,
+        state_root,
+        monkeypatch,
+        source_url=canonical,
+        molecule_ids=_HELLO_ID,
+        revision=head,
+    )
+    assert rc == 0
+    written = json.loads((consumer / ".haex-hive.json").read_text())
+    assert written["compounds"] == [
+        {"source": canonical, "revision": head, "molecules": [_HELLO_ID]}
+    ]
+    assert (consumer / ".haex-hive" / "install.lock").exists()
+
+
+def test_merge_into_existing_compound_same_source_and_revision(
+    tmp_path, two_molecule_publisher, monkeypatch, haex_add_helpers
+) -> None:
+    canonical, head, state_root = two_molecule_publisher
+    consumer = haex_add_helpers["make_consumer"](tmp_path)
+
+    haex_add_helpers["run_add"](
+        consumer,
+        state_root,
+        monkeypatch,
+        source_url=canonical,
+        molecule_ids=_HELLO_ID,
+        revision=head,
+    )
+    haex_add_helpers["run_add"](
+        consumer,
+        state_root,
+        monkeypatch,
+        source_url=canonical,
+        molecule_ids=_WORLD_ID,
+        revision=head,
+    )
+    written = json.loads((consumer / ".haex-hive.json").read_text())
+    assert len(written["compounds"]) == 1
+    assert written["compounds"][0]["molecules"] == sorted([_HELLO_ID, _WORLD_ID])
+
+
+def test_replace_compound_when_same_source_different_revision(
+    tmp_path, monkeypatch, haex_add_helpers
+) -> None:
+    import subprocess
+
+    canonical, head1, state_root = haex_add_helpers["make_publisher"](
+        tmp_path,
+        {
+            _HELLO_ID: {
+                "path": "hello",
+                "version": "1.0.0",
+                "atoms": {"constitution": ["constitution.md"]},
+            },
+        },
+    )
+    consumer = haex_add_helpers["make_consumer"](tmp_path)
+    haex_add_helpers["run_add"](
+        consumer,
+        state_root,
+        monkeypatch,
+        source_url=canonical,
+        molecule_ids=_HELLO_ID,
+        revision=head1,
+    )
+
+    bare = haex_add_helpers["clone_dir"](state_root, canonical)
+    advance = tmp_path / "advance-working"
+    subprocess.run(["git", "clone", "-q", str(bare), str(advance)], check=True)
+    haex_add_helpers["git"](advance, "config", "user.email", "t@e")
+    haex_add_helpers["git"](advance, "config", "user.name", "t")
+    haex_add_helpers["git"](advance, "config", "commit.gpgsign", "false")
+    (advance / "hello" / "constitution.md").write_text("# v2\n")
+    haex_add_helpers["git"](advance, "commit", "-q", "-am", "advance")
+    haex_add_helpers["git"](advance, "push", "-q", "origin", "HEAD:main")
+    head2 = haex_add_helpers["git"](advance, "rev-parse", "HEAD")
+
+    haex_add_helpers["run_add"](
+        consumer,
+        state_root,
+        monkeypatch,
+        source_url=canonical,
+        molecule_ids=_HELLO_ID,
+        revision=head2,
+    )
+    written = json.loads((consumer / ".haex-hive.json").read_text())
+    assert len(written["compounds"]) == 1
+    assert written["compounds"][0]["revision"] == head2
+
+
+def test_non_tty_without_ids_or_all_refuses(
+    tmp_path, two_molecule_publisher, monkeypatch, haex_add_helpers
+) -> None:
+    canonical, head, state_root = two_molecule_publisher
+    consumer = haex_add_helpers["make_consumer"](tmp_path)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+
+    with pytest.raises(InteractiveSelectionUnavailableError):
+        haex_add_helpers["run_add"](
+            consumer,
+            state_root,
+            monkeypatch,
+            source_url=canonical,
+            revision=head,
+        )
+
+
+def test_all_adopts_every_molecule(
+    tmp_path, two_molecule_publisher, monkeypatch, haex_add_helpers
+) -> None:
+    canonical, head, state_root = two_molecule_publisher
+    consumer = haex_add_helpers["make_consumer"](tmp_path)
+
+    haex_add_helpers["run_add"](
+        consumer, state_root, monkeypatch, source_url=canonical, revision=head, all=True
+    )
+    written = json.loads((consumer / ".haex-hive.json").read_text())
+    assert written["compounds"][0]["molecules"] == sorted([_HELLO_ID, _WORLD_ID])
+
+
+def test_molecule_id_not_in_source_refuses(
+    tmp_path, two_molecule_publisher, monkeypatch, haex_add_helpers
+) -> None:
+    canonical, head, state_root = two_molecule_publisher
+    consumer = haex_add_helpers["make_consumer"](tmp_path)
+
+    with pytest.raises(MoleculeIdNotInSourceError):
+        haex_add_helpers["run_add"](
+            consumer,
+            state_root,
+            monkeypatch,
+            source_url=canonical,
+            molecule_ids="com.example.publisher.does-not-exist",
+            revision=head,
+        )
+    written = json.loads((consumer / ".haex-hive.json").read_text())
+    assert written["compounds"] == []
+
+
+def test_workflow_molecule_already_adopted_refuses(
+    tmp_path, monkeypatch, haex_add_helpers
+) -> None:
+    workflow_a = "com.example.publisher.workflow-a"
+    workflow_b = "com.example.publisher.workflow-b"
+    canonical, head, state_root = haex_add_helpers["make_publisher"](
+        tmp_path,
+        {
+            workflow_a: {
+                "path": "wa",
+                "version": "1.0.0",
+                "atoms": {"workflow": ["speckit.md"]},
+            },
+            workflow_b: {
+                "path": "wb",
+                "version": "1.0.0",
+                "atoms": {"workflow": ["speckit.md"]},
+            },
+        },
+    )
+    consumer = haex_add_helpers["make_consumer"](tmp_path)
+    constitution_canonical, con_head, _ = haex_add_helpers["make_publisher"](
+        tmp_path,
+        {
+            "com.example.publisher.const": {
+                "path": "c",
+                "version": "1.0.0",
+                "atoms": {"constitution": ["constitution.md"]},
+            },
+        },
+        name="constitution-source",
+    )
+    haex_add_helpers["run_add"](
+        consumer,
+        state_root,
+        monkeypatch,
+        source_url=constitution_canonical,
+        molecule_ids="com.example.publisher.const",
+        revision=con_head,
+    )
+    haex_add_helpers["run_add"](
+        consumer,
+        state_root,
+        monkeypatch,
+        source_url=canonical,
+        molecule_ids=workflow_a,
+        revision=head,
+    )
+    with pytest.raises(WorkflowMoleculeAlreadyAdoptedError):
+        haex_add_helpers["run_add"](
+            consumer,
+            state_root,
+            monkeypatch,
+            source_url=canonical,
+            molecule_ids=workflow_b,
+            revision=head,
+        )
+
+
+def test_all_with_positional_ids_is_usage_error(
+    tmp_path, two_molecule_publisher, monkeypatch, haex_add_helpers
+) -> None:
+    canonical, head, state_root = two_molecule_publisher
+    consumer = haex_add_helpers["make_consumer"](tmp_path)
+    with pytest.raises(UsageError):
+        haex_add_helpers["run_add"](
+            consumer,
+            state_root,
+            monkeypatch,
+            source_url=canonical,
+            molecule_ids=_HELLO_ID,
+            revision=head,
+            all=True,
+        )

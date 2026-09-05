@@ -16,6 +16,10 @@ from haex_hive.constitution.assemble import CONSTITUTION_PATH, assemble_single_s
 from haex_hive.constitution.resolve import resolve_constitution_contributions
 from haex_hive.install import inflight
 from haex_hive.install.lock import OwnerToken
+from haex_hive.install.manifest_lock import (
+    DEFAULT_LOCK_TIMEOUT_SECONDS,
+    ManifestLockContext,
+)
 from haex_hive.io import transaction
 from haex_hive.io.state import default_state_root, transaction_paths
 from haex_hive.io.writer_lock import ConstitutionWriterLock
@@ -27,6 +31,8 @@ from haex_hive.util.errors import (
     HaexError,
     NoSourcesDeclaredError,
 )
+
+MANIFEST_LOCK_NAME = ".haex-hive.json.lock"
 
 
 def _load_consumer_manifest(repo_root: Path) -> ConsumerManifest:
@@ -107,14 +113,35 @@ def _is_no_op_single_source(
     return recorded.paths == (CONSTITUTION_PATH,)
 
 
-def run(args: argparse.Namespace) -> int:
-    """`haex install` — US1 MVP: publish resolved atoms as a new generation."""
+def run(
+    args: argparse.Namespace,
+    *,
+    held_manifest_lock: ManifestLockContext | None = None,
+) -> int:
+    """`haex install` — US1 MVP: publish resolved atoms as a new generation.
+
+    When ``held_manifest_lock`` is passed, install reuses the caller's
+    acquired manifest lock via reference counting (Spec 013 T071). Standalone
+    invocations acquire the manifest lock themselves before reading
+    ``.haex-hive.json``; the install mutex is acquired second per FR-026.
+    """
     repo_root = Path(args.repo_root).resolve()
     state_root = default_state_root()
+    timeout_seconds = getattr(args, "lock_timeout", DEFAULT_LOCK_TIMEOUT_SECONDS)
+    if timeout_seconds is None:
+        timeout_seconds = DEFAULT_LOCK_TIMEOUT_SECONDS
+    manifest_lock = (
+        held_manifest_lock
+        if held_manifest_lock is not None
+        else ManifestLockContext(
+            repo_root / MANIFEST_LOCK_NAME,
+            timeout_seconds=timeout_seconds,
+        )
+    )
 
     try:
         paths = transaction_paths(repo_root, state_root)
-        with ConstitutionWriterLock(paths.mutex, OwnerToken.emit()):
+        with manifest_lock, ConstitutionWriterLock(paths.mutex, OwnerToken.emit()):
             live_root = repo_root / transaction.HAEX_HIVE_DIR
             # A missing live tree with a retained previous generation is the
             # one recovery step that must precede resolution: a failed retry

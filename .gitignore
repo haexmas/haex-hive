@@ -22,3 +22,6 @@ Thumbs.db
 *.swp
 graphify-out/
 .worktrees/
+
+# Manifest lock is per-checkout advisory-lock state (Spec 013), never committed.
+.haex-hive.json.lock

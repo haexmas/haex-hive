@@ -213,3 +213,83 @@ class UsageError(HaexError):
     diagnostic_key: str = "usage"
     exit_code: int = exit_codes.USAGE
     hint: str = ""
+
+
+# --- Spec 013 haex add / haex remove boundary --------------------------------
+
+
+@dataclass
+class ManifestLockContendedError(HaexError):
+    diagnostic_key: str = "manifest-lock-contended"
+    exit_code: int = exit_codes.WRITER_BUSY
+    hint: str = (
+        "Another `haex add`/`haex remove`/`haex install` holds the manifest "
+        "lock; retry, or override with `--lock-timeout=<sec>`."
+    )
+
+
+@dataclass
+class SourceUrlInvalidError(HaexError):
+    diagnostic_key: str = "source-url-invalid"
+    exit_code: int = exit_codes.INPUT_REFUSE
+    hint: str = "Verify the source URL is reachable via git."
+
+
+@dataclass
+class RevisionNotFoundError(HaexError):
+    diagnostic_key: str = "revision-not-found"
+    exit_code: int = exit_codes.INPUT_REFUSE
+    hint: str = "Verify the pinned SHA exists at the remote."
+
+
+@dataclass
+class PublisherManifestInvalidError(HaexError):
+    diagnostic_key: str = "publisher-manifest-invalid"
+    exit_code: int = exit_codes.INPUT_REFUSE
+    hint: str = "The publisher's manifest.json does not validate against the v3 schema."
+
+
+@dataclass
+class MoleculeIdNotInSourceError(HaexError):
+    diagnostic_key: str = "molecule-id-not-in-source"
+    exit_code: int = exit_codes.INPUT_REFUSE
+    hint: str = "The publisher manifest does not list the requested molecule id."
+
+
+@dataclass
+class InteractiveSelectionUnavailableError(HaexError):
+    diagnostic_key: str = "interactive-selection-unavailable"
+    exit_code: int = exit_codes.INPUT_REFUSE
+    hint: str = "Provide molecule ids explicitly or pass `--all`."
+
+
+@dataclass
+class WorkflowMoleculeAlreadyAdoptedError(HaexError):
+    diagnostic_key: str = "workflow-molecule-already-adopted"
+    exit_code: int = exit_codes.INPUT_REFUSE
+    hint: str = "Retract the current workflow molecule with `haex remove` before adopting another."
+
+
+@dataclass
+class UnknownMoleculeIdError(HaexError):
+    diagnostic_key: str = "unknown-molecule-id"
+    exit_code: int = exit_codes.INPUT_REFUSE
+    hint: str = "The molecule id is not adopted in `.haex-hive.json`."
+
+
+@dataclass
+class InstallTransactionFailedError(HaexError):
+    diagnostic_key: str = "install-transaction-failed"
+    exit_code: int = exit_codes.INPUT_REFUSE
+    hint: str = (
+        "The follow-on `haex install` failed; the manifest edit was rolled back."
+    )
+
+
+@dataclass
+class ManifestRollbackFailedError(HaexError):
+    diagnostic_key: str = "manifest-rollback-failed"
+    exit_code: int = exit_codes.POST_WRITE_VALIDATION
+    hint: str = (
+        "Restore `.haex-hive.json` from `.haex-hive.json.bak` before releasing the lock."
+    )

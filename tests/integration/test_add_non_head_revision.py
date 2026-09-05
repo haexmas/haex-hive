@@ -1,0 +1,53 @@
+"""T064 — pinning `--revision=<SHA>` at a non-HEAD commit (Spec 013 research D3)."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+
+import pytest
+
+_HELLO_ID = "com.example.publisher.hello"
+
+
+def test_add_pins_non_head_revision_via_fetched_sha(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, haex_add_helpers
+) -> None:
+    """A pinned non-HEAD SHA must resolve against the fetched object, not HEAD."""
+    canonical, head, state_root = haex_add_helpers["make_publisher"](
+        tmp_path,
+        {
+            _HELLO_ID: {
+                "path": "hello",
+                "version": "1.0.0",
+                "atoms": {"constitution": ["constitution.md"]},
+            },
+        },
+    )
+    bare = haex_add_helpers["clone_dir"](state_root, canonical)
+    advance = tmp_path / "advance-working"
+    subprocess.run(["git", "clone", "-q", str(bare), str(advance)], check=True)
+    haex_add_helpers["git"](advance, "config", "user.email", "t@e")
+    haex_add_helpers["git"](advance, "config", "user.name", "t")
+    haex_add_helpers["git"](advance, "config", "commit.gpgsign", "false")
+    (advance / "hello" / "constitution.md").write_text("# v2\n")
+    haex_add_helpers["git"](advance, "commit", "-q", "-am", "advance to v2")
+    haex_add_helpers["git"](advance, "push", "-q", "origin", "HEAD:main")
+    new_head = haex_add_helpers["git"](advance, "rev-parse", "HEAD")
+    assert new_head != head
+
+    consumer = haex_add_helpers["make_consumer"](tmp_path)
+    rc = haex_add_helpers["run_add"](
+        consumer,
+        state_root,
+        monkeypatch,
+        source_url=canonical,
+        molecule_ids=_HELLO_ID,
+        revision=head,
+    )
+    assert rc == 0
+    written = json.loads((consumer / ".haex-hive.json").read_text())
+    assert written["compounds"][0]["revision"] == head
+    published = (consumer / ".haex-hive" / "constitution.md").read_bytes()
+    assert b"hello constitution constitution.md" in published
