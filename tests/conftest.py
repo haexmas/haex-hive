@@ -99,6 +99,121 @@ def self_migration_fixture(tmp_path: Path, git_binary: str) -> dict:
 
 
 @pytest.fixture
+def haex_add_helpers() -> dict:
+    """Shared factory for Spec 013 US3 `haex add` tests.
+
+    Returns callables so multiple tests can build fresh publisher fixtures
+    without repeating the git-repo scaffolding.
+    """
+    import subprocess
+    from pathlib import Path as _P
+    from types import SimpleNamespace
+
+    from haex_hive.cli import add as add_cli
+    from haex_hive.migrate.transform import clone_dir
+
+    def _local_git(cwd: _P, *args: str) -> str:
+        proc = subprocess.run(
+            ["git", "-C", str(cwd), *args],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return proc.stdout.strip()
+
+    def make_publisher(
+        tmp_path: _P,
+        molecules: dict,
+        *,
+        publisher: str = "com.example.publisher",
+        name: str = "publisher",
+    ) -> tuple[str, str, _P]:
+        working = tmp_path / f"{name}-working"
+        working.mkdir()
+        _local_git(working, "init", "-q", "-b", "main")
+        _local_git(working, "config", "user.email", "t@e")
+        _local_git(working, "config", "user.name", "t")
+        _local_git(working, "config", "commit.gpgsign", "false")
+        publisher_manifest = {
+            "haex_hive_version": "3",
+            "publisher": publisher,
+            "molecules": {
+                mid: {"path": info["path"], "version": info["version"]}
+                for mid, info in molecules.items()
+            },
+        }
+        (working / "manifest.json").write_text(
+            json.dumps(publisher_manifest, indent=2)
+        )
+        for mid, info in molecules.items():
+            mol_dir = working / info["path"]
+            mol_dir.mkdir(parents=True)
+            molecule_manifest = {
+                "haex_hive_version": "3",
+                "id": mid,
+                "version": info["version"],
+                "priority": info.get("priority", 100),
+                "atoms": info["atoms"],
+            }
+            (mol_dir / "manifest.json").write_text(
+                json.dumps(molecule_manifest, indent=2)
+            )
+            for category, paths in info["atoms"].items():
+                for path in paths:
+                    (mol_dir / path).parent.mkdir(parents=True, exist_ok=True)
+                    (mol_dir / path).write_text(f"# {mid} {category} {path}\n")
+        _local_git(working, "add", ".")
+        _local_git(working, "commit", "-q", "-m", "publisher")
+        head = _local_git(working, "rev-parse", "HEAD")
+
+        canonical = f"https://example.com/{name}"
+        state_root = tmp_path / "state"
+        target = clone_dir(state_root, canonical)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ["git", "clone", "--bare", "-q", str(working), str(target)], check=True
+        )
+        return canonical, head, state_root
+
+    def make_consumer(
+        tmp_path: _P, identity: str = "com.example.project"
+    ) -> _P:
+        consumer = tmp_path / "consumer"
+        consumer.mkdir()
+        (consumer / ".haex-hive.json").write_text(
+            json.dumps(
+                {
+                    "haex_hive_version": "3",
+                    "identity": identity,
+                    "compounds": [],
+                }
+            )
+        )
+        (consumer / ".harness-id").write_text(identity)
+        return consumer
+
+    def run_add(consumer, state_root, monkeypatch, **kwargs) -> int:
+        monkeypatch.setenv("HAEX_HIVE_STATE", str(state_root))
+        ns = SimpleNamespace(
+            repo_root=str(consumer),
+            source_url=kwargs["source_url"],
+            molecule_ids=kwargs.get("molecule_ids", ""),
+            revision=kwargs.get("revision"),
+            all=kwargs.get("all", False),
+            lock_timeout=kwargs.get("lock_timeout", 1.0),
+        )
+        return add_cli.run(ns)
+
+    return {
+        "make_publisher": make_publisher,
+        "make_consumer": make_consumer,
+        "run_add": run_add,
+        "git": _local_git,
+        "clone_dir": clone_dir,
+    }
+
+
+@pytest.fixture
 def single_source_constitution_fixture(tmp_path: Path, git_binary: str) -> dict:
     """Publisher repo with exactly one constitution molecule, plus a v3 consumer repo."""
 
