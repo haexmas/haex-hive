@@ -18,6 +18,8 @@ from haex_hive.install import inflight
 from haex_hive.install.lock import OwnerToken
 from haex_hive.install.manifest_lock import (
     DEFAULT_LOCK_TIMEOUT_SECONDS,
+    MANIFEST_LOCK_NAME,
+    MANIFEST_NAME,
     ManifestLockContext,
 )
 from haex_hive.io import transaction
@@ -32,12 +34,10 @@ from haex_hive.util.errors import (
     NoSourcesDeclaredError,
 )
 
-MANIFEST_LOCK_NAME = ".haex-hive.json.lock"
-
 
 def _load_consumer_manifest(repo_root: Path) -> ConsumerManifest:
     """Load and validate the consumer's v3 harness manifest."""
-    manifest_path = repo_root / ".haex-hive.json"
+    manifest_path = repo_root / MANIFEST_NAME
     if not manifest_path.exists():
         raise HaexError(
             message=".haex-hive.json not found",

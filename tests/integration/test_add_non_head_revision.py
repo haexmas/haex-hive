@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -36,6 +37,20 @@ def test_add_pins_non_head_revision_via_fetched_sha(
     haex_add_helpers["git"](advance, "push", "-q", "origin", "HEAD:main")
     new_head = haex_add_helpers["git"](advance, "rev-parse", "HEAD")
     assert new_head != head
+
+    # The cached clone was the push target above, so remove it to force
+    # `ensure_object` through its initialization and fetch path. The working
+    # copy remains the reachable source for the test's canonical URL.
+    shutil.rmtree(bare)
+    from haex_hive.git import publisher_fetch
+
+    original_run_git = publisher_fetch._run_git
+
+    def run_git_with_local_test_remote(*args, cwd=None, capture=True):
+        mapped_args = tuple(str(advance) if arg == canonical else arg for arg in args)
+        return original_run_git(*mapped_args, cwd=cwd, capture=capture)
+
+    monkeypatch.setattr(publisher_fetch, "_run_git", run_git_with_local_test_remote)
 
     consumer = haex_add_helpers["make_consumer"](tmp_path)
     rc = haex_add_helpers["run_add"](

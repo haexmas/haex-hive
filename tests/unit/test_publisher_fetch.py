@@ -92,6 +92,54 @@ def test_ensure_object_refuses_missing_sha(tmp_path: Path) -> None:
         publisher_fetch.ensure_object(str(bare), "0" * 40, state_root)
 
 
+def test_ensure_object_maps_non_ref_fetch_failure_to_source_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bare, _, _ = _make_publisher(tmp_path)
+    state_root = tmp_path / "state"
+    original_run_git = publisher_fetch._run_git
+
+    def failing_fetch(*args, cwd=None, capture=True):
+        if args and args[0] == "fetch":
+            return subprocess.CompletedProcess(
+                ["git", *args],
+                128,
+                "",
+                "fatal: unable to access remote: network is unreachable",
+            )
+        return original_run_git(*args, cwd=cwd, capture=capture)
+
+    monkeypatch.setattr(publisher_fetch, "_run_git", failing_fetch)
+
+    with pytest.raises(SourceUrlInvalidError):
+        publisher_fetch.ensure_object(str(bare), "0" * 40, state_root)
+
+
+def test_failed_initialization_does_not_leave_broken_clone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bare, head, _ = _make_publisher(tmp_path)
+    state_root = tmp_path / "state"
+    repo_dir = clone_dir(state_root, str(bare))
+    original_run_git = publisher_fetch._run_git
+
+    def failing_remote_add(*args, cwd=None, capture=True):
+        if args[:3] == ("remote", "add", "origin"):
+            return subprocess.CompletedProcess(
+                ["git", *args], 128, "", "fatal: remote setup failed"
+            )
+        return original_run_git(*args, cwd=cwd, capture=capture)
+
+    monkeypatch.setattr(publisher_fetch, "_run_git", failing_remote_add)
+    with pytest.raises(SourceUrlInvalidError):
+        publisher_fetch.ensure_object(str(bare), head, state_root)
+    assert not repo_dir.exists()
+    assert not list(repo_dir.parent.glob(f".{repo_dir.name}.tmp-*"))
+
+    monkeypatch.setattr(publisher_fetch, "_run_git", original_run_git)
+    assert publisher_fetch.ensure_object(str(bare), head, state_root) == repo_dir
+
+
 def test_ensure_object_is_idempotent_for_present_sha(tmp_path: Path) -> None:
     bare, head, _ = _make_publisher(tmp_path)
     state_root = tmp_path / "state"

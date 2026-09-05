@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -151,6 +152,30 @@ def test_non_tty_without_ids_or_all_refuses(
             source_url=canonical,
             revision=head,
         )
+
+
+def test_interactive_separator_only_selection_refuses(
+    tmp_path, two_molecule_publisher, monkeypatch, haex_add_helpers
+) -> None:
+    canonical, head, state_root = two_molecule_publisher
+    consumer = haex_add_helpers["make_consumer"](tmp_path)
+
+    class TTYStringIO(StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    monkeypatch.setattr(sys, "stdin", TTYStringIO(",,\n"))
+
+    with pytest.raises(UsageError, match="selection was empty"):
+        haex_add_helpers["run_add"](
+            consumer,
+            state_root,
+            monkeypatch,
+            source_url=canonical,
+            revision=head,
+        )
+
+    assert json.loads((consumer / ".haex-hive.json").read_text())["compounds"] == []
 
 
 def test_all_adopts_every_molecule(

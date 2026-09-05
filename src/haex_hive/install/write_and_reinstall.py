@@ -22,21 +22,36 @@ import argparse
 import os
 from pathlib import Path
 
-from haex_hive.install.manifest_lock import ManifestLockContext
+from haex_hive.install.manifest_lock import (
+    MANIFEST_NAME,
+    ManifestLockContext,
+)
 from haex_hive.util.errors import (
     HaexError,
     InstallTransactionFailedError,
     ManifestRollbackFailedError,
 )
 
-MANIFEST_NAME = ".haex-hive.json"
 _TMP_SUFFIX = ".tmp"
 
 
 def _atomic_write(target: Path, payload: bytes) -> None:
     tmp = target.with_suffix(target.suffix + _TMP_SUFFIX)
-    tmp.write_bytes(payload)
+    with tmp.open("wb") as handle:
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
     os.replace(tmp, target)
+    if os.name != "posix":
+        return
+    try:
+        directory_fd = os.open(str(target.parent), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
 
 
 def _atomic_delete(target: Path) -> None:
@@ -64,7 +79,7 @@ def write_and_reinstall(
             argparse.Namespace(repo_root=str(repo_root)),
             held_manifest_lock=held_manifest_lock,
         )
-    except HaexError as exc:
+    except BaseException as exc:
         try:
             if previous_bytes is None:
                 _atomic_delete(manifest_path)
@@ -78,6 +93,8 @@ def write_and_reinstall(
                 ),
                 context={"manifest_path": str(manifest_path)},
             ) from rollback_exc
+        if not isinstance(exc, HaexError):
+            raise
         raise InstallTransactionFailedError(
             message=f"`haex install` failed after manifest edit: {exc.message}",
             context={
