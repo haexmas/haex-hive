@@ -106,6 +106,42 @@ def test_install_failure_deletes_manifest_when_no_previous(
     assert not manifest.exists()
 
 
+def test_initial_manifest_write_failure_is_rolled_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from haex_hive.cli import install as install_cli
+
+    manifest = tmp_path / ".haex-hive.json"
+    original_bytes = b'{"original": true}\n'
+    manifest.write_bytes(original_bytes)
+
+    def unexpected_install(args, *, held_manifest_lock=None):
+        raise AssertionError("install must not run after manifest publication failed")
+
+    monkeypatch.setattr(install_cli, "run", unexpected_install)
+    original_atomic_write = _transaction._atomic_write
+    calls = 0
+
+    def fail_after_initial_write(target: Path, payload: bytes) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            target.write_bytes(payload)
+            raise OSError("manifest fsync failed")
+        original_atomic_write(target, payload)
+
+    monkeypatch.setattr(_transaction, "_atomic_write", fail_after_initial_write)
+
+    lock = _held_lock(tmp_path)
+    try:
+        with pytest.raises(OSError, match="manifest fsync failed"):
+            write_and_reinstall(tmp_path, b'{"new": true}\n', lock)
+    finally:
+        lock.__exit__(None, None, None)
+
+    assert manifest.read_bytes() == original_bytes
+
+
 def test_rollback_failure_surfaces_recovery_path_with_lock_held(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -140,6 +140,25 @@ def test_failed_initialization_does_not_leave_broken_clone(
     assert publisher_fetch.ensure_object(str(bare), head, state_root) == repo_dir
 
 
+def test_competing_initialization_is_accepted_when_replace_reports_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bare, head, _ = _make_publisher(tmp_path)
+    state_root = tmp_path / "state"
+    repo_dir = clone_dir(state_root, str(bare))
+    original_replace = publisher_fetch.os.replace
+
+    def competing_replace(source, target):
+        if target == repo_dir:
+            original_replace(source, target)
+            raise OSError("target was created concurrently")
+        original_replace(source, target)
+
+    monkeypatch.setattr(publisher_fetch.os, "replace", competing_replace)
+
+    assert publisher_fetch.ensure_object(str(bare), head, state_root) == repo_dir
+
+
 def test_ensure_object_is_idempotent_for_present_sha(tmp_path: Path) -> None:
     bare, head, _ = _make_publisher(tmp_path)
     state_root = tmp_path / "state"

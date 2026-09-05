@@ -72,9 +72,8 @@ def write_and_reinstall(
         manifest_path.read_bytes() if manifest_path.exists() else None
     )
 
-    _atomic_write(manifest_path, new_manifest_bytes)
-
     try:
+        _atomic_write(manifest_path, new_manifest_bytes)
         return install_cli.run(
             argparse.Namespace(repo_root=str(repo_root)),
             held_manifest_lock=held_manifest_lock,

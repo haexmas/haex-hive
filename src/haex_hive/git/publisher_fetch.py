@@ -106,7 +106,11 @@ def ensure_object(source_url: str, sha: str, state_root: Path) -> Path:
                     ),
                     context={"source": canonical},
                 )
-            os.replace(temp_dir, repo_dir)
+            try:
+                os.replace(temp_dir, repo_dir)
+            except OSError:
+                if not repo_dir.is_dir():
+                    raise
         except BaseException:
             shutil.rmtree(temp_dir, ignore_errors=True)
             raise
