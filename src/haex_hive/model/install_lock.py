@@ -33,6 +33,21 @@ from haex_hive.util.errors import InstallLockSchemaInvalidError
 
 _KNOWN_TOP_LEVEL_FIELDS = frozenset({"haex_hive_version", "generation_id", "molecules"})
 
+# Retired by the 2026-09-03 npm/pip-shape amendment (Spec 008). Enumerated
+# explicitly so a lock carrying any of them refuses at the runtime read gate,
+# not just the strict schema/FR-005 gate. Without this, `from_json` would
+# stash them in `unknown_top_level` and `to_json_bytes` would republish them.
+_RETIRED_TOP_LEVEL_FIELDS = frozenset(
+    {
+        "generated_by",
+        "constitution",
+        "atoms",
+        "participating_roots",
+        "generation_inputs",
+        "visibility_marker",
+    }
+)
+
 
 @dataclass(frozen=True)
 class ConstitutionSource:
@@ -81,6 +96,25 @@ class InstallLock:
         try:
             data = json.loads(raw.decode("utf-8"))
             if isinstance(data, dict):
+                # Refuse retired v2-era / pre-amendment fields explicitly. The
+                # strict v3 schema also rejects them, but `from_json` splits
+                # unknown keys into `unknown_top_level` for forward-compat, so
+                # without this check a lock carrying `generated_by` (or another
+                # retired field) would pass the runtime gate and be republished.
+                retired_present = sorted(
+                    key for key in data if key in _RETIRED_TOP_LEVEL_FIELDS
+                )
+                if retired_present:
+                    raise InstallLockSchemaInvalidError(
+                        message=(
+                            "install.lock carries retired top-level field(s): "
+                            + ", ".join(retired_present)
+                        ),
+                        context={
+                            "schema": "install-lock.v3.schema.json",
+                            "retired_fields": ",".join(retired_present),
+                        },
+                    )
                 # Keep unknown top-level fields so a v3 reader can round-trip
                 # fields introduced by a newer lock schema. The v3 schema has
                 # additionalProperties=false, so validate only its known
@@ -99,6 +133,8 @@ class InstallLock:
                 unknown = {}
                 validation_data = data
             schema_validator.validate(validation_data, "install-lock.v3.schema.json")
+        except InstallLockSchemaInvalidError:
+            raise
         except (UnicodeError, ValueError) as exc:
             detail = (
                 f": {exc}"
