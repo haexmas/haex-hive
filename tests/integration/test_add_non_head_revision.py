@@ -3,13 +3,23 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import stat
 import subprocess
 from pathlib import Path
 
 import pytest
 
 _HELLO_ID = "com.example.publisher.hello"
+
+
+def _remove_read_only(func, path, exc_info) -> None:
+    """Retry removal after clearing Git's read-only bit on Windows."""
+    if not isinstance(exc_info[1], PermissionError):
+        raise exc_info[1]
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
 
 
 def test_add_pins_non_head_revision_via_fetched_sha(
@@ -41,7 +51,7 @@ def test_add_pins_non_head_revision_via_fetched_sha(
     # The cached clone was the push target above, so remove it to force
     # `ensure_object` through its initialization and fetch path. The working
     # copy remains the reachable source for the test's canonical URL.
-    shutil.rmtree(bare)
+    shutil.rmtree(bare, onerror=_remove_read_only)
     from haex_hive.git import publisher_fetch
 
     original_run_git = publisher_fetch._run_git

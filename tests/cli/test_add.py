@@ -6,9 +6,11 @@ import json
 import sys
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from haex_hive.cli import add as add_cli
 from haex_hive.util.errors import (
     InteractiveSelectionUnavailableError,
     MoleculeIdNotInSourceError,
@@ -191,6 +193,30 @@ def test_all_adopts_every_molecule(
     assert written["compounds"][0]["molecules"] == sorted([_HELLO_ID, _WORLD_ID])
 
 
+def test_all_with_empty_publisher_refuses_without_manifest_edit(
+    tmp_path, monkeypatch, haex_add_helpers
+) -> None:
+    canonical, head, state_root = haex_add_helpers["make_publisher"](tmp_path, {})
+    consumer = haex_add_helpers["make_consumer"](tmp_path)
+    monkeypatch.setattr(
+        add_cli.PublisherManifest,
+        "from_json",
+        lambda raw: SimpleNamespace(publisher=canonical, molecules={}),
+    )
+
+    with pytest.raises(UsageError, match="selection was empty"):
+        haex_add_helpers["run_add"](
+            consumer,
+            state_root,
+            monkeypatch,
+            source_url=canonical,
+            revision=head,
+            all=True,
+        )
+
+    assert json.loads((consumer / ".haex-hive.json").read_text())["compounds"] == []
+
+
 def test_molecule_id_not_in_source_refuses(
     tmp_path, two_molecule_publisher, monkeypatch, haex_add_helpers
 ) -> None:
@@ -267,6 +293,41 @@ def test_workflow_molecule_already_adopted_refuses(
             molecule_ids=workflow_b,
             revision=head,
         )
+
+
+def test_multiple_new_workflow_molecules_refuse_as_singleton_conflict(
+    tmp_path, monkeypatch, haex_add_helpers
+) -> None:
+    workflow_a = "com.example.publisher.workflow-a"
+    workflow_b = "com.example.publisher.workflow-b"
+    canonical, head, state_root = haex_add_helpers["make_publisher"](
+        tmp_path,
+        {
+            workflow_a: {
+                "path": "wa",
+                "version": "1.0.0",
+                "atoms": {"workflow": ["speckit.md"]},
+            },
+            workflow_b: {
+                "path": "wb",
+                "version": "1.0.0",
+                "atoms": {"workflow": ["speckit.md"]},
+            },
+        },
+    )
+    consumer = haex_add_helpers["make_consumer"](tmp_path)
+
+    with pytest.raises(WorkflowMoleculeAlreadyAdoptedError, match="multiple molecules"):
+        haex_add_helpers["run_add"](
+            consumer,
+            state_root,
+            monkeypatch,
+            source_url=canonical,
+            molecule_ids=f"{workflow_a},{workflow_b}",
+            revision=head,
+        )
+
+    assert json.loads((consumer / ".haex-hive.json").read_text())["compounds"] == []
 
 
 def test_all_with_positional_ids_is_usage_error(

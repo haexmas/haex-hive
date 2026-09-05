@@ -94,7 +94,10 @@ def _select_molecule_ids(
             message="`--all` is mutually exclusive with positional molecule ids"
         )
     if args.all:
-        return tuple(sorted(publisher.molecules.keys()))
+        ids = tuple(sorted(publisher.molecules.keys()))
+        if not ids:
+            raise UsageError(message="publisher molecule selection was empty")
+        return ids
     if args.molecule_ids:
         ids = tuple(mid.strip() for mid in args.molecule_ids.split(",") if mid.strip())
         if not ids:
@@ -233,6 +236,19 @@ def _refuse_singleton_conflict(
         adding = added_category_declarers.get(category, ())
         if not adding:
             continue
+        unique_adding = tuple(sorted(set(adding)))
+        if len(unique_adding) > 1:
+            raise refuse_exc(
+                message=(
+                    f"add refuses: category {category!r} would be declared by "
+                    f"multiple molecules: {', '.join(unique_adding)}"
+                ),
+                context={
+                    "category": category,
+                    "adopted_by": "",
+                    "adding": ",".join(unique_adding),
+                },
+            )
         current_owners = tuple(
             owner
             for owner in _existing_category_owners(existing_manifest, state_root, category)
