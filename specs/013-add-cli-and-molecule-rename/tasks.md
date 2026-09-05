@@ -161,14 +161,14 @@ Single Python CLI project (unchanged from Specs 007 and 008):
 
 ### Tests for User Story 4
 
-- [ ] T080 [P] [US4] Add CLI tests in `tests/cli/test_remove.py`: single-id retraction, comma-separated multi-id retraction, empty-compound drop after retraction, `unknown-molecule-id` refusal for absent id, preflight refusal for mixed present/absent request (no manifest edit; every missing id named in the diagnostic).
-- [ ] T081 [P] [US4] Add an integration test in `tests/integration/test_remove_orphan_deletion.py`: retract a molecule and assert that every file `.haex-hive/install.lock` had listed as `paths` for that molecule is deleted after the ensuing install (per Spec 008 US3), while files from surviving molecules are untouched.
-- [ ] T082 [P] [US4] Add a CLI test in `tests/cli/test_remove_workflow_fallback.py`: retract the currently adopted workflow molecule and confirm the ensuing install falls back to the bundled `speckit` workflow on the next resolve without any activation step (per Spec 011 amendment FR-008).
+- [X] T080 [P] [US4] Add CLI tests in `tests/cli/test_remove.py`: single-id retraction, comma-separated multi-id retraction, empty-compound drop after retraction, `unknown-molecule-id` refusal for absent id, preflight refusal for mixed present/absent request (no manifest edit; every missing id named in the diagnostic).
+- [X] T081 [P] [US4] Add an integration test in `tests/integration/test_remove_orphan_deletion.py`: retract a molecule and assert that every file `.haex-hive/install.lock` had listed as `paths` for that molecule is deleted after the ensuing install (per Spec 008 US3), while files from surviving molecules are untouched.
+- [X] T082 [P] [US4] Add a CLI test in `tests/cli/test_remove_workflow_fallback.py`: retract the currently adopted workflow molecule and confirm the ensuing install falls back to the bundled `speckit` workflow on the next resolve without any activation step (per Spec 011 amendment FR-008).
 
 ### Implementation for User Story 4
 
-- [ ] T085 [US4] Implement `src/haex_hive/cli/remove.py` per [contracts/haex-remove.cli.md](./contracts/haex-remove.cli.md). Accept `--lock-timeout=<sec>` (default 30, `0` = fail-fast). Preflight every named molecule id against `.haex-hive.json.compounds[].molecules[]` under the acquired manifest lock. Refuse with `unknown-molecule-id` naming every missing id if any are absent, before any mutation. On success, remove the ids, drop empty compounds, call `write_and_reinstall(…)`.
-- [ ] T086 [US4] Wire the `remove` subcommand into `src/haex_hive/cli/main.py`. Expose it under `haex remove …`.
+- [X] T085 [US4] Implement `src/haex_hive/cli/remove.py` per [contracts/haex-remove.cli.md](./contracts/haex-remove.cli.md). Accept `--lock-timeout=<sec>` (default 30, `0` = fail-fast). Preflight every named molecule id against `.haex-hive.json.compounds[].molecules[]` under the acquired manifest lock. Refuse with `unknown-molecule-id` naming every missing id if any are absent, before any mutation. On success, remove the ids, drop empty compounds, call `write_and_reinstall(…)`.
+- [X] T086 [US4] Wire the `remove` subcommand into `src/haex_hive/cli/main.py`. Expose it under `haex remove …`.
 
 **Checkpoint**: US4 fully functional. Retracting a molecule is one command; the preflight preserves "no state change on refusal" for mixed requests; orphan deletion inherits from Spec 008.
 
