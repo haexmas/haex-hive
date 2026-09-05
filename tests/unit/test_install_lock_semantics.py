@@ -82,3 +82,44 @@ def test_allows_empty_paths() -> None:
     molecules = [_molecule("com.example.molecule", paths=[])]
     lock = InstallLock.from_json(_payload(molecules))
     assert lock.molecules[0].paths == ()
+
+
+@pytest.mark.parametrize(
+    "retired_field, value",
+    [
+        ("generated_by", "haex 3.0.0"),
+        ("constitution", {"sources": [], "assembled_by": {}}),
+        ("atoms", []),
+        ("participating_roots", [".haex-hive/"]),
+        ("generation_inputs", []),
+        ("visibility_marker", {"generation_id": "g_20260831T142011Z_a4c2"}),
+    ],
+)
+def test_from_json_rejects_retired_top_level_fields(
+    retired_field: str, value: object
+) -> None:
+    """Retired v2-era / pre-amendment fields must refuse at the runtime read gate.
+
+    Without this the parser would stash them in `unknown_top_level` and
+    `to_json_bytes` would republish them, defeating the FR-005 schema gate.
+    """
+    data = json.loads(json.dumps(_BASE))
+    data[retired_field] = value
+    with pytest.raises(InstallLockSchemaInvalidError) as exc_info:
+        InstallLock.from_json(json.dumps(data).encode())
+    assert retired_field in exc_info.value.context.get("retired_fields", "")
+
+
+def test_from_json_preserves_unrelated_future_field_across_round_trip() -> None:
+    """A field the schema does not yet describe still round-trips.
+
+    Retired-field rejection must not regress forward-compat: any unknown field
+    that is not on the retired list continues to survive read/write cycles.
+    """
+    data = json.loads(json.dumps(_BASE))
+    data["future_v4_field"] = {"nested": ["value"]}
+
+    lock = InstallLock.from_json(json.dumps(data).encode())
+    round_tripped = json.loads(lock.to_json_bytes())
+
+    assert round_tripped["future_v4_field"] == data["future_v4_field"]
