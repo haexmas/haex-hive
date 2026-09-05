@@ -83,6 +83,22 @@ def _build_parser() -> argparse.ArgumentParser:
         help="resolve `.haex-hive.json` molecules and publish a new generation (Spec 008)",
     )
 
+    from haex_hive.cli import add as add_cli
+
+    add_parser = subparsers.add_parser(
+        "add",
+        help="adopt one or more molecules from a source repository (Spec 013)",
+    )
+    add_cli.add_arguments(add_parser)
+
+    from haex_hive.cli import remove as remove_cli
+
+    remove_parser = subparsers.add_parser(
+        "remove",
+        help="retract one or more molecules from .haex-hive.json (Spec 013)",
+    )
+    remove_cli.add_arguments(remove_parser)
+
     return parser
 
 
@@ -111,6 +127,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             from haex_hive.cli import install as install_cli
 
             return install_cli.run(args)
+        if args.command == "add":
+            from haex_hive.cli import add as add_cli
+
+            return add_cli.run(args)
+        if args.command == "remove":
+            from haex_hive.cli import remove as remove_cli
+
+            return remove_cli.run(args)
     except HaexError as exc:
         emit_refuse(exc)
         return exc.exit_code
