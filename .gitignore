@@ -20,6 +20,7 @@ Thumbs.db
 *.swp
 graphify-out/
 .worktrees/
+.playwright-mcp/
 
 # Manifest lock is per-checkout advisory-lock state (Spec 013), never committed.
 .spaex/manifest.json.lock

@@ -3,11 +3,12 @@
     {
       "molecules": [
         "com.github.haexmas.atoms.general-coding",
+        "com.github.haexmas.atoms.graphify-first-authoring",
         "com.github.haexmas.atoms.ponytail",
         "com.github.haexmas.atoms.python",
         "com.github.haexmas.atoms.spaex-constitution"
       ],
-      "revision": "cdb5c7845e3baac5fcd24e4f2aaea47ea2a6c952",
+      "revision": "9cac2b0d3e51bb85a9f74170969280bd639eb83f",
       "source": "https://github.com/haexmas/atoms"
     }
   ],
