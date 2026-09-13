@@ -49,6 +49,9 @@ and uninstall. The exact target-path table per runtime is captured in
 
 The global files remain user-owned. spaex changes only its marked block and
 never writes project-level `CLAUDE.md`, `AGENTS.md`, or Spec-Kit files.
+This core-bootstrap guarantee is separate from an explicitly adopted
+molecule's `install_hook`, whose project setup side effects are defined by
+Spec 016 and belong to that molecule rather than to spaex core.
 
 ## Alternatives considered
 
