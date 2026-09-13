@@ -12,7 +12,9 @@ orchestrator; this module owns the per-hook invocation contract:
 * execution-time script-path containment against the returned molecule
   directory on EVERY invocation, including cache hits (FR-014, FR-015);
 * subprocess launch with cwd = consumer repo root, complete stdio + env
-  inheritance (FR-012, FR-013).
+  inheritance (FR-012, FR-013). Any project-repository side effects from
+  that subprocess belong to the explicitly adopted molecule hook; spaex core
+  does not author project instruction files.
 """
 
 from __future__ import annotations
