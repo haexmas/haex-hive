@@ -14,8 +14,13 @@ new molecule can be adopted and configured in one operation.
 `<selection>` is one of:
 
 - `none` — record a successful skip and do not invoke `specify`;
-- `all` — select all declared integrations reported by `specify integration list`;
-- comma-separated integration keys such as `claude,codex`.
+- comma-separated integration keys such as `claude,codex`;
+- `all` — only as an answer in the interactive selector, after the declared
+  integrations have been shown to the operator.
+
+Passing `--speckit-agents all` is treated as a request to open that interactive
+selector again. In a non-interactive invocation it MUST refuse rather than
+install every declared integration.
 
 `--no-speckit-integrations` is a per-invocation opt-out. It does not remove the
 molecule declaration or external files and does not change the saved selection.
@@ -25,8 +30,9 @@ declare multi-install safe may set the declaration's boolean `force` field.
 spaex then passes the official CLI's explicit `--force` option; this is not a
 shell escape hatch and does not enable global installation.
 
-Precedence is explicit selection, matching install-lock selection, interactive
-prompt, then non-interactive refusal.
+Precedence is explicit concrete selection, matching install-lock selection,
+interactive prompt, then non-interactive refusal. The `all` shorthand is never
+an implicit selection: it always requires the interactive prompt.
 
 ## Diagnostics
 
@@ -38,7 +44,7 @@ The implementation MUST expose stable diagnostic keys for at least:
 | `speckit-cli-missing` | A legacy `specify` executable is not available on `PATH` when no provisioning block is declared. |
 | `speckit-cli-version-incompatible` | `specify version` does not satisfy the declaration. |
 | `speckit-integration-unsupported` | Selection is not reported by `specify integration list`. |
-| `speckit-selection-required` | Non-interactive install has no explicit or persisted selection. |
+| `speckit-selection-required` | Non-interactive install has no safe explicit or persisted selection, or `all` was requested without interactive confirmation. |
 | `speckit-cli-failed` | Official install operation failed. |
 | `speckit-declaration-conflict` | Multiple molecules declare incompatible Spec Kit policies. |
 

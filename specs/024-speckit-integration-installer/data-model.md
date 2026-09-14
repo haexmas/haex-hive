@@ -39,15 +39,16 @@ Selection is invocation state, not a new consumer-manifest top-level field.
 
 | Source | Shape | Precedence |
 |---|---|---:|
-| CLI override | `--speckit-agents claude,codex`, `--speckit-agents all`, or `--speckit-agents none` | 1 |
+| CLI override | `--speckit-agents claude,codex` or `--speckit-agents none`; `--speckit-agents all` re-enters the interactive selector | 1 |
 | Existing lock | previous successful selection for the same declaration fingerprint | 2 |
 | Interactive prompt | zero or more declared integration keys | 3 |
 | Non-interactive absence | refusal with actionable diagnostic | 4 |
 
 The selection is valid only when every selected key occurs in the molecule's
 declaration. `all` expands to all declared keys that the installed `specify`
-CLI reports as supported. `none` is a successful skip and never invokes the
-external installer.
+CLI reports as supported only after the interactive selector has shown the
+operator the available keys and received that answer. `none` is a successful
+skip and never invokes the external installer.
 
 ## Declaration fingerprint
 

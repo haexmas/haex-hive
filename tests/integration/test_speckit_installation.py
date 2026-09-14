@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -130,6 +131,7 @@ raise SystemExit(2)
         repo_root=tmp_path,
         existing_lock=lock,
         explicit_selection="all",
+        stdin=StringIO("all\n"),
         executable=(sys.executable, str(executable)),
     )
     assert (tmp_path / ".claude/skills/specify.md").exists()
