@@ -6,7 +6,9 @@ real Claude or Codex installation.
 
 ## 1. Prepare a fake official CLI
 
-Create a temporary executable named `specify` earlier on `PATH` that supports:
+Create a temporary fake CLI for tests. Production molecules declare an exact
+`specify-cli` package version; spaex runs it through `uv tool run` without
+requiring a separately installed `specify` executable. The fake CLI supports:
 
 ```text
 specify version

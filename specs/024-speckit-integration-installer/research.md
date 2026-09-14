@@ -142,3 +142,14 @@ available; Claude is currently marked installed and Codex is available but not
 installed. The implementation tests must use a fake `specify` executable for
 deterministic contract tests and reserve live CLI checks for an opt-in smoke
 test.
+
+## Amendment 2026-09-14: Provision the pinned CLI through uv
+
+The original Decision 3 deliberately left CLI provisioning to the operator.
+That boundary does not meet the intended molecule user experience: adopting a
+reviewed molecule should be sufficient to install its selected integrations.
+The follow-up decision is to add an optional `speckit.cli` block containing the
+fixed `specify-cli` package and exact version. spaex invokes that package via
+its runtime `uv` dependency and `uv tool run`, preserving isolation and the
+no-global-PATH rule. Declarations without the block retain the legacy
+PATH-based behavior for compatibility.

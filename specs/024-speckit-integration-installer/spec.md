@@ -94,7 +94,7 @@ A CI job or another non-interactive caller can install the declared integrations
 - **FR-006**: In a non-interactive invocation, `spaex install` MUST NOT prompt. It MUST use an explicit command-line selection or a previously persisted selection; otherwise it MUST refuse the Spec Kit step with an actionable diagnostic.
 - **FR-007**: The operator MUST be able to explicitly disable Spec Kit integration installation for one invocation without disabling the molecule's other contributions.
 - **FR-008**: For every selected integration, spaex MUST invoke the official `specify integration install <key>` operation and MUST NOT reimplement the integration's agent-specific file layout or command semantics.
-- **FR-009**: Before invoking the official CLI, spaex MUST verify that the required `specify` executable or pinned runner is available and satisfies the molecule's declared version policy. spaex MUST NOT install an unrelated Python environment or agent runtime implicitly as part of this feature.
+- **FR-009**: Before invoking the official CLI, spaex MUST provision the declared exact `specify-cli` package through its bundled `uv` dependency when a CLI provisioning declaration is present, then verify that the resulting pinned runner satisfies the molecule's declared version policy. spaex MUST NOT install an agent runtime implicitly as part of this feature.
 - **FR-010**: spaex MUST pass the integration-specific options declared by the molecule, including `--skills` where required by the official integration contract.
 - **FR-011**: spaex MUST record the selected integrations, the effective Spec Kit CLI version or immutable source revision, the declaration identity, and each integration outcome in the install lock or an equivalent generation-owned record.
 - **FR-012**: Repeating `spaex install` with unchanged declaration, CLI identity, selection, and successful integration state MUST be a no-op with respect to external Spec Kit files and MUST NOT prompt.
@@ -130,7 +130,7 @@ A CI job or another non-interactive caller can install the declared integrations
 
 - The official Spec Kit CLI remains the authority for integration layouts, command naming, file ownership, and agent-specific compatibility.
 - The first implementation supports project-local integrations only. Global agent installation is out of scope unless explicitly added by a later requirement.
-- The `specify` CLI is provisioned separately by the operator or a supported environment manager; this feature does not silently install Python, uv, or an agent runtime.
+- The `specify` CLI is provisioned through spaex's bundled `uv` dependency when the molecule supplies a pinned CLI declaration. The feature does not install an agent runtime or modify the user's PATH.
 - The molecule's external Spec Kit reference is reviewed and pinned before installation. A moving branch or `latest` reference is not sufficient for reproducible content.
 - A project may select multiple Spec Kit integrations when the installed Spec Kit CLI declares them safe; otherwise the operator must explicitly acknowledge the CLI's multi-install safety requirement.
 - External CLI side effects are not part of spaex's atomic file-generation rollback. spaex records the result and reports partial external changes rather than pretending to undo them.

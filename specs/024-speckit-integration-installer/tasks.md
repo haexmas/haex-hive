@@ -175,4 +175,4 @@ description: "Implementation tasks for declarative Spec Kit integration installa
 - Every task has a checkbox, sequential ID, required story label where applicable, and concrete file path.
 - `[P]` marks only tasks that can safely proceed in parallel on distinct files or independent test cases.
 - Implementation must repeat the required plain `graphify query` consultation before authoring each new named production artifact and evaluate all returned candidates.
-- No new dependency or copied Spec Kit `SKILL.md` content is planned.
+- The runtime `uv` dependency provisions the pinned Spec Kit CLI; no copied Spec Kit `SKILL.md` content is planned.

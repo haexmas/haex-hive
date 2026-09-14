@@ -39,7 +39,9 @@ cd spaex
 pip install -e '.[dev]'
 ```
 
-Requires Python 3.10+ and Git 2.30+ on `$PATH`. Only runtime dependency is `jsonschema`.
+Requires Python 3.14.x and Git 2.30+ on `$PATH`. spaex includes `uv` for
+isolated, pinned CLI provisioning; `jsonschema` and `pyyaml` are the other
+runtime dependencies.
 
 After `spaex install` completes, `.spaex/install.lock` is present and byte-identical across two consecutive runs.
 

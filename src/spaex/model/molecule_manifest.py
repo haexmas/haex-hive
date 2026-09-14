@@ -37,11 +37,20 @@ class InstallHook:
 
 
 @dataclass(frozen=True)
+class SpeckitCliProvisioning:
+    """Pinned PyPI package used to run the official Spec Kit CLI via uv."""
+
+    package: Literal["specify-cli"]
+    version: VersionConstraint
+
+
+@dataclass(frozen=True)
 class SpeckitDeclaration:
     """Declarative official Spec Kit integrations owned by a molecule."""
 
     version_constraint: VersionConstraint
     integrations: Mapping[str, str]
+    cli: SpeckitCliProvisioning | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "integrations", freeze_json(dict(self.integrations)))
@@ -153,7 +162,27 @@ def _parse_speckit(raw: Any) -> SpeckitDeclaration | None:
         version_constraint = VersionConstraint.parse(raw["version_constraint"])
     except (TypeError, ValueError) as exc:
         raise SpeckitDeclarationParseError(str(exc)) from exc
-    return SpeckitDeclaration(version_constraint=version_constraint, integrations=options)
+    cli_raw = raw.get("cli")
+    cli: SpeckitCliProvisioning | None = None
+    if cli_raw is not None:
+        try:
+            cli_version = VersionConstraint.parse(cli_raw["version"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise SpeckitDeclarationParseError(str(exc)) from exc
+        if cli_version.operator != "==":
+            raise SpeckitDeclarationParseError(
+                "speckit cli.version must be an exact X.Y.Z version"
+            )
+        if not version_constraint.satisfied_by(cli_version.version):
+            raise SpeckitDeclarationParseError(
+                "speckit cli.version must satisfy version_constraint"
+            )
+        cli = SpeckitCliProvisioning(package=cli_raw["package"], version=cli_version)
+    return SpeckitDeclaration(
+        version_constraint=version_constraint,
+        integrations=options,
+        cli=cli,
+    )
 
 
 def _freeze_constitution_fragments(

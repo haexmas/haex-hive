@@ -19,8 +19,14 @@ from types import MappingProxyType
 from typing import TextIO
 
 from spaex.constitution.resolve import ResolvedMolecule
+from spaex.integrations.runner import (
+    CliExecutable,
+    build_install_argv,
+    resolve_cli_executable,
+)
 from spaex.model.install_lock import InstallLock, SpeckitLockRecord, SpeckitOutcomeStatus
 from spaex.model.molecule_manifest import SpeckitDeclaration
+from spaex.model.version_constraint import VersionConstraint
 from spaex.util.errors import (
     SpeckitCliFailedError,
     SpeckitCliMissingError,
@@ -32,7 +38,6 @@ from spaex.util.errors import (
 
 _VERSION_RE = re.compile(r"(?<!\d)(\d+)\.(\d+)\.(\d+)(?!\d)")
 _KEY_RE = re.compile(r"^│\s*([a-z0-9][a-z0-9-]*)\s+│")
-CliExecutable = str | Sequence[str]
 
 
 @dataclass(frozen=True)
@@ -160,6 +165,14 @@ def declaration_fingerprint(
         "declaration": {
             "version_constraint": _constraint_text(declaration),
             "integrations": dict(sorted(declaration.integrations.items())),
+            "cli": (
+                {
+                    "package": declaration.cli.package,
+                    "version": _constraint_text(declaration.cli.version),
+                }
+                if declaration.cli is not None
+                else None
+            ),
         },
         "source": source,
         "revision": revision,
@@ -167,15 +180,6 @@ def declaration_fingerprint(
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
-
-
-def build_install_argv(executable: CliExecutable, key: str, options: str) -> list[str]:
-    """Build a shell-free official install invocation."""
-    argv = [executable] if isinstance(executable, str) else list(executable)
-    argv.extend(("integration", "install", key))
-    if options:
-        argv.append(f"--integration-options={options}")
-    return argv
 
 
 def run_cli(
@@ -231,10 +235,10 @@ def verify_cli(
     declaration: SpeckitDeclaration,
     *,
     repo_root: Path,
-    executable: CliExecutable = "specify",
+    executable: CliExecutable | None = None,
 ) -> tuple[str, tuple[str, ...]]:
     """Verify CLI version and supported keys before any install invocation."""
-    executable_argv = [executable] if isinstance(executable, str) else list(executable)
+    executable_argv = resolve_cli_executable(declaration, executable)
     version_result = run_cli([*executable_argv, "version"], repo_root=repo_root)
     if version_result.returncode != 0:
         raise SpeckitCliFailedError(
@@ -275,13 +279,14 @@ def install_selected(
     *,
     repo_root: Path,
     cli_version: str,
-    executable: CliExecutable = "specify",
+    executable: CliExecutable | None = None,
 ) -> dict[str, SpeckitOutcomeStatus]:
     """Install selected integrations serially through the official CLI."""
     outcomes: dict[str, SpeckitOutcomeStatus] = {}
+    cli_executable = resolve_cli_executable(declaration, executable)
     for key in sorted(selected):
         result = run_cli(
-            build_install_argv(executable, key, declaration.integrations[key]),
+            build_install_argv(cli_executable, key, declaration.integrations[key]),
             repo_root=repo_root,
             capture_output=False,
         )
@@ -329,7 +334,7 @@ def prepare_install(
     existing_lock: InstallLock | None,
     explicit_selection: str | None = None,
     disabled: bool = False,
-    executable: CliExecutable = "specify",
+    executable: CliExecutable | None = None,
 ) -> SpeckitInstallRecords:
     """Validate declarations, select agents, and install external integrations.
 
@@ -424,7 +429,8 @@ def prepare_install(
         }
         return SpeckitInstallRecords(skipped_records, skipped_records)
 
-    cli_version, supported = verify_cli(first, repo_root=repo_root, executable=executable)
+    cli_executable = resolve_cli_executable(first, executable)
+    cli_version, supported = verify_cli(first, repo_root=repo_root, executable=cli_executable)
     ensure_supported(selected, supported)
     existing_for_first = existing_by_id.get(declarations[0].molecule_id)
     already_selected = (
@@ -443,7 +449,7 @@ def prepare_install(
         new_keys,
         repo_root=repo_root,
         cli_version=cli_version,
-        executable=executable,
+        executable=cli_executable,
     )
     if existing_for_first is not None and already_selected:
         outcomes = {
@@ -462,9 +468,14 @@ def prepare_install(
     return SpeckitInstallRecords(records, records)
 
 
-def _constraint_text(declaration: SpeckitDeclaration) -> str:
-    operator = declaration.version_constraint.operator
-    major, minor, patch = declaration.version_constraint.version
+def _constraint_text(declaration: SpeckitDeclaration | VersionConstraint) -> str:
+    constraint = (
+        declaration.version_constraint
+        if isinstance(declaration, SpeckitDeclaration)
+        else declaration
+    )
+    operator = constraint.operator
+    major, minor, patch = constraint.version
     return f"{operator if operator == '>=' else ''}{major}.{minor}.{patch}"
 
 
@@ -480,6 +491,7 @@ __all__ = [
     "parse_supported_integrations",
     "parse_version_output",
     "run_cli",
+    "resolve_cli_executable",
     "select_integrations",
     "verify_cli",
 ]
