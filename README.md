@@ -1,6 +1,6 @@
 # spaex — reproducible coding harnesses for any repo and development environment
 
-**Status**: `4.2.0` (adds the behavior harness and declarative Spec Kit integration installer; see [Spec 023](specs/023-behavior-harness/) and [Spec 024](specs/024-speckit-integration-installer/)). Portmanteau of `spec` and `haex`. See [docs/adr/0011-rename-to-spaex.md](docs/adr/0011-rename-to-spaex.md) for the rename decision and [specs/014-rename-to-spaex/](specs/014-rename-to-spaex/) for the full spec.
+**Status**: `4.3.0` (adds explicit multi-agent Spec Kit installation support on top of the behavior harness and declarative Spec Kit integration installer; see [Spec 023](specs/023-behavior-harness/) and [Spec 024](specs/024-speckit-integration-installer/)). Portmanteau of `spec` and `haex`. See [docs/adr/0011-rename-to-spaex.md](docs/adr/0011-rename-to-spaex.md) for the rename decision and [specs/014-rename-to-spaex/](specs/014-rename-to-spaex/) for the full spec.
 
 ## What it is
 
@@ -25,7 +25,7 @@ The v4 molecule-manifest schema treats `atoms{}` as an open `Dict[str, List[str]
 
 ## Install
 
-**Once published to PyPI (upcoming with the `v4.2.0` tag):**
+**Once published to PyPI (upcoming with the `v4.3.0` tag):**
 
 ```bash
 pipx install spaex

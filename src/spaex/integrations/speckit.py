@@ -161,6 +161,10 @@ def declaration_fingerprint(
         "version_constraint": _constraint_text(declaration),
         "integrations": dict(sorted(declaration.integrations.items())),
     }
+    # Keep fingerprints byte-compatible for existing declarations that used
+    # the default false value; explicit force changes the installation policy.
+    if declaration.force:
+        declaration_payload["force"] = True
     # Preserve fingerprints in existing locks for declarations without provisioning.
     if declaration.cli is not None:
         declaration_payload["cli"] = {
@@ -279,7 +283,12 @@ def install_selected(
     cli_executable = resolve_cli_executable(declaration, executable)
     for key in sorted(selected):
         result = run_cli(
-            build_install_argv(cli_executable, key, declaration.integrations[key]),
+            build_install_argv(
+                cli_executable,
+                key,
+                declaration.integrations[key],
+                force=declaration.force,
+            ),
             repo_root=repo_root,
             capture_output=False,
         )

@@ -18,6 +18,7 @@ def _valid() -> dict[str, Any]:
         "atoms": {},
         "speckit": {
             "version_constraint": ">=0.8.1",
+            "force": True,
             "cli": {"package": "specify-cli", "version": "0.8.1"},
             "integrations": {
                 "claude": {"integration_options": "--skills"},
@@ -35,6 +36,7 @@ def test_speckit_only_manifest_is_valid_and_parsed() -> None:
     assert parsed.speckit.cli is not None
     assert parsed.speckit.cli.package == "specify-cli"
     assert parsed.speckit.cli.version.version == (0, 8, 1)
+    assert parsed.speckit.force is True
 
 
 def test_empty_atoms_without_speckit_remains_invalid() -> None:
@@ -67,4 +69,11 @@ def test_cli_version_must_be_exact_and_satisfy_policy() -> None:
 
     data["speckit"]["cli"]["version"] = "0.7.0"
     with pytest.raises(ValueError, match="satisfy version_constraint"):
+        MoleculeManifest.from_json(json.dumps(data).encode())
+
+
+def test_force_must_be_boolean() -> None:
+    data = _valid()
+    data["speckit"]["force"] = "yes"
+    with pytest.raises(schema_validator.SchemaValidationError, match="force.*boolean"):
         MoleculeManifest.from_json(json.dumps(data).encode())

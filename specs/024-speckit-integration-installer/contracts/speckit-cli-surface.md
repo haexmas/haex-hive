@@ -20,6 +20,11 @@ new molecule can be adopted and configured in one operation.
 `--no-speckit-integrations` is a per-invocation opt-out. It does not remove the
 molecule declaration or external files and does not change the saved selection.
 
+Molecules that need to install integrations which the official CLI does not
+declare multi-install safe may set the declaration's boolean `force` field.
+spaex then passes the official CLI's explicit `--force` option; this is not a
+shell escape hatch and does not enable global installation.
+
 Precedence is explicit selection, matching install-lock selection, interactive
 prompt, then non-interactive refusal.
 

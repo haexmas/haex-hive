@@ -11,10 +11,19 @@ from spaex.model.version_constraint import VersionConstraint
 CliExecutable = str | Sequence[str]
 
 
-def build_install_argv(executable: CliExecutable, key: str, options: str) -> list[str]:
+def build_install_argv(
+    executable: CliExecutable,
+    key: str,
+    options: str,
+    *,
+    force: bool = False,
+) -> list[str]:
     """Build a shell-free official install invocation."""
     argv = [executable] if isinstance(executable, str) else list(executable)
-    argv.extend(("integration", "install", key))
+    argv.extend(("integration", "install"))
+    if force:
+        argv.append("--force")
+    argv.append(key)
     if options:
         argv.append(f"--integration-options={options}")
     return argv
