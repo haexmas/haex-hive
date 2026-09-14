@@ -32,6 +32,7 @@ from spaex.schema import validator as schema_validator
 from spaex.util.errors import InstallLockSchemaInvalidError
 
 HookStatus = Literal["ok", "failed", "skipped"]
+SpeckitOutcomeStatus = Literal["installed", "already_satisfied", "skipped"]
 
 _KNOWN_TOP_LEVEL_FIELDS = frozenset({"spaex_version", "generation_id", "molecules"})
 
@@ -66,6 +67,20 @@ class ConstitutionSource:
 
 
 @dataclass(frozen=True)
+class SpeckitLockRecord:
+    """Successful Spec Kit integration state persisted per molecule."""
+
+    cli_version: str
+    declaration_fingerprint: str
+    selected: tuple[str, ...]
+    outcomes: Mapping[str, SpeckitOutcomeStatus]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "selected", tuple(sorted(set(self.selected))))
+        object.__setattr__(self, "outcomes", freeze_json(dict(self.outcomes)))
+
+
+@dataclass(frozen=True)
 class MoleculeEntry:
     """One installed molecule's sealed contribution (data-model.md §MoleculeEntry)."""
 
@@ -74,6 +89,7 @@ class MoleculeEntry:
     revision: str
     paths: tuple[str, ...]
     hook_status: HookStatus | None = None
+    speckit: SpeckitLockRecord | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "paths", tuple(self.paths))
@@ -181,6 +197,7 @@ def _parse_molecules(raw: Any) -> tuple[MoleculeEntry, ...]:
             revision=item["revision"],
             paths=tuple(item["paths"]),
             hook_status=item.get("hook_status"),
+            speckit=_parse_speckit_record(item.get("speckit")),
         )
         for item in raw
     )
@@ -195,4 +212,22 @@ def _serialize_molecule(molecule: MoleculeEntry) -> dict[str, Any]:
     }
     if molecule.hook_status is not None:
         obj["hook_status"] = molecule.hook_status
+    if molecule.speckit is not None:
+        obj["speckit"] = {
+            "cli_version": molecule.speckit.cli_version,
+            "declaration_fingerprint": molecule.speckit.declaration_fingerprint,
+            "selected": list(molecule.speckit.selected),
+            "outcomes": thaw_json(molecule.speckit.outcomes),
+        }
     return obj
+
+
+def _parse_speckit_record(raw: Any) -> SpeckitLockRecord | None:
+    if raw is None:
+        return None
+    return SpeckitLockRecord(
+        cli_version=raw["cli_version"],
+        declaration_fingerprint=raw["declaration_fingerprint"],
+        selected=tuple(raw["selected"]),
+        outcomes=raw["outcomes"],
+    )

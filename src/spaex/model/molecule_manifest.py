@@ -17,6 +17,7 @@ from typing import Any, Literal
 from spaex.model._immutable import freeze_json
 from spaex.model.molecule_id import MoleculeId
 from spaex.model.repo_relative_path import RepoRelativePath
+from spaex.model.version_constraint import VersionConstraint
 from spaex.schema import validator as schema_validator
 from spaex.util.errors import MoleculeAtomsCategoryOverlapError
 
@@ -32,6 +33,17 @@ class InstallHook:
 
 
 @dataclass(frozen=True)
+class SpeckitDeclaration:
+    """Declarative official Spec Kit integrations owned by a molecule."""
+
+    version_constraint: VersionConstraint
+    integrations: Mapping[str, str]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "integrations", freeze_json(dict(self.integrations)))
+
+
+@dataclass(frozen=True)
 class MoleculeManifest:
     spaex_version: str
     id: str
@@ -41,6 +53,7 @@ class MoleculeManifest:
     defaults: Mapping[str, Any] = field(default_factory=dict)
     config_schema: str | None = None
     install_hook: InstallHook | None = None
+    speckit: SpeckitDeclaration | None = None
     constitution_fragments: Mapping[str, tuple[Mapping[str, Any], ...]] = field(
         default_factory=dict
     )
@@ -79,6 +92,7 @@ class MoleculeManifest:
             )
 
         install_hook = _parse_install_hook(data.get("install_hook"))
+        speckit = _parse_speckit(data.get("speckit"))
 
         constitution_fragments = _freeze_constitution_fragments(
             data.get("constitution_fragments", {})
@@ -93,6 +107,7 @@ class MoleculeManifest:
             defaults=freeze_json(defaults),
             config_schema=config_schema,
             install_hook=install_hook,
+            speckit=speckit,
             constitution_fragments=constitution_fragments,
         )
 
@@ -107,6 +122,28 @@ def _parse_install_hook(raw: Any) -> InstallHook | None:
         script=raw["script"],
         args=tuple(args_raw),
         on_failure=raw.get("on_failure", "abort"),
+    )
+
+
+def _parse_speckit(raw: Any) -> SpeckitDeclaration | None:
+    """Parse the typed Spec Kit declaration after schema validation."""
+    if raw is None:
+        return None
+    options: dict[str, str] = {}
+    for key, value in raw["integrations"].items():
+        option = value.get("integration_options", "")
+        if any(token in option for token in ("\x00", "\n", "\r")):
+            raise ValueError("speckit integration_options must not contain control characters")
+        if any(operator in option for operator in ("&&", "||", ";", "|", ">", "<", "`", "$")):
+            raise ValueError("speckit integration_options must not contain shell operators")
+        if "--global" in option or "--project" in option:
+            raise ValueError(
+                "speckit integration_options cannot request global or project installation"
+            )
+        options[key] = option
+    return SpeckitDeclaration(
+        version_constraint=VersionConstraint.parse(raw["version_constraint"]),
+        integrations=options,
     )
 
 

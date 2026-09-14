@@ -31,6 +31,7 @@ from spaex.util.errors import (
     MoleculeTreeExtractionError,
     MoleculeTreePathNotFoundError,
     PublisherCloneUnavailableError,
+    SpeckitDeclarationInvalidError,
 )
 
 
@@ -308,6 +309,14 @@ def _iterate_resolved_molecules(
             try:
                 molecule_manifest = MoleculeManifest.from_json(molecule_bytes)
             except (ValueError, KeyError) as exc:
+                if "speckit" in str(exc):
+                    raise SpeckitDeclarationInvalidError(
+                        message=(
+                            f"molecule Spec Kit declaration for {molecule_id!r} "
+                            f"is invalid: {exc}"
+                        ),
+                        context={"molecule_id": molecule_id},
+                    ) from exc
                 raise MissingAtomManifestError(
                     message=f"molecule manifest for {molecule_id!r} is invalid: {exc}",
                     context={"atom_id": molecule_id},

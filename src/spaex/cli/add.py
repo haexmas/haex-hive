@@ -368,6 +368,18 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
             "FR-027)."
         ),
     )
+    parser.add_argument(
+        "--speckit-agents",
+        dest="speckit_agents",
+        default=None,
+        help="Select declared Spec Kit integrations for the internal install.",
+    )
+    parser.add_argument(
+        "--no-speckit-integrations",
+        dest="no_speckit_integrations",
+        action="store_true",
+        help="Skip declared Spec Kit integrations for the internal install.",
+    )
 
 
 def run(args: argparse.Namespace) -> int:
@@ -429,6 +441,10 @@ def run(args: argparse.Namespace) -> int:
             new_bytes,
             lock,
             skip_hooks=bool(getattr(args, "skip_hooks", False)),
+            speckit_agents=getattr(args, "speckit_agents", None),
+            no_speckit_integrations=bool(
+                getattr(args, "no_speckit_integrations", False)
+            ),
             # FR-024a: add-time plausibility check. A cross-molecule Composer
             # contradiction warns and marks `.spaex/.stale` instead of
             # aborting this `spaex add`; reconciliation is deferred to the

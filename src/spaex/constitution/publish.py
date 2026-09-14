@@ -24,7 +24,7 @@ rename-swap of `.spaex/` (delete-orphans via full-directory swap).
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from stat import S_IMODE
@@ -36,7 +36,12 @@ from spaex.constitution.safety import (
 )
 from spaex.install.generation import allocate_generation_id
 from spaex.io import atomic, transaction
-from spaex.model.install_lock import HookStatus, InstallLock, MoleculeEntry
+from spaex.model.install_lock import (
+    HookStatus,
+    InstallLock,
+    MoleculeEntry,
+    SpeckitLockRecord,
+)
 from spaex.util.errors import HaexError, PostWriteValidationError
 
 CONSTITUTION_PATH = f"{transaction.SPAEX_DIR}/{transaction.CONSTITUTION_NAME}"
@@ -200,6 +205,7 @@ def publish_constitution(
     state_root: Path | None = None,
     hook_status: HookStatus | None = None,
     hook_only_records: Sequence[MoleculeEntry] = (),
+    speckit_records: Mapping[str, SpeckitLockRecord] | None = None,
     preserved_files: Sequence[transaction.StagedFile] = (),
 ) -> None:
     """Join all declared constitution files from one molecule and publish.
@@ -257,6 +263,7 @@ def publish_constitution(
         revision=source.revision,
         paths=(CONSTITUTION_PATH,),
         hook_status=hook_status,
+        speckit=(speckit_records or {}).get(source.id),
     )
     _publish_constitution(
         (molecule, *hook_only_records),

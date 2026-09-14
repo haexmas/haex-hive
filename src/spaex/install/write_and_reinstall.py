@@ -42,6 +42,8 @@ def write_and_reinstall(
     held_manifest_lock: ManifestLockContext,
     *,
     skip_hooks: bool = False,
+    speckit_agents: str | None = None,
+    no_speckit_integrations: bool = False,
     abort_on_behavior_contradiction: bool = True,
 ) -> int:
     """Publish the mutated manifest and delegate to ``haex install`` in-process.
@@ -64,6 +66,8 @@ def write_and_reinstall(
             argparse.Namespace(
                 repo_root=str(repo_root),
                 skip_hooks=skip_hooks,
+                speckit_agents=speckit_agents,
+                no_speckit_integrations=no_speckit_integrations,
                 abort_on_behavior_contradiction=abort_on_behavior_contradiction,
             ),
             held_manifest_lock=held_manifest_lock,

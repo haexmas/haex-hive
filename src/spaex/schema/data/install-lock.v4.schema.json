@@ -54,6 +54,33 @@
         "hook_status": {
           "enum": ["ok", "failed", "skipped"],
           "description": "Outcome of this molecule's install_hook invocation for the current generation. Present ONLY when the pinned molecule manifest declared install_hook. 'ok' = hook was enabled and exited 0. 'failed' = hook could not be launched, violated cache containment, or exited non-zero under on_failure='warn'. 'skipped' = operator supplied --no-install-hooks. A hook failure under on_failure='abort' produces no record because the entire generation rolls back."
+        },
+        "speckit": {
+          "$ref": "#/$defs/speckitRecord",
+          "description": "Successful Spec Kit integration selection and outcomes for this molecule."
+        }
+      }
+    },
+    "speckitRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cli_version", "declaration_fingerprint", "selected", "outcomes"],
+      "properties": {
+        "cli_version": { "type": "string", "minLength": 1 },
+        "declaration_fingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "selected": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" }
+        },
+        "outcomes": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": ["installed", "already_satisfied", "skipped"]
+          }
         }
       }
     }

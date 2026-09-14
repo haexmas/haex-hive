@@ -234,6 +234,55 @@ class UsageError(HaexError):
     hint: str = ""
 
 
+@dataclass
+class SpeckitDeclarationInvalidError(HaexError):
+    diagnostic_key: str = "speckit-declaration-invalid"
+    exit_code: int = exit_codes.VALIDATION_REFUSE
+    hint: str = "Repair the molecule's `speckit` declaration and retry."
+
+
+@dataclass
+class SpeckitCliMissingError(HaexError):
+    diagnostic_key: str = "speckit-cli-missing"
+    exit_code: int = exit_codes.SYSTEM_REFUSE
+    hint: str = "Install the official Spec Kit CLI separately, then retry."
+
+
+@dataclass
+class SpeckitCliVersionIncompatibleError(HaexError):
+    diagnostic_key: str = "speckit-cli-version-incompatible"
+    exit_code: int = exit_codes.INPUT_REFUSE
+    hint: str = "Use a `specify` CLI version satisfying the molecule declaration."
+
+
+@dataclass
+class SpeckitIntegrationUnsupportedError(HaexError):
+    diagnostic_key: str = "speckit-integration-unsupported"
+    exit_code: int = exit_codes.INPUT_REFUSE
+    hint: str = "Select an integration reported by `specify integration list`."
+
+
+@dataclass
+class SpeckitSelectionRequiredError(HaexError):
+    diagnostic_key: str = "speckit-selection-required"
+    exit_code: int = exit_codes.USAGE
+    hint: str = "Pass `--speckit-agents <keys>` or `--no-speckit-integrations`."
+
+
+@dataclass
+class SpeckitCliFailedError(HaexError):
+    diagnostic_key: str = "speckit-cli-failed"
+    exit_code: int = exit_codes.INPUT_REFUSE
+    hint: str = "Inspect the official Spec Kit CLI output and retry."
+
+
+@dataclass
+class SpeckitDeclarationConflictError(HaexError):
+    diagnostic_key: str = "speckit-declaration-conflict"
+    exit_code: int = exit_codes.INPUT_REFUSE
+    hint: str = "Adopt one compatible Spec Kit declaration per consumer project."
+
+
 # --- Spec 013 spaex add / spaex remove boundary --------------------------------
 
 
