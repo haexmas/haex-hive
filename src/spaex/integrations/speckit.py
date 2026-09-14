@@ -86,11 +86,7 @@ def parse_version_output(output: str) -> tuple[int, int, int]:
 def parse_supported_integrations(output: str) -> tuple[str, ...]:
     """Parse integration keys from the official table output."""
     keys = sorted(
-        {
-            match.group(1)
-            for line in output.splitlines()
-            if (match := _KEY_RE.search(line))
-        }
+        {match.group(1) for line in output.splitlines() if (match := _KEY_RE.search(line))}
     )
     return tuple(keys)
 
@@ -161,19 +157,18 @@ def declaration_fingerprint(
     config: Mapping[str, object] | None = None,
 ) -> str:
     """Hash the declaration and immutable molecule identity canonically."""
+    declaration_payload: dict[str, object] = {
+        "version_constraint": _constraint_text(declaration),
+        "integrations": dict(sorted(declaration.integrations.items())),
+    }
+    # Preserve fingerprints in existing locks for declarations without provisioning.
+    if declaration.cli is not None:
+        declaration_payload["cli"] = {
+            "package": declaration.cli.package,
+            "version": _constraint_text(declaration.cli.version),
+        }
     payload = {
-        "declaration": {
-            "version_constraint": _constraint_text(declaration),
-            "integrations": dict(sorted(declaration.integrations.items())),
-            "cli": (
-                {
-                    "package": declaration.cli.package,
-                    "version": _constraint_text(declaration.cli.version),
-                }
-                if declaration.cli is not None
-                else None
-            ),
-        },
+        "declaration": declaration_payload,
         "source": source,
         "revision": revision,
         "config": dict(config or {}),
@@ -249,14 +244,14 @@ def verify_cli(
         version = parse_version_output(version_result.stdout + "\n" + version_result.stderr)
     except ValueError as exc:
         raise SpeckitCliVersionIncompatibleError(message=str(exc)) from exc
-    if not declaration.version_constraint.satisfied_by(version):
+    required = declaration.version_constraint
+    if declaration.cli is not None and not declaration.cli.version.satisfied_by(version):
+        required = declaration.cli.version
+    if not required.satisfied_by(version):
         version_text = ".".join(str(part) for part in version)
         raise SpeckitCliVersionIncompatibleError(
-            message=(
-                f"specify CLI {version_text} does not satisfy "
-                f"{_constraint_text(declaration)!r}"
-            ),
-            context={"installed": version_text, "required": _constraint_text(declaration)},
+            message=(f"specify CLI {version_text} does not satisfy {_constraint_text(required)!r}"),
+            context={"installed": version_text, "required": _constraint_text(required)},
         )
 
     list_result = run_cli(
@@ -268,9 +263,7 @@ def verify_cli(
             message="official `specify integration list` failed",
             context={"exit_code": str(list_result.returncode)},
         )
-    return ".".join(str(part) for part in version), parse_supported_integrations(
-        list_result.stdout
-    )
+    return ".".join(str(part) for part in version), parse_supported_integrations(list_result.stdout)
 
 
 def install_selected(
@@ -345,8 +338,7 @@ def prepare_install(
     declarations = [
         record
         for record in resolved
-        if getattr(getattr(record, "molecule_manifest", None), "speckit", None)
-        is not None
+        if getattr(getattr(record, "molecule_manifest", None), "speckit", None) is not None
     ]
     if not declarations:
         return SpeckitInstallRecords({}, {})
@@ -363,17 +355,11 @@ def prepare_install(
         if declaration != first:
             raise SpeckitDeclarationConflictError(
                 message="adopted molecules declare incompatible Spec Kit policies",
-                context={
-                    "molecules": ",".join(
-                        sorted(r.molecule_id for r in declarations)
-                    )
-                },
+                context={"molecules": ",".join(sorted(r.molecule_id for r in declarations))},
             )
 
     fingerprints = {
-        record.molecule_id: declaration_fingerprint(
-            first, record.source_url, record.revision
-        )
+        record.molecule_id: declaration_fingerprint(first, record.source_url, record.revision)
         for record in declarations
     }
     existing_by_id = {

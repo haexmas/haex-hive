@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from spaex.constitution.resolve import ResolvedMolecule
 from spaex.integrations.speckit import prepare_install
-from spaex.model.molecule_manifest import MoleculeManifest
+from spaex.model.molecule_manifest import MoleculeManifest, SpeckitCliProvisioning
+from spaex.model.version_constraint import VersionConstraint
 from spaex.util.errors import (
     SpeckitCliFailedError,
     SpeckitCliMissingError,
@@ -28,9 +30,7 @@ def _resolved(tmp_path: Path, *, integration_key: str = "codex") -> list[Resolve
                 "atoms": {},
                 "speckit": {
                     "version_constraint": "0.8.1",
-                    "integrations": {
-                        integration_key: {"integration_options": "--skills"}
-                    },
+                    "integrations": {integration_key: {"integration_options": "--skills"}},
                 },
             }
         ).encode()
@@ -50,9 +50,7 @@ def _resolved(tmp_path: Path, *, integration_key: str = "codex") -> list[Resolve
     ]
 
 
-def _cli(
-    tmp_path: Path, *, version: str = "0.8.1", fail_install: bool = False
-) -> tuple[str, str]:
+def _cli(tmp_path: Path, *, version: str = "0.8.1", fail_install: bool = False) -> tuple[str, str]:
     executable = tmp_path / "fake_specify.py"
     target = "partial.md" if fail_install else "specify.md"
     exit_code = 7 if fail_install else 0
@@ -110,6 +108,30 @@ def test_unsupported_selection_is_rejected_before_install(tmp_path: Path) -> Non
             explicit_selection="gemini",
             executable=_cli(tmp_path),
         )
+
+
+@pytest.mark.parametrize("actual_version", ["0.8.1", "0.8.3"])
+def test_cli_must_match_exact_pin_even_when_policy_allows_it(
+    tmp_path: Path, actual_version: str
+) -> None:
+    resolved = _resolved(tmp_path)[0]
+    manifest = resolved.molecule_manifest
+    assert manifest is not None and manifest.speckit is not None
+    declaration = replace(
+        manifest.speckit,
+        version_constraint=VersionConstraint.parse(">=0.8.1"),
+        cli=SpeckitCliProvisioning("specify-cli", VersionConstraint.parse("0.8.2")),
+    )
+    resolved = replace(resolved, molecule_manifest=replace(manifest, speckit=declaration))
+    with pytest.raises(SpeckitCliVersionIncompatibleError, match="0.8.2"):
+        prepare_install(
+            [resolved],
+            repo_root=tmp_path,
+            existing_lock=None,
+            explicit_selection="codex",
+            executable=_cli(tmp_path, version=actual_version),
+        )
+    assert not (tmp_path / ".agents").exists()
 
 
 def test_all_selection_rejects_unsupported_before_install(tmp_path: Path) -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -8,7 +9,7 @@ import pytest
 
 from spaex.constitution.resolve import ResolvedMolecule
 from spaex.integrations.speckit import prepare_install
-from spaex.model.install_lock import InstallLock, MoleculeEntry
+from spaex.model.install_lock import InstallLock, MoleculeEntry, SpeckitLockRecord
 from spaex.model.molecule_manifest import MoleculeManifest
 from spaex.util.errors import (
     SpeckitDeclarationConflictError,
@@ -55,8 +56,7 @@ def _resolved(tmp_path: Path, *, molecule_id: str, options: dict[str, str]):
                 "speckit": {
                     "version_constraint": ">=0.8.1",
                     "integrations": {
-                        key: {"integration_options": value}
-                        for key, value in options.items()
+                        key: {"integration_options": value} for key, value in options.items()
                     },
                 },
             }
@@ -115,9 +115,7 @@ def test_changed_selection_installs_only_the_new_agent(tmp_path: Path) -> None:
         executable=executable,
     )
     installs = [
-        line
-        for line in (tmp_path / "calls.log").read_text().splitlines()
-        if " install " in line
+        line for line in (tmp_path / "calls.log").read_text().splitlines() if " install " in line
     ]
     assert installs.count("integration install codex --integration-options=--skills") == 1
     assert installs.count("integration install claude") == 1
@@ -148,6 +146,42 @@ def test_noninteractive_missing_selection_refuses(tmp_path: Path) -> None:
             existing_lock=None,
             executable=_fake_cli(tmp_path),
         )
+
+
+def test_legacy_lock_reuses_selection_without_reinstalling(tmp_path: Path) -> None:
+    resolved = _resolved(tmp_path, molecule_id="com.example.speckit", options={"codex": ""})
+    # Fingerprint payload written before CLI provisioning was introduced.
+    payload = {
+        "declaration": {
+            "version_constraint": ">=0.8.1",
+            "integrations": {"codex": ""},
+        },
+        "source": resolved.source_url,
+        "revision": resolved.revision,
+        "config": {},
+    }
+    fingerprint = (
+        "sha256:"
+        + hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+    )
+    previous = SpeckitLockRecord(
+        cli_version="0.8.1",
+        declaration_fingerprint=fingerprint,
+        selected=("codex",),
+        outcomes={"codex": "installed"},
+    )
+    records = prepare_install(
+        [resolved],
+        repo_root=tmp_path,
+        existing_lock=_lock(resolved, previous),
+        executable=_fake_cli(tmp_path),
+    )
+    assert records[resolved.molecule_id].selected == ("codex",)
+    assert records[resolved.molecule_id].declaration_fingerprint == fingerprint
+    assert (tmp_path / "calls.log").read_text().splitlines() == ["version", "integration list"]
+    assert not (tmp_path / "installed-codex").exists()
 
 
 def test_opt_out_skips_cli_and_records_skip(tmp_path: Path) -> None:
