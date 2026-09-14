@@ -12,7 +12,7 @@
 - [x] `external_skills` is a top-level molecule-manifest field.
 - [ ] External references are structured `{repository, revision, path}`
   objects and remain ordered/immutable.
-- [x] An external-skill declaration requires an `install_hook`.
+- [ ] External-skill declarations do not require a provider `install_hook`.
 - [x] `atoms.skill` and `atoms.skills` are rejected.
 - [x] Existing non-skill atom categories remain open.
 
@@ -20,6 +20,8 @@
 
 - [x] spaex materializes only declared file atoms.
 - [x] The hook delegates the external skill installation.
+- [ ] The consumer owns the installer, agent, scope, and explicit installation
+  lifecycle through `skill_installation`.
 - [x] External skill files are not claimed as spaex `install.lock` paths.
 - [x] Hook side effects retain Spec 016's failure and reversibility limits.
 

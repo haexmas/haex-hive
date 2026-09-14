@@ -25,13 +25,14 @@ upstream tool:
 }
 ```
 
-`install.py` reads `external_skills` from the pinned molecule `manifest.json`
-via `SPAEX_MOLECULE_MANIFEST` and may call the pinned Python adapter, for
-example `uvx --from skillsmd==0.1.0 skillsmd add ...`. The hook runs with the
-normal Spec 016 trust and failure semantics. A consumer can opt out for one invocation with
-`spaex install --no-install-hooks`.
+`install.py` may inspect the pinned molecule `manifest.json` via
+`SPAEX_MOLECULE_MANIFEST`, but provider hooks do not select the consumer's
+skill installer. Normal `spaex install` only reports the reference as pending.
+The consumer explicitly runs `spaex skills install`, chooses an adapter,
+agent, and scope on first use, and spaex stores that choice in
+`.spaex/manifest.json`. Later changes use `spaex skills configure`.
 
 The skill may live in the same `haexmas/atoms` repository as the molecule.
 The reference is metadata for spaex: spaex itself does not copy it into the
-consumer repository. The hook delegates that work to `skillsmd`, while the
-skill content remains outside spaex's install lock.
+consumer repository. The explicitly selected installer owns the external
+skill lifecycle, while the skill content remains outside spaex's install lock.

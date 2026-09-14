@@ -223,7 +223,8 @@ Composed output landing per harness:
 | Gemini CLI    | Gemini config + `AGENTS.md`   | Inline at top of `AGENTS.md`                       | via `agentskills.io` install  | shell scripts     | Gemini MCP config              |
 | dsh           | dsh Cordis-patch bundle       | Emitted as Cordis behavior row (Phase E follow-up) | Cordis plugin adapter         | Cordis event rows | Cordis MCP plugin adapter      |
 
-Skills are external per the 2026-09-08 roadmap Phase A; the emitters call out to the pinned `skillsmd` adapter via `uvx` as an install-hook side effect.
+Skills are external per the 2026-09-08 roadmap Phase A; consumers choose an
+adapter such as `skillsmd` via `uvx` as an explicit skill-management action.
 
 Claude Code has an optional secondary emission path: a plugin bundle under `.claude/plugins/spaex-generated/` that carries commands, hooks, agents, and MCP config in Claude-Plugin format. This is a convenience for Claude-native discovery, NOT the constitution transport (Claude Plugins cannot carry behavior directives; see the plugin overview in section 2).
 
