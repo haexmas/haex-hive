@@ -32,6 +32,7 @@ from spaex.util.errors import (
 
 _VERSION_RE = re.compile(r"(?<!\d)(\d+)\.(\d+)\.(\d+)(?!\d)")
 _KEY_RE = re.compile(r"^│\s*([a-z0-9][a-z0-9-]*)\s+│")
+CliExecutable = str | Sequence[str]
 
 
 @dataclass(frozen=True)
@@ -168,9 +169,10 @@ def declaration_fingerprint(
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
-def build_install_argv(executable: str, key: str, options: str) -> list[str]:
+def build_install_argv(executable: CliExecutable, key: str, options: str) -> list[str]:
     """Build a shell-free official install invocation."""
-    argv = [executable, "integration", "install", key]
+    argv = [executable] if isinstance(executable, str) else list(executable)
+    argv.extend(("integration", "install", key))
     if options:
         argv.append(f"--integration-options={options}")
     return argv
@@ -229,10 +231,11 @@ def verify_cli(
     declaration: SpeckitDeclaration,
     *,
     repo_root: Path,
-    executable: str = "specify",
+    executable: CliExecutable = "specify",
 ) -> tuple[str, tuple[str, ...]]:
     """Verify CLI version and supported keys before any install invocation."""
-    version_result = run_cli([executable, "version"], repo_root=repo_root)
+    executable_argv = [executable] if isinstance(executable, str) else list(executable)
+    version_result = run_cli([*executable_argv, "version"], repo_root=repo_root)
     if version_result.returncode != 0:
         raise SpeckitCliFailedError(
             message="official `specify version` failed",
@@ -252,7 +255,10 @@ def verify_cli(
             context={"installed": version_text, "required": _constraint_text(declaration)},
         )
 
-    list_result = run_cli([executable, "integration", "list"], repo_root=repo_root)
+    list_result = run_cli(
+        [*executable_argv, "integration", "list"],
+        repo_root=repo_root,
+    )
     if list_result.returncode != 0:
         raise SpeckitCliFailedError(
             message="official `specify integration list` failed",
@@ -269,7 +275,7 @@ def install_selected(
     *,
     repo_root: Path,
     cli_version: str,
-    executable: str = "specify",
+    executable: CliExecutable = "specify",
 ) -> dict[str, SpeckitOutcomeStatus]:
     """Install selected integrations serially through the official CLI."""
     outcomes: dict[str, SpeckitOutcomeStatus] = {}
@@ -323,7 +329,7 @@ def prepare_install(
     existing_lock: InstallLock | None,
     explicit_selection: str | None = None,
     disabled: bool = False,
-    executable: str = "specify",
+    executable: CliExecutable = "specify",
 ) -> SpeckitInstallRecords:
     """Validate declarations, select agents, and install external integrations.
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-import stat
+import sys
 from pathlib import Path
 
 from spaex.constitution.resolve import ResolvedMolecule
@@ -12,30 +12,36 @@ from spaex.model.molecule_manifest import MoleculeManifest
 
 def test_prepare_install_delegates_selected_agent_to_official_cli(tmp_path: Path) -> None:
     calls = tmp_path / "calls.log"
-    executable = tmp_path / "specify"
+    executable = tmp_path / "fake_specify.py"
     executable.write_text(
-        """#!/bin/sh
-printf '%s\\n' "$*" >> "CALLS"
-if [ "$1" = version ]; then echo 'CLI Version 0.8.1.dev0'; exit 0; fi
-if [ "$1" = integration ] && [ "$2" = list ]; then
-  printf '│ claude │ Claude Code │\\n│ codex │ Codex CLI │\\n'
-  exit 0
-fi
-if [ "$1" = integration ] && [ "$2" = install ]; then
-  if [ "$3" = claude ]; then
-    mkdir -p "$PWD/.claude/skills"
-    touch "$PWD/.claude/skills/specify.md"
-  fi
-  if [ "$3" = codex ]; then
-    mkdir -p "$PWD/.agents/skills"
-    touch "$PWD/.agents/skills/specify.md"
-  fi
-  exit 0
-fi
-exit 2
-""".replace("CALLS", calls.as_posix()), encoding="utf-8"
+        f"""from pathlib import Path
+import sys
+
+CALLS = Path({str(calls)!r})
+args = sys.argv[1:]
+CALLS.open("a", encoding="utf-8").write(" ".join(args) + "\\n")
+if args == ["version"]:
+    print("CLI Version 0.8.1.dev0")
+    raise SystemExit(0)
+if args[:2] == ["integration", "list"]:
+    sys.stdout.buffer.write(
+        "│ claude │ Claude Code │\\n│ codex │ Codex CLI │\\n".encode("utf-8")
     )
-    executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+    raise SystemExit(0)
+if args[:2] == ["integration", "install"]:
+    if args[2] == "claude":
+        skills = Path.cwd() / ".claude" / "skills"
+    elif args[2] == "codex":
+        skills = Path.cwd() / ".agents" / "skills"
+    else:
+        raise SystemExit(2)
+    skills.mkdir(parents=True, exist_ok=True)
+    (skills / "specify.md").touch()
+    raise SystemExit(0)
+raise SystemExit(2)
+""",
+        encoding="utf-8",
+    )
 
     manifest = MoleculeManifest.from_json(
         json.dumps(
@@ -74,7 +80,7 @@ exit 2
         repo_root=tmp_path,
         existing_lock=None,
         explicit_selection="codex",
-        executable=str(executable),
+        executable=(sys.executable, str(executable)),
     )
 
     assert (tmp_path / ".agents/skills/specify.md").exists()
@@ -100,7 +106,7 @@ exit 2
         repo_root=tmp_path,
         existing_lock=lock,
         explicit_selection=None,
-        executable=str(executable),
+        executable=(sys.executable, str(executable)),
     )
     assert calls.read_text().splitlines().count(
         "integration install codex --integration-options=--skills"
@@ -111,6 +117,6 @@ exit 2
         repo_root=tmp_path,
         existing_lock=lock,
         explicit_selection="all",
-        executable=str(executable),
+        executable=(sys.executable, str(executable)),
     )
     assert (tmp_path / ".claude/skills/specify.md").exists()
