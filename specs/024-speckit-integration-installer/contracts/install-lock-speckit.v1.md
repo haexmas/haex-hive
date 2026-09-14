@@ -23,6 +23,8 @@ Validation rules:
 - `declaration_fingerprint` is a lowercase SHA-256 fingerprint prefixed with
   `sha256:`.
 - `selected` is unique and sorted.
+- Every key in `selected` has an outcome of `installed` or `already_satisfied`;
+  skipped outcomes are valid only for unselected declared integrations.
 - Outcome values are `installed`, `already_satisfied`, or `skipped` in a
   published successful generation.
 - A failed external install is not written as a successful generation; the

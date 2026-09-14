@@ -18,6 +18,7 @@ from spaex.util.errors import (
     MissingAtomManifestError,
     MissingPublisherManifestError,
     MoleculeTreeExtractionError,
+    SpeckitDeclarationInvalidError,
 )
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git binary required")
@@ -606,4 +607,78 @@ def test_non_file_constitution_path_is_typed(tmp_path: Path) -> None:
         [CompoundEntry(source=canonical, revision=sha, molecules=(molecule_key,))]
     )
     with pytest.raises(ContributionFileNotFoundError):
+        resolve_constitution_contributions(manifest, state_root)
+
+
+def test_manifest_failure_containing_speckit_is_not_declaration_error(tmp_path: Path) -> None:
+    canonical = "https://github.com/example/publisher"
+    molecule_key = "com.example.publisher.speckit"
+    publisher = tmp_path / "publisher"
+    sha = _publish(
+        publisher,
+        {
+            "spaex_version": "4",
+            "publisher": "com.example.publisher",
+            "molecules": {molecule_key: {"path": "c", "version": "1.0.0"}},
+        },
+        {
+            "c": (
+                {
+                    "spaex_version": "4",
+                    "id": "com.example.speckit!invalid",
+                    "version": "1.0.0",
+                    "priority": 100,
+                    "atoms": {"constitution": ["constitution.md"]},
+                },
+                b"body",
+            )
+        },
+    )
+    state_root = tmp_path / "state"
+    _clone(state_root, canonical, publisher)
+    manifest = _manifest(
+        [CompoundEntry(source=canonical, revision=sha, molecules=(molecule_key,))]
+    )
+
+    with pytest.raises(MissingAtomManifestError):
+        resolve_constitution_contributions(manifest, state_root)
+
+
+def test_invalid_speckit_declaration_is_typed(tmp_path: Path) -> None:
+    canonical = "https://github.com/example/publisher"
+    molecule_key = "com.example.publisher.speckit"
+    publisher = tmp_path / "publisher"
+    sha = _publish(
+        publisher,
+        {
+            "spaex_version": "4",
+            "publisher": "com.example.publisher",
+            "molecules": {molecule_key: {"path": "c", "version": "1.0.0"}},
+        },
+        {
+            "c": (
+                {
+                    "spaex_version": "4",
+                    "id": molecule_key,
+                    "version": "1.0.0",
+                    "priority": 100,
+                    "atoms": {},
+                    "speckit": {
+                        "version_constraint": "0.8.1",
+                        "integrations": {
+                            "codex": {"integration_options": "foo && bar"}
+                        },
+                    },
+                },
+                None,
+            )
+        },
+    )
+    state_root = tmp_path / "state"
+    _clone(state_root, canonical, publisher)
+    manifest = _manifest(
+        [CompoundEntry(source=canonical, revision=sha, molecules=(molecule_key,))]
+    )
+
+    with pytest.raises(SpeckitDeclarationInvalidError):
         resolve_constitution_contributions(manifest, state_root)

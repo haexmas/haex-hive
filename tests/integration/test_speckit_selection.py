@@ -154,3 +154,34 @@ def test_opt_out_skips_cli_and_records_skip(tmp_path: Path) -> None:
         executable=str(tmp_path / "missing-specify"),
     )
     assert records[resolved[0].molecule_id].outcomes == {"codex": "skipped"}
+
+
+def test_opt_out_preserves_existing_selection_for_next_invocation(tmp_path: Path) -> None:
+    executable = _fake_cli(tmp_path)
+    resolved = [_resolved(tmp_path, molecule_id="com.example.speckit", options={"codex": ""})]
+    first = prepare_install(
+        resolved,
+        repo_root=tmp_path,
+        existing_lock=None,
+        explicit_selection="codex",
+        executable=str(executable),
+    )
+    disabled = prepare_install(
+        resolved,
+        repo_root=tmp_path,
+        existing_lock=_lock(resolved[0], first[resolved[0].molecule_id]),
+        disabled=True,
+        executable=str(executable),
+    )
+
+    molecule_id = resolved[0].molecule_id
+    assert disabled[molecule_id].selected == ()
+    assert disabled.publication_records[molecule_id].selected == ("codex",)
+
+    next_run = prepare_install(
+        resolved,
+        repo_root=tmp_path,
+        existing_lock=_lock(resolved[0], disabled.publication_records[molecule_id]),
+        executable=str(executable),
+    )
+    assert next_run[molecule_id].selected == ("codex",)

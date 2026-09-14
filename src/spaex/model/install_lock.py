@@ -76,8 +76,23 @@ class SpeckitLockRecord:
     outcomes: Mapping[str, SpeckitOutcomeStatus]
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "selected", tuple(sorted(set(self.selected))))
-        object.__setattr__(self, "outcomes", freeze_json(dict(self.outcomes)))
+        selected = tuple(sorted(set(self.selected)))
+        outcomes = dict(self.outcomes)
+        invalid = sorted(
+            key
+            for key in selected
+            if outcomes.get(key) != "installed" and outcomes.get(key) != "already_satisfied"
+        )
+        if invalid:
+            raise InstallLockSchemaInvalidError(
+                message=(
+                    "selected Spec Kit integration(s) must have a successful outcome: "
+                    + ", ".join(invalid)
+                ),
+                context={"integrations": ",".join(invalid)},
+            )
+        object.__setattr__(self, "selected", selected)
+        object.__setattr__(self, "outcomes", freeze_json(outcomes))
 
 
 @dataclass(frozen=True)

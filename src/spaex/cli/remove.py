@@ -119,7 +119,12 @@ def _warn_external_carriers(repo_root: Path, remove_ids: tuple[str, ...]) -> Non
                 "agent-harness registrations) may remain. Consult the "
                 "molecule's README for reverse steps.\n"
             )
-        if mid in carriers and record is not None and record.speckit is not None:
+        if (
+            mid in carriers
+            and record is not None
+            and record.speckit is not None
+            and record.speckit.selected
+        ):
             sys.stderr.write(
                 f"WARN: molecule {mid} installed external Spec Kit integrations; "
                 "agent skill files may remain after removal and are not "

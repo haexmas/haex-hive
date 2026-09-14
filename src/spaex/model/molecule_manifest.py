@@ -22,6 +22,10 @@ from spaex.schema import validator as schema_validator
 from spaex.util.errors import MoleculeAtomsCategoryOverlapError
 
 
+class SpeckitDeclarationParseError(ValueError):
+    """A structurally valid manifest with an invalid Spec Kit declaration."""
+
+
 @dataclass(frozen=True)
 class InstallHook:
     """Parsed install_hook object from a molecule manifest (Spec 016)."""
@@ -133,18 +137,23 @@ def _parse_speckit(raw: Any) -> SpeckitDeclaration | None:
     for key, value in raw["integrations"].items():
         option = value.get("integration_options", "")
         if any(token in option for token in ("\x00", "\n", "\r")):
-            raise ValueError("speckit integration_options must not contain control characters")
+            raise SpeckitDeclarationParseError(
+                "speckit integration_options must not contain control characters"
+            )
         if any(operator in option for operator in ("&&", "||", ";", "|", ">", "<", "`", "$")):
-            raise ValueError("speckit integration_options must not contain shell operators")
+            raise SpeckitDeclarationParseError(
+                "speckit integration_options must not contain shell operators"
+            )
         if "--global" in option or "--project" in option:
-            raise ValueError(
+            raise SpeckitDeclarationParseError(
                 "speckit integration_options cannot request global or project installation"
             )
         options[key] = option
-    return SpeckitDeclaration(
-        version_constraint=VersionConstraint.parse(raw["version_constraint"]),
-        integrations=options,
-    )
+    try:
+        version_constraint = VersionConstraint.parse(raw["version_constraint"])
+    except (TypeError, ValueError) as exc:
+        raise SpeckitDeclarationParseError(str(exc)) from exc
+    return SpeckitDeclaration(version_constraint=version_constraint, integrations=options)
 
 
 def _freeze_constitution_fragments(

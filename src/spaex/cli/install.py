@@ -308,7 +308,7 @@ def run(
                             repo_root,
                             state_root=state_root,
                             hook_only_records=tuple(hook_only_records),
-                            speckit_records=speckit_records,
+                            speckit_records=speckit_records.publication_records,
                             preserved_files=preserved_project_local_files,
                         )
                     else:
@@ -447,7 +447,7 @@ def run(
                         state_root=state_root,
                         hook_status=hook_status.get(contribution.source.id),
                         hook_only_records=tuple(hook_only_records),
-                        speckit_records=speckit_records,
+                        speckit_records=speckit_records.publication_records,
                         preserved_files=preserved_project_local_files,
                     )
                 else:

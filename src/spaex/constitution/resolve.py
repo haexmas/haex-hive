@@ -20,9 +20,14 @@ from spaex.git import show as git_show
 from spaex.git.cache import clone_dir
 from spaex.model.consumer_manifest import ConsumerManifest
 from spaex.model.install_lock import ConstitutionSource
-from spaex.model.molecule_manifest import InstallHook, MoleculeManifest
+from spaex.model.molecule_manifest import (
+    InstallHook,
+    MoleculeManifest,
+    SpeckitDeclarationParseError,
+)
 from spaex.model.publisher_manifest import PublisherManifest
 from spaex.model.source_url import CanonicalSourceUrl
+from spaex.schema import validator as schema_validator
 from spaex.util.errors import (
     AtomIdCollisionError,
     ContributionFileNotFoundError,
@@ -308,8 +313,20 @@ def _iterate_resolved_molecules(
                 ) from exc
             try:
                 molecule_manifest = MoleculeManifest.from_json(molecule_bytes)
-            except (ValueError, KeyError) as exc:
-                if "speckit" in str(exc):
+            except SpeckitDeclarationParseError as exc:
+                raise SpeckitDeclarationInvalidError(
+                    message=(
+                        f"molecule Spec Kit declaration for {molecule_id!r} "
+                        f"is invalid: {exc}"
+                    ),
+                    context={"molecule_id": molecule_id},
+                ) from exc
+            except schema_validator.SchemaValidationError as exc:
+                if any(
+                    error.field_path == "/speckit"
+                    or error.field_path.startswith("/speckit/")
+                    for error in exc.errors
+                ):
                     raise SpeckitDeclarationInvalidError(
                         message=(
                             f"molecule Spec Kit declaration for {molecule_id!r} "
@@ -317,6 +334,11 @@ def _iterate_resolved_molecules(
                         ),
                         context={"molecule_id": molecule_id},
                     ) from exc
+                raise MissingAtomManifestError(
+                    message=f"molecule manifest for {molecule_id!r} is invalid: {exc}",
+                    context={"atom_id": molecule_id},
+                ) from exc
+            except (ValueError, KeyError) as exc:
                 raise MissingAtomManifestError(
                     message=f"molecule manifest for {molecule_id!r} is invalid: {exc}",
                     context={"atom_id": molecule_id},

@@ -12,9 +12,10 @@ import json
 import re
 import subprocess
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import TextIO
 
 from spaex.constitution.resolve import ResolvedMolecule
@@ -41,6 +42,31 @@ class SpeckitCliResult:
     returncode: int
     stdout: str
     stderr: str
+
+
+@dataclass(frozen=True)
+class SpeckitInstallRecords(Mapping[str, SpeckitLockRecord]):
+    """CLI results plus the lock records safe to publish for this run."""
+
+    results: Mapping[str, SpeckitLockRecord]
+    publication_records: Mapping[str, SpeckitLockRecord]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "results", MappingProxyType(dict(self.results)))
+        object.__setattr__(
+            self,
+            "publication_records",
+            MappingProxyType(dict(self.publication_records)),
+        )
+
+    def __getitem__(self, key: str) -> SpeckitLockRecord:
+        return self.results[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.results)
+
+    def __len__(self) -> int:
+        return len(self.results)
 
 
 def parse_version_output(output: str) -> tuple[int, int, int]:
@@ -154,16 +180,25 @@ def run_cli(
     argv: Sequence[str],
     *,
     repo_root: Path,
+    capture_output: bool = True,
 ) -> SpeckitCliResult:
     """Run one official CLI command with inherited visible output semantics."""
     try:
-        completed = subprocess.run(
-            list(argv),
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        if capture_output:
+            completed = subprocess.run(
+                list(argv),
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        else:
+            completed = subprocess.run(
+                list(argv),
+                cwd=repo_root,
+                text=True,
+                check=False,
+            )
     except FileNotFoundError as exc:
         raise SpeckitCliMissingError(
             message="the official `specify` executable was not found on PATH",
@@ -174,15 +209,17 @@ def run_cli(
             message=f"could not launch official Spec Kit CLI: {exc}",
             context={"command": " ".join(argv)},
         ) from exc
-    if completed.stdout:
-        sys.stdout.write(completed.stdout)
-    if completed.stderr:
-        sys.stderr.write(completed.stderr)
+    stdout = completed.stdout or ""
+    stderr = completed.stderr or ""
+    if capture_output and stdout:
+        sys.stdout.write(stdout)
+    if capture_output and stderr:
+        sys.stderr.write(stderr)
     return SpeckitCliResult(
         argv=tuple(argv),
         returncode=completed.returncode,
-        stdout=completed.stdout,
-        stderr=completed.stderr,
+        stdout=stdout,
+        stderr=stderr,
     )
 
 
@@ -238,6 +275,7 @@ def install_selected(
         result = run_cli(
             build_install_argv(executable, key, declaration.integrations[key]),
             repo_root=repo_root,
+            capture_output=False,
         )
         if result.returncode != 0:
             raise SpeckitCliFailedError(
@@ -284,7 +322,7 @@ def prepare_install(
     explicit_selection: str | None = None,
     disabled: bool = False,
     executable: str = "specify",
-) -> dict[str, SpeckitLockRecord]:
+) -> SpeckitInstallRecords:
     """Validate declarations, select agents, and install external integrations.
 
     ``resolved`` is intentionally accepted as a sequence of resolver records
@@ -298,7 +336,7 @@ def prepare_install(
         is not None
     ]
     if not declarations:
-        return {}
+        return SpeckitInstallRecords({}, {})
 
     first_manifest = declarations[0].molecule_manifest
     assert first_manifest is not None
@@ -341,7 +379,7 @@ def prepare_install(
             break
 
     if disabled:
-        return {
+        skipped_records = {
             record.molecule_id: SpeckitLockRecord(
                 cli_version="not-run",
                 declaration_fingerprint=fingerprints[record.molecule_id],
@@ -350,6 +388,16 @@ def prepare_install(
             )
             for record in declarations
         }
+        publication_records = {
+            record.molecule_id: (
+                previous
+                if (previous := existing_by_id.get(record.molecule_id)) is not None
+                and previous.declaration_fingerprint == fingerprints[record.molecule_id]
+                else skipped_records[record.molecule_id]
+            )
+            for record in declarations
+        }
+        return SpeckitInstallRecords(skipped_records, publication_records)
 
     selected = select_integrations(
         explicit_selection,
@@ -357,7 +405,7 @@ def prepare_install(
         persisted=persisted,
     )
     if not selected:
-        return {
+        skipped_records = {
             record.molecule_id: SpeckitLockRecord(
                 cli_version="not-run",
                 declaration_fingerprint=fingerprints[record.molecule_id],
@@ -366,22 +414,10 @@ def prepare_install(
             )
             for record in declarations
         }
+        return SpeckitInstallRecords(skipped_records, skipped_records)
 
     cli_version, supported = verify_cli(first, repo_root=repo_root, executable=executable)
-    if explicit_selection is not None and explicit_selection.strip().lower() == "all":
-        selected = tuple(key for key in selected if key in supported)
-    else:
-        ensure_supported(selected, supported)
-    if not selected:
-        return {
-            record.molecule_id: SpeckitLockRecord(
-                cli_version=cli_version,
-                declaration_fingerprint=fingerprints[record.molecule_id],
-                selected=(),
-                outcomes={key: "skipped" for key in first.integrations},
-            )
-            for record in declarations
-        }
+    ensure_supported(selected, supported)
     existing_for_first = existing_by_id.get(declarations[0].molecule_id)
     already_selected = (
         existing_for_first is not None
@@ -406,7 +442,7 @@ def prepare_install(
             **dict(existing_for_first.outcomes),
             **outcomes,
         }
-    return {
+    records = {
         record.molecule_id: SpeckitLockRecord(
             cli_version=cli_version,
             declaration_fingerprint=fingerprints[record.molecule_id],
@@ -415,6 +451,7 @@ def prepare_install(
         )
         for record in declarations
     }
+    return SpeckitInstallRecords(records, records)
 
 
 def _constraint_text(declaration: SpeckitDeclaration) -> str:
@@ -425,6 +462,7 @@ def _constraint_text(declaration: SpeckitDeclaration) -> str:
 
 __all__ = [
     "SpeckitCliResult",
+    "SpeckitInstallRecords",
     "build_install_argv",
     "declaration_fingerprint",
     "emit_results",

@@ -11,6 +11,7 @@ from spaex.integrations.speckit import (
     emit_results,
     parse_selection,
     parse_version_output,
+    run_cli,
     select_integrations,
 )
 from spaex.model.install_lock import SpeckitLockRecord
@@ -79,6 +80,28 @@ def test_install_argv_passes_options_as_one_argument() -> None:
         "codex",
         "--integration-options=--skills",
     ]
+
+
+def test_install_cli_output_is_streamed(monkeypatch, tmp_path) -> None:
+    calls = {}
+
+    class Completed:
+        returncode = 0
+        stdout = None
+        stderr = None
+
+    def fake_run(argv, **kwargs):
+        calls.update(kwargs)
+        return Completed()
+
+    monkeypatch.setattr("spaex.integrations.speckit.subprocess.run", fake_run)
+    run_cli(
+        ["specify", "integration", "install", "codex"],
+        repo_root=tmp_path,
+        capture_output=False,
+    )
+
+    assert "capture_output" not in calls
 
 
 def test_declaration_fingerprint_is_stable() -> None:
