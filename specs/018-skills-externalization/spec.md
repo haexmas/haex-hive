@@ -15,10 +15,10 @@
   Installer, den Ziel-Agenten, den Scope und den Ausführungszeitpunkt. Weder
   Provider noch spaex erzwingen `skillsmd`, die Vercel-CLI oder einen anderen
   Installer. `agentskills.io` ist nur die Format-Spezifikation.
-- Q: Wie erhält das Hook-Skript die strukturierten Referenzen? → A: Es liest
+- Q: Wie erhält der Consumer-Adapter die strukturierten Referenzen? → A: Es liest
   das bereits gepinnte Molekül-`manifest.json` direkt. spaex erzeugt keine
   temporäre JSON-Kopie und dupliziert die Referenzen nicht in einer zweiten
-  Übergabedatei. Für robuste Pfadauflösung stellt spaex dem Hook den Pfad des
+  Übergabedatei. Für robuste Pfadauflösung stellt spaex dem Adapter den Pfad des
   Originalmanifests über `SPAEX_MOLECULE_MANIFEST` zur Verfügung.
 - Q: Gehört der Installer in jede einzelne Skill-Referenz? → A: Nein. Eine
   Referenz enthält nur Quelle, Revision und Pfad. Die Installationsentscheidung
@@ -49,12 +49,12 @@ file is added to the atom map.
 1. **Given** a valid external skill reference, **when** a v4 molecule manifest
    is parsed, **then** the reference is preserved in declaration order.
 2. **Given** a molecule with external skills but no `install_hook`, **when**
-   the manifest is validated, **then** validation refuses it because no
-   installation mechanism is declared.
+   the manifest is validated, **then** validation accepts it; installation
+   is a separate consumer action.
 3. **Given** a skill stored under `haexmas/atoms/skills/`, **when** a molecule
    references its revision-specific repository/tree source, **then** the skill
-   remains owned by the publisher repository and is installed by the hook's
-   external installer rather than by spaex's atom materializer.
+   remains owned by the publisher repository and is installed only through
+   the explicitly selected consumer adapter, outside atom materialization.
 
 ### User Story 2 - Prevent the retired skill atom category (Priority: P1)
 
@@ -89,8 +89,10 @@ installer receives the structured source reference.
 - References containing control characters are invalid.
 - Duplicate references are invalid.
 - A molecule without `external_skills` remains backwards-compatible.
-- `install_hook` failure behavior remains governed by Spec 016; this feature
-  does not add a second execution mechanism.
+- `install_hook` failure behavior remains governed by Spec 016 for unrelated
+  provider hooks. Explicit adapter failures return a non-zero exit status and
+  leave atom files and `install.lock` unchanged; external side effects cannot
+  be rolled back by spaex.
 
 ## Requirements
 
@@ -131,16 +133,22 @@ installer receives the structured source reference.
   operation MUST prompt in an interactive session and persist the accepted
   choice in the consumer `.spaex/manifest.json`.
 - **FR-013**: `spaex skills configure` MUST allow the consumer to change the
-  persisted installer, target-agent, and scope choices. Changing the policy
+  persisted mode, installer, target-agent, and scope choices. Changing the policy
   MUST NOT implicitly remove already installed external skills.
+
+- **FR-014**: Policy modes and non-interactive behavior MUST follow the
+  [consumer policy contract](contracts/consumer-manifest-skill-installation.v1.md).
+  Missing consent or an incomplete managed policy MUST NOT execute an adapter
+  or write configuration. Configuration must be persisted successfully before
+  executing the selected adapter.
 
 ### Key Entities
 
-- **External skill reference**: A structured installer/source declaration that
-  may identify a repository, immutable revision, and repository-relative
+- **External skill reference**: A structured source declaration that
+  identifies a repository, immutable revision, and repository-relative
   skill path. The source content remains external to spaex.
 - **Molecule**: A pinned spaex bundle that may deliver files and may declare
-  external references whose side effects are delegated to its install hook.
+  external references installed through an explicit consumer-selected adapter.
 
 ### Scope boundary: ownership versus delivery
 

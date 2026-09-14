@@ -11,12 +11,7 @@ The v4 molecule manifest gains one optional property:
       "revision": "0123456789abcdef0123456789abcdef01234567",
       "path": "skills/example-skill"
     }
-  ],
-  "install_hook": {
-    "interpreter": "python3",
-    "script": "install.py",
-    "on_failure": "warn"
-  }
+  ]
 }
 ```
 
@@ -51,3 +46,6 @@ references:
 `adapter`, `scope`, and `agents` are selected by the consumer. The policy is
 not copied from a provider molecule. An absent policy means that normal
 `spaex install` reports pending external skills but performs no installation.
+
+Mode semantics and conditional required fields are defined by the
+[consumer policy contract](contracts/consumer-manifest-skill-installation.v1.md).

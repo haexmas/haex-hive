@@ -1,6 +1,6 @@
 ---
 
-description: "Task list for structured external skill references and uvx hook delegation"
+description: "Task list for consumer-controlled external skill installation"
 ---
 
 # Tasks: External Skill References
@@ -21,10 +21,10 @@ later UI phases.
 
 **Purpose**: Make the design artifacts agree before code changes begin.
 
-- [ ] T001 Update `specs/018-skills-externalization/plan.md` with the
+- [x] T001 Update `specs/018-skills-externalization/plan.md` with the
   structured reference shape, consumer-owned `skill_installation` policy, and
   explicit skill-management lifecycle.
-- [ ] T002 [P] Synchronize the data model and manifest contract in
+- [x] T002 [P] Synchronize the data model and manifest contract in
   `specs/018-skills-externalization/data-model.md` and
   `specs/018-skills-externalization/contracts/molecule-manifest-external-skills.v1.md`,
   plus `contracts/consumer-manifest-skill-installation.v1.md`.
@@ -36,14 +36,14 @@ later UI phases.
 - [ ] T003 [P] Add structured-reference contract tests in
   `tests/contract/test_molecule_manifest_external_skills.py` for repository,
   full revision SHA, repository-relative path, uniqueness, invalid values, the
-  hook requirement, and retired `skill`/`skills` categories.
+  acceptance without a hook (including reference-only molecules), and retired `skill`/`skills` categories.
 - [ ] T004 [P] Add parser tests in `tests/unit/test_external_skills_parser.py`
   for immutable ordered `ExternalSkillReference` values and backwards
   compatibility when the field is absent.
 - [ ] T005 Extend
   `src/spaex/schema/data/molecule-manifest.v4.schema.json` with the structured
-  `external_skills` object and validation rules while retaining the existing
-  hook condition and open atom categories.
+  `external_skills` object and validation rules while removing the existing
+  hook requirement and preserving open atom categories.
 - [ ] T006 Extend `src/spaex/model/molecule_manifest.py` with a frozen
   `ExternalSkillReference` value object and immutable tuple parsing.
 
@@ -98,7 +98,7 @@ continues accepting unrelated open category names.
 **Checkpoint**: User Story 2 is independently testable through contract and
 compatibility tests.
 
-## Phase 5: User Story 3 - Delegate installation through the hook boundary (P2)
+## Phase 5: User Story 3 - Let the consumer choose the installation mechanism (P2)
 
 **Goal**: Let the consumer explicitly choose and operate an external skill
 installer while spaex remains neutral about the provider's installer choice.
@@ -112,11 +112,14 @@ references.
 
 - [ ] T014 [P] [US3] Add consumer-manifest contract tests in
   `tests/contract/test_consumer_manifest_skill_installation.py` for policy
-  modes, adapter/scope/agent validation, and absent-policy behavior.
+  modes, required managed fields, adapter/scope/agent validation, unknown fields,
+  and absent-policy behavior.
 - [ ] T015 [US3] Add CLI integration tests in
   `tests/integration/test_skill_installation_commands.py` proving that normal
   `spaex install` reports pending references without installing and that the
-  explicit command persists the consumer policy.
+  explicit command persists the consumer policy. Cover disabled mode, prompt
+  cancellation/EOF, non-interactive refusal, managed execution, persistence
+  failure before adapter launch, configure without removal, and adapter failure.
 
 ### Implementation for User Story 3
 
@@ -130,9 +133,10 @@ references.
 - [ ] T018 [US3] Add a consumer-selected adapter boundary in
   `src/spaex/skills/installer.py`; keep `skillsmd`, the Vercel CLI, and manual
   installation as adapter choices rather than provider behavior.
-- [ ] T019 [US3] Preserve the existing hook environment contract in
-  `src/spaex/install/hook_runner.py` only for explicitly selected integrations;
-  do not invoke provider hooks as the default external-skill installer.
+- [ ] T019 [US3] Pass `SPAEX_MOLECULE_MANIFEST` to the selected adapter in
+  `src/spaex/skills/installer.py`, pointing to the original pinned manifest.
+  Test this in `tests/integration/test_skill_installation_commands.py` without
+  a serialized reference copy. Preserve unrelated Spec 016 hook behavior.
 
 **Checkpoint**: User Story 3 is independently testable with a local fixture;
 the real adapter command remains a consumer-selected choice.
@@ -173,9 +177,27 @@ the real adapter command remains a consumer-selected choice.
 
 1. Land the clarified design and task breakdown for review.
 2. Implement the manifest contract and parser first.
-3. Implement the hook environment contract and local integration fixture.
+3. Implement consumer policy, explicit commands, and the adapter manifest-path
+   contract with local integration fixtures.
 4. Run the complete validation gates and update task checkboxes eagerly.
 
 The MVP is User Story 1 plus User Story 3: structured references can be
-declared and delegated through a local hook without spaex materializing skill
+declared and installed through an explicit consumer adapter without spaex materializing skill
 content. User Story 2 remains a required compatibility guard for the release.
+
+## Design review validation (PR #125)
+
+- T001/T002 completed: spec, plan, contracts, examples, and dependent roadmap
+  text agree on hookless declarations and explicit consumer installation.
+- Review fixes define policy-mode behavior, non-interactive refusal, and the
+  adapter's original-manifest environment contract. Runtime implementation
+  tasks remain open; these checks do not prove the planned commands exist.
+- `uv run pytest -q`: 627 passed, 1 skipped, 5 deselected.
+- `uv run ruff check .`: passed.
+- `uv run mypy src`: passed (72 source files).
+- Seven JSON documentation examples parsed; the proposed reference schema
+  accepted the quickstart and rejected empty/duplicate lists, opaque strings,
+  branch revisions, path traversal, blank repositories, and installer fields.
+- `git diff --check`: passed.
+- Repository-wide `uv run ruff format --check .`: 100 existing files would be
+  reformatted; none is part of this review fix. No unrelated formatting applied.

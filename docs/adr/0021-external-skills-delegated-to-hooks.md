@@ -1,6 +1,6 @@
-# ADR 0021: Delegate external skill installation to molecule hooks
+# ADR 0021: Delegate external skill installation to consumer-selected adapters
 
-**Status**: Accepted
+**Status**: Accepted original hook design; consumer-controlled amendment proposed in PR #125
 **Date**: 2026-09-14
 
 ## Context

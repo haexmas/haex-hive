@@ -47,9 +47,12 @@ runtime dependencies.
 
 Molecules may keep standard `SKILL.md` directories in the publisher
 repository, including `haexmas/atoms`. They are not copied by spaex's atom
-materializer. An `external_skills` reference declares source metadata only.
-The consumer explicitly chooses the installer, target agent, and scope through
-the skill-management commands; provider molecules do not select those values.
+materializer. The current `5.0.0` implementation uses opaque `external_skills` references
+and molecule hooks. The [Spec 018 design update](specs/018-skills-externalization/spec.md)
+proposes structured source metadata and explicit `spaex skills install` /
+`spaex skills configure` commands with consumer-selected installer, agent, and
+scope. Those commands and the `skill_installation` policy are not implemented
+yet; the update is documentation-only.
 
 After `spaex install` completes, `.spaex/install.lock` is present and byte-identical across two consecutive runs.
 

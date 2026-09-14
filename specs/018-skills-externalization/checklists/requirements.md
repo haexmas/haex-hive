@@ -1,5 +1,8 @@
 # Phase-A Spec-Kit Requirements Checklist
 
+This checklist tracks design alignment, not runtime implementation evidence.
+Implementation tasks remain open in `tasks.md`.
+
 ## Scope and ownership
 
 - [x] The spec says that skills may remain in `haexmas/atoms`.
@@ -10,23 +13,24 @@
 ## Contract
 
 - [x] `external_skills` is a top-level molecule-manifest field.
-- [ ] External references are structured `{repository, revision, path}`
+- [x] External references are structured `{repository, revision, path}`
   objects and remain ordered/immutable.
-- [ ] External-skill declarations do not require a provider `install_hook`.
+- [x] External-skill declarations do not require a provider `install_hook`.
 - [x] `atoms.skill` and `atoms.skills` are rejected.
 - [x] Existing non-skill atom categories remain open.
 
 ## Delivery boundary
 
 - [x] spaex materializes only declared file atoms.
-- [x] The hook delegates the external skill installation.
-- [ ] The consumer owns the installer, agent, scope, and explicit installation
+- [x] Only the explicit consumer-selected adapter installs external skills.
+- [x] The consumer owns the installer, agent, scope, and explicit installation
   lifecycle through `skill_installation`.
 - [x] External skill files are not claimed as spaex `install.lock` paths.
 - [x] Hook side effects retain Spec 016's failure and reversibility limits.
 
 ## Review gate
 
-- [x] Operator approves the spec and plan by requesting commit and PR.
-- [x] Implementation resumes after approval; current schema/model slice is
-  included in the reviewable PR.
+- [x] The clarified design and review fixes are submitted through PR #125.
+- [ ] Operator reviews and merges the clarified design before implementation.
+- [ ] The structured schema/model, policy, and command implementation follows
+  in a separate change; it is not included in this design-only PR.

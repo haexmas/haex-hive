@@ -65,17 +65,23 @@ Decisions are numbered so downstream specs can cite them (`Roadmap 2026-09-08 §
 
 ### Decision 1: Skills are external, not atom types
 
-`atoms.skill` (or any equivalent under a different name) leaves the molecule manifest schema. Molecules that want skills reference them by external identifier (skills.sh `owner/repo` slug, or an agentskills.io URL / repo path) and delegate installation to the upstream tool.
+`atoms.skill` (or any equivalent under a different name) leaves the molecule manifest schema. Molecules that want skills declare repository, full revision SHA, and repository-relative path; consumers select the external installer.
 
-**Why:** skills.sh and agentskills.io own discovery, distribution, versioning, and multi-agent portability (Claude Code, Codex, Cursor, Copilot, Gemini CLI, VS Code, and more). Duplicating that in spaex/atoms adds maintenance without users. The 2026-09-03 Scope Realignment already identified this; this roadmap acts on it.
+**Why:** external tools handle discovery and installation; agentskills.io defines the portable skill format. Duplicating that in spaex/atoms adds maintenance without users. The 2026-09-03 Scope Realignment already identified this; this roadmap acts on it.
 
 **Blast radius:** breaking change to the molecule manifest v4 schema. Publishers of skill-shipping molecules (`graphify-first-authoring`, `speckit-session-hopper`) migrate. Consumer repos that pinned older revisions keep working until they bump; the bump makes them install skills via the external tool instead.
 
-### Decision 2: Install-hooks (Spec 016) carry skill installation
+### Decision 2: Consumers explicitly install external skills
 
-A molecule that declares external skills gets a small hook (declared via Spec 016's `install_hook`) that reads the pinned molecule manifest and calls `uvx --from skillsmd==<version> skillsmd add ...` in the consumer repo during `spaex install`. spaex itself does not run the skill installer directly; it stays a level above. The Vercel npm CLI remains an optional alternative, while agentskills.io defines the format rather than providing an installer.
+The Spec 018 clarification supersedes the original hook-based design.
+Providers declare repository/revision/path metadata only. Consumers persist
+installer, target-agent, and scope choices under `skill_installation` and run
+`spaex skills install` explicitly. Normal `spaex install` does not invoke a
+skill installer. Unrelated Spec 016 hooks remain unchanged.
 
-**Why:** avoid inventing a second side-effect mechanism next to Spec 016. `install_hook` is already trust-anchored on the SHA pin, already runs at the right moment (after atom materialization), and already handles failure via `on_failure: "abort" | "warn"`.
+**Why:** adopting a molecule must not let its provider select a skill installer
+or its destination. The explicit adapter reads the original pinned manifest
+through `SPAEX_MOLECULE_MANIFEST`; no second reference payload is generated.
 
 ### Decision 3: Molecule ontology after Decision 1
 
@@ -86,7 +92,7 @@ Post-Phase A the molecule categories are, tentatively:
 - `atoms.mcp` (NEW: declare MCP servers to register with the consumer's agent)
 - `atoms.command` (NEW: Claude Code slash commands, if not already covered)
 - `atoms.instruction` (NEW: CLAUDE.md / AGENTS.md fragments)
-- `external_skills` (NEW, replaces the `atoms.skill` category: list of external skill references, consumed by the install-hook per Decision 2)
+- `external_skills` (NEW, replaces the `atoms.skill` category: list of external skill references, consumed by the explicit consumer adapter per Decision 2)
 - `atoms.install_hook` (from Spec 016, unchanged)
 
 The exact names are placeholders; Phase A settles them.
@@ -142,7 +148,7 @@ Each phase corresponds to one Speckit spec. Phase A is a breaking change and dri
   commands. Normal `spaex install` only reports pending external skills; it
   does not invoke an installer selected by the provider.
 - Migrate `graphify-first-authoring` and `speckit-session-hopper` in [haexmas/atoms](https://github.com/haexmas/atoms) to the new shape; publish as new molecule versions.
-- Update consumer docs: adoption flow no longer materializes skill files; skills are installed by the hook.
+- Update consumer docs: adoption flow no longer materializes skill files; skills are installed through an explicit consumer-selected adapter.
 
 Depends on: Spec 016 landed (currently in `docs/plans/2026-09-08-spec-016-molecule-install-hooks-design.md`).
 
