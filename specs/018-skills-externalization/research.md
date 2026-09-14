@@ -6,12 +6,16 @@
    `atoms.external_skills`. The `atoms` map is defined as delivered file paths;
    putting opaque registry identifiers there would make the installer copy
    them and would corrupt orphan tracking.
-2. Keep references opaque strings. `skills.sh` slugs and agentskills.io
-   repository paths are different upstream formats; spaex should validate
-   safe input boundaries without inventing a registry grammar.
+2. Use structured source references. A repository, immutable revision, and
+   repository-relative path can be recorded for provenance without making
+   spaex a skill registry. Installer selection belongs to the hook, not to an
+   individual reference.
 3. Require `install_hook` when the list is non-empty. A declaration without an
    execution path would look supported while doing nothing.
-4. Keep the v4 manifest envelope. The publisher-facing breaking behavior is
+4. Use `skillsmd` as the default installer adapter. It is a Python port of the
+   Vercel skills CLI and can be executed through the uv runtime already
+   available to spaex. The Vercel npm CLI remains an optional adapter.
+5. Keep the v4 manifest envelope. The publisher-facing breaking behavior is
    released in the package 5.x line; existing `spaex_version: "4"` identifies
    the current manifest family and is not silently rewritten.
 
@@ -25,7 +29,8 @@
 
 ## Not Implemented Here
 
-- Registry discovery or skill content download.
+- Registry discovery or skill content download by spaex itself.
+- Treating `agentskills.io` as an installer; it defines the skill format.
 - Skill SHA pinning in the spaex lockfile.
 - Editing the external `haexmas/atoms` repository. The contract supports a
   skill stored there, referenced through a revision-specific repository/tree

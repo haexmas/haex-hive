@@ -48,8 +48,9 @@ runtime dependencies.
 Molecules may keep standard `SKILL.md` directories in the publisher
 repository, including `haexmas/atoms`. They are not copied by spaex's atom
 materializer. An `external_skills` reference plus an `install_hook` delegates
-installation to skills.sh or agentskills.io; the external installer owns the
-agent-specific destination and lifecycle.
+installation to the publisher-owned Agent Skills adapter, normally
+`uvx skillsmd`; the external installer owns the agent-specific destination and
+lifecycle.
 
 After `spaex install` completes, `.spaex/install.lock` is present and byte-identical across two consecutive runs.
 

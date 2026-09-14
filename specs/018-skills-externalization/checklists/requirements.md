@@ -10,7 +10,8 @@
 ## Contract
 
 - [x] `external_skills` is a top-level molecule-manifest field.
-- [x] External references are opaque strings and remain ordered/immutable.
+- [ ] External references are structured `{repository, revision, path}`
+  objects and remain ordered/immutable.
 - [x] An external-skill declaration requires an `install_hook`.
 - [x] `atoms.skill` and `atoms.skills` are rejected.
 - [x] Existing non-skill atom categories remain open.
