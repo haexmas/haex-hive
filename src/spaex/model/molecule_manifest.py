@@ -4,7 +4,8 @@ Renamed from AtomManifest by Spec 013. The v2 scalar `contributes` block is
 replaced by the v3 `atoms` category map: category name -> non-empty list of
 molecule-directory-relative delivered files. No delivered path may appear in
 more than one category (data-model.md "Cross-category path overlap is
-refused"); a violation refuses with `atoms-category-overlap`.
+refused"); a violation refuses with `atoms-category-overlap`. External skill
+references live in `external_skills` and are not delivered file paths.
 """
 
 from __future__ import annotations
@@ -64,6 +65,7 @@ class MoleculeManifest:
     version: str
     priority: int
     atoms: Mapping[str, tuple[str, ...]]
+    external_skills: tuple[str, ...] = ()
     defaults: Mapping[str, Any] = field(default_factory=dict)
     config_schema: str | None = None
     install_hook: InstallHook | None = None
@@ -106,6 +108,11 @@ class MoleculeManifest:
             )
 
         install_hook = _parse_install_hook(data.get("install_hook"))
+        external_skills = tuple(data.get("external_skills", ()))
+        if external_skills and install_hook is None:
+            raise ValueError(
+                f"molecule {data['id']!r} external_skills requires install_hook"
+            )
         speckit = _parse_speckit(data.get("speckit"))
 
         constitution_fragments = _freeze_constitution_fragments(
@@ -118,6 +125,7 @@ class MoleculeManifest:
             version=data["version"],
             priority=data["priority"],
             atoms=freeze_json(data["atoms"]),
+            external_skills=external_skills,
             defaults=freeze_json(defaults),
             config_schema=config_schema,
             install_hook=install_hook,

@@ -1,10 +1,10 @@
 # spaex — reproducible coding harnesses for any repo and development environment
 
-**Status**: `4.3.0` (adds explicit multi-agent Spec Kit installation support on top of the behavior harness and declarative Spec Kit integration installer; see [Spec 023](specs/023-behavior-harness/) and [Spec 024](specs/024-speckit-integration-installer/)). Portmanteau of `spec` and `haex`. See [docs/adr/0011-rename-to-spaex.md](docs/adr/0011-rename-to-spaex.md) for the rename decision and [specs/014-rename-to-spaex/](specs/014-rename-to-spaex/) for the full spec.
+**Status**: `5.0.0` (external skills remain standard skill content but are delegated to upstream installers through molecule hooks; see [Spec 018](specs/018-skills-externalization/)). Portmanteau of `spec` and `haex`. See [docs/adr/0011-rename-to-spaex.md](docs/adr/0011-rename-to-spaex.md) for the rename decision and [specs/014-rename-to-spaex/](specs/014-rename-to-spaex/) for the full spec.
 
 ## What it is
 
-spaex composes a coding harness for a single repo out of reusable pieces (skills, MCPs, constitutions, slash commands, dev-environment files, collectively "molecules"). You declare which molecules you want in `.spaex/manifest.json`. All spaex-owned project state lives under `.spaex/`; `spaex install` writes participating runtime files deterministically, pinned by SHA. Two consecutive `spaex install` runs on unchanged inputs produce byte-identical output.
+spaex composes a coding harness for a single repo out of reusable pieces (MCPs, constitutions, slash commands, dev-environment files, and external skill references, collectively "molecules"). You declare which molecules you want in `.spaex/manifest.json`. All spaex-owned project state lives under `.spaex/`; `spaex install` writes participating runtime files deterministically, pinned by SHA. Two consecutive `spaex install` runs on unchanged inputs produce byte-identical output.
 
 ## What you can do today
 
@@ -21,11 +21,11 @@ A molecule may declare an optional `install_hook` in its `manifest.json`. `spaex
 
 The v4 molecule-manifest schema treats `atoms{}` as an open `Dict[str, List[str]]` map. Publishers pick category names by convention. Common categories today: `constitution`, `slash_commands`, `agents`, `mcps`.
 
-**Environment-config files** (`flake.nix`, `Dockerfile`, `devcontainer.json`, `.envrc`, `shell.nix`, etc.) can be declared under any category name a publisher chooses. Spec 014 makes no naming commitment here; multi-environment vocabulary (dev/staging/prod), consumer-side selection, and orchestration verbs are the scope of Spec 015 (planned; see [docs/plans/2026-09-07-slot-015-multi-environment-placeholder.md](docs/plans/2026-09-07-slot-015-multi-environment-placeholder.md)).
+**Environment-config files** (`flake.nix`, `Dockerfile`, `devcontainer.json`, `.envrc`, `shell.nix`, etc.) can be declared under any category name a publisher chooses. The retired `skill` and `skills` categories are the one exception: a skill may still live in the publisher repository, but is declared as an `external_skills` reference and installed by the molecule's `install_hook`. Spec 014 makes no other naming commitment here; multi-environment vocabulary (dev/staging/prod), consumer-side selection, and orchestration verbs are the scope of Spec 015 (planned; see [docs/plans/2026-09-07-slot-015-multi-environment-placeholder.md](docs/plans/2026-09-07-slot-015-multi-environment-placeholder.md)).
 
 ## Install
 
-**Once published to PyPI (upcoming with the `v4.3.0` tag):**
+**Once published to PyPI (upcoming with the `v5.0.0` tag):**
 
 ```bash
 pipx install spaex
@@ -42,6 +42,14 @@ pip install -e '.[dev]'
 Requires Python 3.14.x and Git 2.30+ on `$PATH`. spaex includes `uv` for
 isolated, pinned CLI provisioning; `jsonschema` and `pyyaml` are the other
 runtime dependencies.
+
+### External skills
+
+Molecules may keep standard `SKILL.md` directories in the publisher
+repository, including `haexmas/atoms`. They are not copied by spaex's atom
+materializer. An `external_skills` reference plus an `install_hook` delegates
+installation to skills.sh or agentskills.io; the external installer owns the
+agent-specific destination and lifecycle.
 
 After `spaex install` completes, `.spaex/install.lock` is present and byte-identical across two consecutive runs.
 

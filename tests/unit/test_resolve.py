@@ -306,7 +306,7 @@ def test_non_contribution_atom_is_filtered_not_errored(tmp_path: Path) -> None:
                 "id": molecule_id,
                 "version": "1.0.0",
                 "priority": 100,
-                "atoms": {"skills": ["skills.md"]},
+                "atoms": {"instructions": ["skills.md"]},
             }
         )
     )

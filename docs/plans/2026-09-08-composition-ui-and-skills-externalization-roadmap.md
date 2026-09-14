@@ -83,7 +83,7 @@ Post-Phase A the molecule categories are, tentatively:
 - `atoms.mcp` (NEW: declare MCP servers to register with the consumer's agent)
 - `atoms.command` (NEW: Claude Code slash commands, if not already covered)
 - `atoms.instruction` (NEW: CLAUDE.md / AGENTS.md fragments)
-- `atoms.external_skills` (NEW, replaces `atoms.skill`: list of external skill references, consumed by the install-hook per Decision 2)
+- `external_skills` (NEW, replaces the `atoms.skill` category: list of external skill references, consumed by the install-hook per Decision 2)
 - `atoms.install_hook` (from Spec 016, unchanged)
 
 The exact names are placeholders; Phase A settles them.

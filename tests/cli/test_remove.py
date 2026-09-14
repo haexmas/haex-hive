@@ -26,7 +26,7 @@ def adopted_repo(tmp_path, haex_add_helpers, monkeypatch):
             _SKILL_ID: {
                 "path": "skill",
                 "version": "1.0.0",
-                "atoms": {"skills": ["skill.md"]},
+                "atoms": {"instructions": ["skill.md"]},
             },
         },
     )
@@ -128,7 +128,7 @@ def test_empty_compound_dropped_after_retraction(
             _SKILL_ID: {
                 "path": "skill",
                 "version": "1.0.0",
-                "atoms": {"skills": ["skill.md"]},
+                "atoms": {"instructions": ["skill.md"]},
             },
         },
         name="b",

@@ -62,7 +62,7 @@ Decisions are numbered so downstream specs can cite them (`Design 2026-09-10 §4
 ### Decision 1: Framing is "portable, plugin-shaped bundle system with modal constitution"
 
 The mental model of spaex is:
-- Bundles that mirror Claude-Plugin-style ontology (`atoms.skills`, `atoms.hooks`, `atoms.commands`, `atoms.agents`, `atoms.mcp`), so anyone familiar with Claude Plugins reads a molecule immediately.
+- Bundles that mirror Claude-Plugin-style ontology (`atoms.hooks`, `atoms.commands`, `atoms.agents`, `atoms.mcp`), while standard skills may live in the publisher repository and are installed through external references.
 - A spaex-native Behavior layer (`atoms.behavior`) on top, because no existing plugin format supports declarative modal rules.
 - Agent-neutral emission (AGENTS.md, CLAUDE.md, mcp.json, and per-harness variants) as the default output surface. A Claude-Plugin emitter is an optional convenience, not the mandatory pathway.
 
@@ -229,7 +229,7 @@ Claude Code has an optional secondary emission path: a plugin bundle under `.cla
 
 ## 8. Impact on the 2026-09-08 roadmap
 
-- **Phase A (Skills externalization, spec 018)**: unchanged. Skills continue to leave spaex/atoms and route through skills.sh / agentskills.io.
+- **Phase A (Skills externalization, spec 018)**: skills leave spaex atom materialization and route through skills.sh / agentskills.io; the source may remain in `haexmas/atoms`.
 - **Phase B (Ontology cleanup + presets, spec 019)**: grows to include the behavior-fragment machinery from this design. Concretely, Phase B now covers:
   - The `atoms.behavior` atom type.
   - The `constitution_fragments:` block on typed atoms.

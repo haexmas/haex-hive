@@ -75,7 +75,7 @@ def test_survivor_files_untouched_when_one_of_many_retracted(
                 # orphan-deletion work. This still exercises the retraction
                 # path end-to-end while keeping the surviving constitution
                 # untouched.
-                "atoms": {"skills": ["skill.md"]},
+                    "atoms": {"instructions": ["skill.md"]},
             },
         },
     )
