@@ -4,13 +4,18 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from spaex.constitution.resolve import ResolvedMolecule
 from spaex.integrations.speckit import prepare_install
 from spaex.model.install_lock import InstallLock, MoleculeEntry
 from spaex.model.molecule_manifest import MoleculeManifest
 
 
-def test_prepare_install_delegates_selected_agent_to_official_cli(tmp_path: Path) -> None:
+@pytest.mark.parametrize("provisioned", [False, True])
+def test_prepare_install_delegates_selected_agent_to_official_cli(
+    tmp_path: Path, provisioned: bool
+) -> None:
     calls = tmp_path / "calls.log"
     executable = tmp_path / "fake_specify.py"
     executable.write_text(
@@ -53,6 +58,11 @@ raise SystemExit(2)
                 "atoms": {},
                 "speckit": {
                     "version_constraint": ">=0.8.1",
+                    **(
+                        {"cli": {"package": "specify-cli", "version": "0.8.1"}}
+                        if provisioned
+                        else {}
+                    ),
                     "integrations": {
                         "claude": {"integration_options": "--skills"},
                         "codex": {"integration_options": "--skills"},
@@ -108,9 +118,12 @@ raise SystemExit(2)
         explicit_selection=None,
         executable=(sys.executable, str(executable)),
     )
-    assert calls.read_text().splitlines().count(
-        "integration install codex --integration-options=--skills"
-    ) == 1
+    assert (
+        calls.read_text()
+        .splitlines()
+        .count("integration install codex --integration-options=--skills")
+        == 1
+    )
 
     prepare_install(
         resolved,
