@@ -10,7 +10,13 @@ upstream tool:
   "version": "2.0.0",
   "priority": 100,
   "atoms": {"constitution": ["constitution.md"]},
-  "external_skills": ["example-org/example-skills"],
+  "external_skills": [
+    {
+      "repository": "https://github.com/haexmas/atoms",
+      "revision": "0123456789abcdef0123456789abcdef01234567",
+      "path": "skills/example-skill"
+    }
+  ],
   "install_hook": {
     "interpreter": "python3",
     "script": "install.py",
@@ -19,12 +25,13 @@ upstream tool:
 }
 ```
 
-`install.py` may call the upstream tool, for example `npx skills add
-example-org/example-skills`. The hook runs with the normal Spec 016 trust and
-failure semantics. A consumer can opt out for one invocation with
+`install.py` reads `external_skills` from the pinned molecule `manifest.json`
+via `SPAEX_MOLECULE_MANIFEST` and may call the pinned Python adapter, for
+example `uvx --from skillsmd==0.1.0 skillsmd add ...`. The hook runs with the
+normal Spec 016 trust and failure semantics. A consumer can opt out for one invocation with
 `spaex install --no-install-hooks`.
 
 The skill may live in the same `haexmas/atoms` repository as the molecule.
 The reference is metadata for spaex: spaex itself does not copy it into the
-consumer repository and does not claim to pin the upstream skill content; the
-hook delegates that work to the external skills installer.
+consumer repository. The hook delegates that work to `skillsmd`, while the
+skill content remains outside spaex's install lock.
