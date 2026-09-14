@@ -20,14 +20,14 @@ external agent-file side effects outside spaex's rename-swap rollback. Generic
 
 ## Technical Context
 
-**Language/Version**: Python 3.10+
-**Primary Dependencies**: Existing standard library (`subprocess`, `shlex` only for validation, `hashlib`, `json`) plus existing `jsonschema` and `pyyaml`; no new dependency
+**Language/Version**: Python 3.14.x
+**Primary Dependencies**: Existing standard library (`subprocess`, `shlex` only for validation, `hashlib`, `json`) plus `jsonschema`, `pyyaml`, and the runtime `uv` tool runner
 **Storage**: Existing `.spaex/manifest.json` compound configuration and `.spaex/install.lock`; publisher molecule `manifest.json` gains `speckit` metadata
 **Testing**: pytest unit, contract, and integration tests; deterministic fake `specify` executable; opt-in live smoke check
 **Target Platform**: Linux/macOS/Windows where the official `specify` CLI and selected agent integration are supported; subprocess invocation uses argument arrays and no shell
 **Project Type**: Python CLI/library
 **Performance Goals**: No additional external CLI invocation on an unchanged successful install; local validation and lock comparison remain sub-second for normal molecule sets
-**Constraints**: Project-local installation only; no implicit Python/uv/agent provisioning; no copied Spec Kit skill content; external CLI changes are not transactionally reversible by spaex
+**Constraints**: Project-local installation only; pinned `specify-cli` provisioning through uv; no agent-runtime provisioning; no copied Spec Kit skill content; external CLI changes are not transactionally reversible by spaex
 **Scale/Scope**: One or more selected Spec Kit integrations for one consumer repository; first conformance targets Claude Code and Codex CLI
 
 ## Constitution Check
@@ -43,7 +43,7 @@ external agent-file side effects outside spaex's rename-swap rollback. Generic
 ### spaex constitution
 
 - **Immutable external references**: PASS. Molecule revisions remain full SHA pins; the Spec Kit CLI policy forbids mutable `latest`, branches, and wildcards.
-- **No new dependency**: PASS. The design uses the standard library and existing dependencies; `specify` is an operator-managed external executable.
+- **Pinned CLI provisioning**: PASS. The molecule may declare an exact `specify-cli` package version, which spaex runs through its `uv` runtime dependency without modifying the user's PATH.
 - **Input validation and data-loss prevention**: PASS. Manifest, selection, version, command, and lock inputs are validated before invocation; external partial changes are reported rather than falsely rolled back.
 - **Install side effects**: PASS with explicit boundary. This is a first-class declared action, not an arbitrary `install_hook`; external CLI effects are documented as non-transactional and project-local.
 - **Tests**: PASS in plan. Contract tests, fake-CLI integration tests, failure cases, and idempotence coverage are required.
@@ -61,8 +61,8 @@ are:
 
 1. Delegate integration layout and conflict behavior to official Spec Kit.
 2. Add a typed molecule declaration rather than using `install_hook`.
-3. Verify an operator-managed exact/lower-bound CLI policy; do not provision a
-   toolchain implicitly.
+3. Verify an exact/lower-bound CLI policy and provision an exact package through
+   the bundled `uv` tool runner when the molecule declares one.
 4. Persist the selection and successful outcomes in the install lock.
 5. Invoke selected integrations serially outside the spaex generation swap.
 6. Use the lock fingerprint for the clean no-op path.

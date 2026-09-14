@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 
 import pytest
 
@@ -11,11 +12,12 @@ from spaex.integrations.speckit import (
     emit_results,
     parse_selection,
     parse_version_output,
+    resolve_cli_executable,
     run_cli,
     select_integrations,
 )
 from spaex.model.install_lock import SpeckitLockRecord
-from spaex.model.molecule_manifest import SpeckitDeclaration
+from spaex.model.molecule_manifest import SpeckitCliProvisioning, SpeckitDeclaration
 from spaex.model.version_constraint import VersionConstraint
 from spaex.util.errors import (
     SpeckitCliFailedError,
@@ -37,6 +39,10 @@ def _declaration() -> SpeckitDeclaration:
     return SpeckitDeclaration(
         version_constraint=VersionConstraint.parse("0.8.1"),
         integrations={"claude": "", "codex": "--skills"},
+        cli=SpeckitCliProvisioning(
+            package="specify-cli",
+            version=VersionConstraint.parse("0.8.1"),
+        ),
     )
 
 
@@ -79,6 +85,19 @@ def test_install_argv_passes_options_as_one_argument() -> None:
         "install",
         "codex",
         "--integration-options=--skills",
+    ]
+
+
+def test_provisioned_cli_uses_uv_tool_run_with_exact_package() -> None:
+    assert resolve_cli_executable(_declaration()) == [
+        sys.executable,
+        "-m",
+        "uv",
+        "tool",
+        "run",
+        "--from",
+        "specify-cli==0.8.1",
+        "specify",
     ]
 
 

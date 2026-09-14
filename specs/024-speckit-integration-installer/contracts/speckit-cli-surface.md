@@ -30,7 +30,7 @@ The implementation MUST expose stable diagnostic keys for at least:
 | Key | Meaning |
 |---|---|
 | `speckit-declaration-invalid` | Molecule declaration is malformed or unsafe. |
-| `speckit-cli-missing` | `specify` is not available on `PATH`. |
+| `speckit-cli-missing` | A legacy `specify` executable is not available on `PATH` when no provisioning block is declared. |
 | `speckit-cli-version-incompatible` | `specify version` does not satisfy the declaration. |
 | `speckit-integration-unsupported` | Selection is not reported by `specify integration list`. |
 | `speckit-selection-required` | Non-interactive install has no explicit or persisted selection. |

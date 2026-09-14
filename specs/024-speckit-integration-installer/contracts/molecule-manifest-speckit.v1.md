@@ -17,6 +17,10 @@
   },
   "speckit": {
     "version_constraint": "0.12.11",
+    "cli": {
+      "package": "specify-cli",
+      "version": "0.12.11"
+    },
     "integrations": {
       "claude": {
         "integration_options": ""
@@ -32,6 +36,8 @@
 ## Validation
 
 - `speckit` is optional.
+- When `cli` is present, `package` MUST be `specify-cli` and `version` MUST
+  be an exact `X.Y.Z` version satisfying `version_constraint`.
 - When present, `version_constraint` MUST match spaex's exact/lower-bound
   version grammar.
 - `integrations` MUST be a non-empty object.
@@ -50,8 +56,10 @@
 ## Runtime semantics
 
 - The declaration is resolved from the already pinned molecule revision.
-- The effective `specify` CLI version MUST satisfy `version_constraint` before
-  any integration install is attempted.
+- When `cli` is present, spaex MUST provision the exact package through its
+  bundled `uv` dependency using `uv tool run`; the effective `specify` CLI
+  version MUST satisfy both the exact package version and
+  `version_constraint` before any integration install is attempted.
 - The supported integration set is read from `specify integration list`; a
   selected key that is not supported is refused before any install operation.
 - The official install operation is invoked as:

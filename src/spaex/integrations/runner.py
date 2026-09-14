@@ -1,0 +1,46 @@
+"""Shell-free command construction for external integration runners."""
+
+from __future__ import annotations
+
+import sys
+from collections.abc import Sequence
+
+from spaex.model.molecule_manifest import SpeckitDeclaration
+from spaex.model.version_constraint import VersionConstraint
+
+CliExecutable = str | Sequence[str]
+
+
+def build_install_argv(executable: CliExecutable, key: str, options: str) -> list[str]:
+    """Build a shell-free official install invocation."""
+    argv = [executable] if isinstance(executable, str) else list(executable)
+    argv.extend(("integration", "install", key))
+    if options:
+        argv.append(f"--integration-options={options}")
+    return argv
+
+
+def resolve_cli_executable(
+    declaration: SpeckitDeclaration,
+    executable: CliExecutable | None = None,
+) -> list[str]:
+    """Resolve an override or provision the pinned official CLI through uv."""
+    if executable is not None:
+        return [executable] if isinstance(executable, str) else list(executable)
+    if declaration.cli is None:
+        return ["specify"]
+    return [
+        sys.executable,
+        "-m",
+        "uv",
+        "tool",
+        "run",
+        "--from",
+        f"{declaration.cli.package}=={_version_text(declaration.cli.version)}",
+        "specify",
+    ]
+
+
+def _version_text(version: VersionConstraint) -> str:
+    major, minor, patch = version.version
+    return f"{major}.{minor}.{patch}"
