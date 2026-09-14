@@ -1,7 +1,10 @@
 # Quickstart: external skill references
 
-A publisher declares the external reference and a hook that delegates to the
-upstream tool:
+**Design preview**: These structured references and skill commands are planned
+and are not implemented by this documentation-only PR. The SHA below is a
+placeholder; replace it with the full commit SHA containing the skill.
+
+A publisher declares source metadata without an installation hook:
 
 ```json
 {
@@ -16,18 +19,12 @@ upstream tool:
       "revision": "0123456789abcdef0123456789abcdef01234567",
       "path": "skills/example-skill"
     }
-  ],
-  "install_hook": {
-    "interpreter": "python3",
-    "script": "install.py",
-    "on_failure": "warn"
-  }
+  ]
 }
 ```
 
-`install.py` may inspect the pinned molecule `manifest.json` via
-`SPAEX_MOLECULE_MANIFEST`, but provider hooks do not select the consumer's
-skill installer. Normal `spaex install` only reports the reference as pending.
+The consumer-selected adapter reads the pinned molecule `manifest.json` via
+`SPAEX_MOLECULE_MANIFEST`. Normal `spaex install` only reports the reference as pending.
 The consumer explicitly runs `spaex skills install`, chooses an adapter,
 agent, and scope on first use, and spaex stores that choice in
 `.spaex/manifest.json`. Later changes use `spaex skills configure`.

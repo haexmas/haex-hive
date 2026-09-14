@@ -217,10 +217,10 @@ Composed output landing per harness:
 
 | Harness       | Primary artifact              | Constitution placement                             | Skills                        | Hooks             | MCP                            |
 |---------------|-------------------------------|----------------------------------------------------|-------------------------------|-------------------|--------------------------------|
-| Agent-neutral | `AGENTS.md`                   | Inline at top under `## Behavior harness`          | via `agentskills.io` install  | shell scripts     | `mcp.json` at repo root        |
-| Claude Code   | `CLAUDE.md` + `.claude/`      | Inline at top of `CLAUDE.md`                       | via `agentskills.io` install  | `.claude/hooks/`  | `.mcp.json` merged             |
-| Codex CLI     | `AGENTS.md` + Codex config    | Inline at top of `AGENTS.md`                       | via `agentskills.io` install  | shell scripts     | Codex MCP config               |
-| Gemini CLI    | Gemini config + `AGENTS.md`   | Inline at top of `AGENTS.md`                       | via `agentskills.io` install  | shell scripts     | Gemini MCP config              |
+| Agent-neutral | `AGENTS.md`                   | Inline at top under `## Behavior harness`          | consumer-selected adapter  | shell scripts     | `mcp.json` at repo root        |
+| Claude Code   | `CLAUDE.md` + `.claude/`      | Inline at top of `CLAUDE.md`                       | consumer-selected adapter  | `.claude/hooks/`  | `.mcp.json` merged             |
+| Codex CLI     | `AGENTS.md` + Codex config    | Inline at top of `AGENTS.md`                       | consumer-selected adapter  | shell scripts     | Codex MCP config               |
+| Gemini CLI    | Gemini config + `AGENTS.md`   | Inline at top of `AGENTS.md`                       | consumer-selected adapter  | shell scripts     | Gemini MCP config              |
 | dsh           | dsh Cordis-patch bundle       | Emitted as Cordis behavior row (Phase E follow-up) | Cordis plugin adapter         | Cordis event rows | Cordis MCP plugin adapter      |
 
 Skills are external per the 2026-09-08 roadmap Phase A; consumers choose an
@@ -230,7 +230,7 @@ Claude Code has an optional secondary emission path: a plugin bundle under `.cla
 
 ## 8. Impact on the 2026-09-08 roadmap
 
-- **Phase A (Skills externalization, spec 018)**: skills leave spaex atom materialization and route through skills.sh / agentskills.io; the source may remain in `haexmas/atoms`.
+- **Phase A (Skills externalization, spec 018)**: skills leave spaex atom materialization and use a consumer-selected installer and the Agent Skills format; the source may remain in `haexmas/atoms`.
 - **Phase B (Ontology cleanup + presets, spec 019)**: grows to include the behavior-fragment machinery from this design. Concretely, Phase B now covers:
   - The `atoms.behavior` atom type.
   - The `constitution_fragments:` block on typed atoms.

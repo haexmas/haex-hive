@@ -5,12 +5,13 @@
 
 A molecule may declare an optional `install_hook` in its `manifest.json`. `spaex install` invokes each declared hook as a normal subprocess after any required atom materialization and before publishing the install.lock generation; hook-only molecules run without atom materialization. Hooks are the escape hatch for side effects that are not delivered files: appending `.gitignore` lines, registering git hooks, provisioning tools in the consumer repo, etc.
 
-Molecules that declare `external_skills` expose source metadata for an
-explicit consumer-selected skill-management operation. A provider hook may
-read the pinned molecule manifest from `SPAEX_MOLECULE_MANIFEST`, but it must
-not silently choose the installer's adapter, target agent, or scope. The
-referenced skill may live in the same publisher repository; spaex does not
-itself resolve or materialize that skill content during normal installation.
+The [Spec 018 design update](../specs/018-skills-externalization/spec.md)
+proposes separating external skill installation from this hook lifecycle.
+Under that design, `external_skills` is source metadata, and only the explicit
+consumer-selected adapter receives `SPAEX_MOLECULE_MANIFEST`. The commands and
+that environment variable are not implemented yet. Current `5.0.0` still
+requires a hook for its opaque external-skill references. Unrelated provider
+hooks retain the execution and failure semantics documented below.
 
 ## Declaring a hook
 
