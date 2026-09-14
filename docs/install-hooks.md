@@ -5,6 +5,11 @@
 
 A molecule may declare an optional `install_hook` in its `manifest.json`. `spaex install` invokes each declared hook as a normal subprocess after any required atom materialization and before publishing the install.lock generation; hook-only molecules run without atom materialization. Hooks are the escape hatch for side effects that are not delivered files: appending `.gitignore` lines, registering git hooks, provisioning tools in the consumer repo, etc.
 
+Molecules that declare `external_skills` use this same hook boundary to
+delegate installation to skills.sh or agentskills.io. The referenced skill
+may live in the same publisher repository; spaex does not itself resolve or
+materialize that skill content.
+
 ## Declaring a hook
 
 Add an `install_hook` block to `manifest.json`:

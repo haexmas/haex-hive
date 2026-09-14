@@ -149,7 +149,7 @@ Two developers pull the same commit of a project onto their machines. The projec
 
 - **FR-001**: The system MUST accept behavior fragments contributed by any atom, using a declarative format that carries at minimum an identifier scoped to the fragment's owning molecule (per Clarification Q1: `<molecule-id>/<fragment-id>`), a source-atom reference, an optional modality declaration, optional tags, and a directive body written in Markdown.
 - **FR-002**: The system MUST support a first-class atom category dedicated to behavior fragments, allowing a molecule to contribute rules without also carrying code, hooks, or MCP configs.
-- **FR-003**: The system MUST support typed atoms (skills, MCPs, speckit workflows, and any other type where behavior is intrinsic) carrying inline behavior fragments alongside their primary payload, treated identically to standalone behavior fragments during composition.
+- **FR-003**: The system MUST support typed atoms (MCPs, Spec Kit workflows, and any other type where behavior is intrinsic) carrying inline behavior fragments alongside their primary payload, treated identically to standalone behavior fragments during composition. Standard skills are external references under Spec 018 rather than spaex-delivered typed atoms.
 - **FR-004**: The system MUST materialize every active behavior fragment to a canonical location under the consumer's repo during install, so the fragment set is inspectable, diff-able, and version-controllable.
 
 **Mechanical pre-check**

@@ -25,6 +25,12 @@
     "atoms": {
       "type": "object",
       "minProperties": 0,
+      "propertyNames": {
+        "allOf": [
+          { "type": "string" },
+          { "not": { "enum": ["skill", "skills"] } }
+        ]
+      },
       "additionalProperties": {
         "type": "array",
         "minItems": 1,
@@ -32,6 +38,20 @@
         "items": { "$ref": "#/$defs/repoRelativePath" }
       },
       "description": "Category names mapped to non-empty lists of molecule-directory-relative delivered files. A Spec Kit-only molecule may use an empty map when it declares `speckit`. Category keys are open (any string); common categories include constitution, slash_commands, agents, mcps. Environment-config category naming (dev/staging/prod) is Spec 015 scope; Spec 014 makes no commitment."
+    },
+    "external_skills": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "allOf": [
+          { "pattern": "^[^\\u0000-\\u001F\\u007F\\r\\n]+$" },
+          { "pattern": ".*\\S.*" }
+        ]
+      },
+      "description": "Opaque skills.sh or agentskills.io references. These are metadata, not delivered file paths; a molecule declaring them must provide an install_hook that delegates to the upstream installer."
     },
     "defaults": {
       "type": "object",
@@ -129,7 +149,22 @@
       "if": {
         "properties": { "atoms": { "maxProperties": 0 } }
       },
-      "then": { "required": ["speckit"] }
+      "then": {
+        "anyOf": [
+          { "required": ["speckit"] },
+          { "required": ["external_skills"] },
+          { "required": ["install_hook"] }
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": ["external_skills"],
+        "properties": {
+          "external_skills": { "minItems": 1 }
+        }
+      },
+      "then": { "required": ["install_hook"] }
     }
   ],
   "$defs": {

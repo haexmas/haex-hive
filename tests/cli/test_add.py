@@ -38,7 +38,7 @@ def two_molecule_publisher(tmp_path: Path, haex_add_helpers):
             _WORLD_ID: {
                 "path": "world",
                 "version": "1.0.0",
-                "atoms": {"skills": ["skill.md"]},
+                "atoms": {"instructions": ["skill.md"]},
             },
         },
     )
