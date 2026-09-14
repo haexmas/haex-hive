@@ -4,7 +4,7 @@
 
 **Author**: brainstorming session 2026-09-08 with operator.
 
-**Target spaex version**: 4.2.0 through 5.0.0 (see Phasing). Skills externalization (Phase A) is a breaking change to the molecule ontology and drives the MAJOR bump.
+**Target spaex versions**: 4.2.0 through 5.4.0 (see Phasing). Skills externalization (Phase A) is a breaking change to the molecule ontology and drives the MAJOR bump.
 
 **Related**:
 - [Scope Realignment (2026-09-03)](2026-09-03-scope-realignment-design.md): Section "Agent Skills is a format standard, not a package manager" already found that skills.sh and agentskills.io own the skill distribution problem. This roadmap acts on that finding by removing skills from spaex/atoms entirely.

@@ -105,6 +105,17 @@ def test_unsupported_selection_is_rejected_before_install(tmp_path: Path) -> Non
         )
 
 
+def test_all_selection_rejects_unsupported_before_install(tmp_path: Path) -> None:
+    with pytest.raises(SpeckitIntegrationUnsupportedError):
+        prepare_install(
+            _resolved(tmp_path, integration_key="gemini"),
+            repo_root=tmp_path,
+            existing_lock=None,
+            explicit_selection="all",
+            executable=str(_cli(tmp_path)),
+        )
+
+
 def test_failed_official_install_preserves_external_boundary(tmp_path: Path) -> None:
     executable = _cli(tmp_path, fail_install=True)
     with pytest.raises(SpeckitCliFailedError):
