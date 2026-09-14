@@ -66,7 +66,8 @@ if [ \"$1\" = integration ] && [ \"$2\" = install ]; then
   {install}
 fi
 exit 2
-"""
+""",
+        encoding="utf-8",
     )
     executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
     return executable

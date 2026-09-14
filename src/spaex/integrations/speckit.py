@@ -190,6 +190,7 @@ def run_cli(
                 cwd=repo_root,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 check=False,
             )
         else:
@@ -197,6 +198,7 @@ def run_cli(
                 list(argv),
                 cwd=repo_root,
                 text=True,
+                encoding="utf-8",
                 check=False,
             )
     except FileNotFoundError as exc:

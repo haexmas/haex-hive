@@ -20,7 +20,7 @@ def _fake_cli(tmp_path: Path) -> Path:
     executable = tmp_path / "specify"
     executable.write_text(
         """#!/bin/sh
-printf '%s\\n' "$*" >> CALLS
+printf '%s\\n' "$*" >> "CALLS"
 if [ "$1" = version ]; then echo 'CLI Version 0.8.1.dev0'; exit 0; fi
 if [ "$1" = integration ] && [ "$2" = list ]; then
   printf '│ claude │ Claude Code │\\n│ codex │ Codex CLI │\\n'
@@ -31,7 +31,7 @@ if [ "$1" = integration ] && [ "$2" = install ]; then
   exit 0
 fi
 exit 2
-""".replace("CALLS", str(tmp_path / "calls.log"))
+""".replace("CALLS", (tmp_path / "calls.log").as_posix()), encoding="utf-8"
     )
     executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
     return executable
