@@ -12,9 +12,9 @@
    individual reference.
 3. Require `install_hook` when the list is non-empty. A declaration without an
    execution path would look supported while doing nothing.
-4. Use `skillsmd` as the default installer adapter. It is a Python port of the
-   Vercel skills CLI and can be executed through the uv runtime already
-   available to spaex. The Vercel npm CLI remains an optional adapter.
+4. Keep installer choice on the consumer side. `skillsmd`, the Vercel npm CLI,
+   or another compatible adapter may be selected by the user; no provider
+   manifest chooses one by default.
 5. Keep the v4 manifest envelope. The publisher-facing breaking behavior is
    released in the package 5.x line; existing `spaex_version: "4"` identifies
    the current manifest family and is not silently rewritten.

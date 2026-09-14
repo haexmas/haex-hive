@@ -10,19 +10,26 @@
 ### Session 2026-09-14
 
 - Q: Wie wird ein externer Skill beim Nutzer installiert und woher kommt der
-  Installer? → A: `external_skills` wird strukturiert modelliert. Der
-  Standardadapter ist das unabhängige Python-Paket `skillsmd`, das der Hook
-  über `uvx --from skillsmd==<version> skillsmd add ...` ausführt. Die Vercel-
-  `skills`-CLI bleibt eine optionale npm-Alternative; `agentskills.io` ist nur
-  die Format-Spezifikation und kein Installer.
+  Installer? → A: `external_skills` wird strukturiert modelliert und enthält
+  nur Quelle, Revision und Pfad. Der Nutzer/Consumer entscheidet über den
+  Installer, den Ziel-Agenten, den Scope und den Ausführungszeitpunkt. Weder
+  Provider noch spaex erzwingen `skillsmd`, die Vercel-CLI oder einen anderen
+  Installer. `agentskills.io` ist nur die Format-Spezifikation.
 - Q: Wie erhält das Hook-Skript die strukturierten Referenzen? → A: Es liest
   das bereits gepinnte Molekül-`manifest.json` direkt. spaex erzeugt keine
   temporäre JSON-Kopie und dupliziert die Referenzen nicht in einer zweiten
   Übergabedatei. Für robuste Pfadauflösung stellt spaex dem Hook den Pfad des
   Originalmanifests über `SPAEX_MOLECULE_MANIFEST` zur Verfügung.
 - Q: Gehört der Installer in jede einzelne Skill-Referenz? → A: Nein. Eine
-  Referenz enthält nur Quelle, Revision und Pfad. Der Installer ist Hook-Policy
-  und wird standardmäßig über `skillsmd` im Hook ausgewählt.
+  Referenz enthält nur Quelle, Revision und Pfad. Die Installationsentscheidung
+  gehört zur Consumer-Konfiguration beziehungsweise zum konkreten Aufruf.
+- Q: Wann wird die Installationsentscheidung abgefragt? → A: `spaex install`
+  installiert externe Skills nie automatisch und fragt nicht implizit nach. Es
+  materialisiert Atome und zeigt verfügbare externe Skills als ausstehend an.
+  Ein expliziter Aufruf `spaex skills install` startet beim ersten Mal die
+  Konfiguration und speichert sie in der Consumer-`.spaex/manifest.json`.
+  Änderungen erfolgen später explizit über `spaex skills configure`; bereits
+  installierte externe Skills werden dabei nicht automatisch gelöscht.
 
 ## User Scenarios & Testing
 
@@ -65,16 +72,16 @@ assert a schema refusal before any install resolution occurs.
 2. **Given** an unrelated open atom category, **when** the manifest is
    validated, **then** it remains accepted.
 
-### User Story 3 - Delegate installation through the existing hook boundary (Priority: P2)
+### User Story 3 - Let the consumer choose the installation mechanism (Priority: P2)
 
-As a molecule publisher, I can keep the actual Agent Skills installation in
-the existing `install_hook`, using the Python/uv-based `skillsmd` adapter by
-default, so spaex remains independent of any skill registry and the normal
-hook trust/failure semantics apply.
+As a consumer, I can choose how and where declared external Agent Skills are
+installed, so a provider cannot silently select an installer, target agent, or
+installation scope for me.
 
-**Independent Test**: Install a fixture molecule with `external_skills` and an
-`install_hook`; verify the normal hook runner is used and the skill reference
-itself is not treated as a file path.
+**Independent Test**: Adopt a fixture molecule with `external_skills`, verify
+that normal `spaex install` only reports the pending references, then invoke
+the explicit skill-install command and verify that the selected consumer-side
+installer receives the structured source reference.
 
 ## Edge Cases
 
@@ -95,26 +102,37 @@ itself is not treated as a file path.
   repository-relative skill path. The reference MUST NOT declare an installer.
 - **FR-002**: `external_skills` objects MUST be preserved in declaration order
   and MUST be exposed immutably by `MoleculeManifest`.
-- **FR-003**: A molecule declaring at least one external skill MUST also
-  declare `install_hook`.
+- **FR-003**: A molecule declaring external skills MUST NOT be required to
+  declare an `install_hook` solely for skill installation. An unrelated
+  provider hook remains governed by Spec 016.
 - **FR-004**: The schema MUST reject `atoms.skill` and `atoms.skills`.
 - **FR-005**: Other atom category names MUST remain open and unchanged.
-- **FR-006**: spaex MUST NOT copy, resolve, pin, or otherwise install external
-  skill content itself; the declared install hook remains the execution
-  boundary. The default hook adapter MUST be invokable through `uvx` and the
-  pinned `skillsmd` package. The referenced skill MAY live under the same
-  publisher repository as the molecule.
+- **FR-006**: spaex MUST NOT silently select an installer, target agent, scope,
+  or installation time on behalf of the provider. External skill installation
+  MUST use an explicit consumer/user choice. The referenced skill MAY live
+  under the same publisher repository as the molecule.
 - **FR-007**: Existing molecules without `external_skills` MUST remain valid.
-- **FR-008**: Documentation MUST describe the external installer limitation:
-  the molecule SHA and installer package version MAY be pinned by the hook,
-  but the installed skill content remains outside spaex's lockfile.
+- **FR-008**: Documentation MUST describe that the consumer-selected installer
+  and its version are outside spaex's lockfile; the installed skill content
+  remains outside spaex's materialized atom paths.
 - **FR-009**: Phase A MUST NOT require moving skills out of the publisher
   repository. A publisher MAY keep molecule files and standard `SKILL.md`
   directories in `haexmas/atoms`.
-- **FR-010**: The install hook MUST read the structured skill references from
-  the pinned molecule manifest, using `SPAEX_MOLECULE_MANIFEST` when resolving
-  the manifest path. spaex MUST NOT create a second serialized copy solely to
-  pass `external_skills` to the hook.
+- **FR-010**: Any consumer-selected installer integration MUST read the
+  structured skill references from the pinned molecule manifest, using
+  `SPAEX_MOLECULE_MANIFEST` when resolving the manifest path. spaex MUST NOT
+  create a second serialized copy solely to pass `external_skills` to an
+  installer.
+- **FR-011**: Normal `spaex install` MUST NOT invoke an external skill
+  installer. It MUST leave the declared references unmaterialized and MAY
+  report them as pending for an explicit skill-install operation.
+- **FR-012**: An explicit `spaex skills install` operation MUST use the
+  consumer's persisted `skill_installation` policy. If no policy exists, the
+  operation MUST prompt in an interactive session and persist the accepted
+  choice in the consumer `.spaex/manifest.json`.
+- **FR-013**: `spaex skills configure` MUST allow the consumer to change the
+  persisted installer, target-agent, and scope choices. Changing the policy
+  MUST NOT implicitly remove already installed external skills.
 
 ### Key Entities
 
@@ -133,11 +151,14 @@ co-located Agent Skills. The distinction is the delivery mechanism:
   `install.lock`.
 - `external_skills` lists structured skill sources that spaex records as
   metadata.
-- `install_hook` delegates the actual skill installation to an external
-  installer. The default adapter is `uvx skillsmd`; it owns the agent-specific
-  target and lifecycle.
-- The hook reads the original pinned molecule manifest through
+- A consumer-selected installer delegates the actual skill installation and
+  owns the agent-specific target and lifecycle.
+- The selected installer reads the original pinned molecule manifest through
   `SPAEX_MOLECULE_MANIFEST`; no generated external-skills payload is created.
+- The consumer's `skill_installation` policy belongs to
+  `.spaex/manifest.json`, not to the provider molecule manifest.
+- `spaex install` and external skill installation are separate operations;
+  provider-controlled hooks are not the default skill-installation mechanism.
 
 Therefore Phase A does not delete or relocate skills from `haexmas/atoms`; it
 removes only the old spaex-delivered `skill`/`skills` atom contract.
@@ -150,18 +171,22 @@ removes only the old spaex-delivered `skill`/`skills` atom contract.
   validation before install resolution.
 - **SC-003**: Existing non-skill molecule fixtures continue to pass the full
   contract and integration test suite.
-- **SC-004**: The feature adds no runtime dependency on Node, skills.sh, or
-  agentskills.io; the default installer is obtained through the user's
-  existing `uvx` runtime.
+- **SC-004**: The feature adds no mandatory runtime dependency on Node, uv,
+  skills.sh, agentskills.io, or a particular installer.
+- **SC-005**: A normal `spaex install` produces no external skill side effect;
+  installation occurs only after an explicit consumer action and a persisted
+  or newly confirmed consumer policy.
 
 ## Assumptions
 
 - The existing v4 manifest envelope remains the schema envelope; the spaex
   package major version records the intentional publisher-facing break.
-- Hook authors may invoke `uvx --from skillsmd==<version> skillsmd add ...`.
-  The Vercel `skills` npm CLI remains an optional alternative, while
-  `agentskills.io` is treated as the format specification rather than an
-  installer. spaex does not synthesize or execute an installer command
-  automatically.
+- Consumers MAY select `skillsmd` through `uvx`, the Vercel `skills` npm CLI,
+  or another compatible installer. Provider manifests MUST NOT force one
+  choice, and spaex does not synthesize or execute an installer command
+  without an explicit consumer choice.
+- The consumer policy is stored under `skill_installation` in the consumer's
+  `.spaex/manifest.json`; the exact adapter implementation remains a consumer
+  concern.
 - A skill MAY remain in `haexmas/atoms`; migration changes the molecule's
   delivery contract, not necessarily the skill repository layout.
