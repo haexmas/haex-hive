@@ -8,11 +8,11 @@
         "com.github.haexmas.atoms.python",
         "com.github.haexmas.atoms.spaex-constitution"
       ],
-      "revision": "9cac2b0d3e51bb85a9f74170969280bd639eb83f",
+      "revision": "5a8ebc5a3d31a254b18800efaade79f1f7a46e16",
       "source": "https://github.com/haexmas/atoms"
     }
   ],
   "identity": "com.github.haexmas.spaex",
-  "spaex_min_version": ">=4.2.0",
+  "spaex_min_version": ">=4.3.0",
   "spaex_version": "4"
 }
