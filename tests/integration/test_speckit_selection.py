@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -16,25 +16,31 @@ from spaex.util.errors import (
 )
 
 
-def _fake_cli(tmp_path: Path) -> Path:
-    executable = tmp_path / "specify"
+def _fake_cli(tmp_path: Path) -> tuple[str, str]:
+    executable = tmp_path / "fake_specify.py"
     executable.write_text(
-        """#!/bin/sh
-printf '%s\\n' "$*" >> "CALLS"
-if [ "$1" = version ]; then echo 'CLI Version 0.8.1.dev0'; exit 0; fi
-if [ "$1" = integration ] && [ "$2" = list ]; then
-  printf '│ claude │ Claude Code │\\n│ codex │ Codex CLI │\\n'
-  exit 0
-fi
-if [ "$1" = integration ] && [ "$2" = install ]; then
-  touch "$PWD/installed-$3"
-  exit 0
-fi
-exit 2
-""".replace("CALLS", (tmp_path / "calls.log").as_posix()), encoding="utf-8"
+        f"""from pathlib import Path
+import sys
+
+CALLS = Path({str(tmp_path / "calls.log")!r})
+args = sys.argv[1:]
+CALLS.open("a", encoding="utf-8").write(" ".join(args) + "\\n")
+if args == ["version"]:
+    print("CLI Version 0.8.1.dev0")
+    raise SystemExit(0)
+if args[:2] == ["integration", "list"]:
+    sys.stdout.buffer.write(
+        "│ claude │ Claude Code │\\n│ codex │ Codex CLI │\\n".encode("utf-8")
     )
-    executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
-    return executable
+    raise SystemExit(0)
+if args[:2] == ["integration", "install"]:
+    (Path.cwd() / ("installed-" + args[2])).touch()
+    raise SystemExit(0)
+raise SystemExit(2)
+""",
+        encoding="utf-8",
+    )
+    return sys.executable, str(executable)
 
 
 def _resolved(tmp_path: Path, *, molecule_id: str, options: dict[str, str]):
@@ -99,14 +105,14 @@ def test_changed_selection_installs_only_the_new_agent(tmp_path: Path) -> None:
         repo_root=tmp_path,
         existing_lock=None,
         explicit_selection="codex",
-        executable=str(executable),
+        executable=executable,
     )
     prepare_install(
         resolved,
         repo_root=tmp_path,
         existing_lock=_lock(resolved[0], first[resolved[0].molecule_id]),
         explicit_selection="claude,codex",
-        executable=str(executable),
+        executable=executable,
     )
     installs = [
         line
@@ -129,7 +135,7 @@ def test_conflicting_declarations_refuse_before_cli_invocation(tmp_path: Path) -
             repo_root=tmp_path,
             existing_lock=None,
             explicit_selection="codex",
-            executable=str(executable),
+            executable=executable,
         )
     assert not (tmp_path / "calls.log").exists()
 
@@ -140,7 +146,7 @@ def test_noninteractive_missing_selection_refuses(tmp_path: Path) -> None:
             [_resolved(tmp_path, molecule_id="com.example.speckit", options={"codex": ""})],
             repo_root=tmp_path,
             existing_lock=None,
-            executable=str(_fake_cli(tmp_path)),
+            executable=_fake_cli(tmp_path),
         )
 
 
@@ -164,14 +170,14 @@ def test_opt_out_preserves_existing_selection_for_next_invocation(tmp_path: Path
         repo_root=tmp_path,
         existing_lock=None,
         explicit_selection="codex",
-        executable=str(executable),
+        executable=executable,
     )
     disabled = prepare_install(
         resolved,
         repo_root=tmp_path,
         existing_lock=_lock(resolved[0], first[resolved[0].molecule_id]),
         disabled=True,
-        executable=str(executable),
+        executable=executable,
     )
 
     molecule_id = resolved[0].molecule_id
@@ -182,6 +188,6 @@ def test_opt_out_preserves_existing_selection_for_next_invocation(tmp_path: Path
         resolved,
         repo_root=tmp_path,
         existing_lock=_lock(resolved[0], disabled.publication_records[molecule_id]),
-        executable=str(executable),
+        executable=executable,
     )
     assert next_run[molecule_id].selected == ("codex",)

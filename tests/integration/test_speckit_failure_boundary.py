@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -50,27 +50,33 @@ def _resolved(tmp_path: Path, *, integration_key: str = "codex") -> list[Resolve
     ]
 
 
-def _cli(tmp_path: Path, *, version: str = "0.8.1", fail_install: bool = False) -> Path:
-    executable = tmp_path / "specify"
-    install = (
-        "touch \"$PWD/.agents/skills/partial.md\"; exit 7"
-        if fail_install
-        else "touch \"$PWD/.agents/skills/specify.md\"; exit 0"
-    )
+def _cli(
+    tmp_path: Path, *, version: str = "0.8.1", fail_install: bool = False
+) -> tuple[str, str]:
+    executable = tmp_path / "fake_specify.py"
+    target = "partial.md" if fail_install else "specify.md"
+    exit_code = 7 if fail_install else 0
     executable.write_text(
-        f"""#!/bin/sh
-if [ \"$1\" = version ]; then echo 'CLI Version {version}'; exit 0; fi
-if [ \"$1\" = integration ] && [ \"$2\" = list ]; then echo '│ codex │ Codex CLI │'; exit 0; fi
-if [ \"$1\" = integration ] && [ \"$2\" = install ]; then
-  mkdir -p \"$PWD/.agents/skills\"
-  {install}
-fi
-exit 2
+        f"""from pathlib import Path
+import sys
+
+args = sys.argv[1:]
+if args == ["version"]:
+    print("CLI Version {version}")
+    raise SystemExit(0)
+if args[:2] == ["integration", "list"]:
+    sys.stdout.buffer.write("│ codex │ Codex CLI │\\n".encode("utf-8"))
+    raise SystemExit(0)
+if args[:2] == ["integration", "install"]:
+    skills = Path.cwd() / ".agents" / "skills"
+    skills.mkdir(parents=True, exist_ok=True)
+    (skills / "{target}").touch()
+    raise SystemExit({exit_code})
+raise SystemExit(2)
 """,
         encoding="utf-8",
     )
-    executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
-    return executable
+    return sys.executable, str(executable)
 
 
 def test_missing_cli_is_typed(tmp_path: Path) -> None:
@@ -91,7 +97,7 @@ def test_incompatible_cli_is_typed(tmp_path: Path) -> None:
             repo_root=tmp_path,
             existing_lock=None,
             explicit_selection="codex",
-            executable=str(_cli(tmp_path, version="0.7.0")),
+            executable=_cli(tmp_path, version="0.7.0"),
         )
 
 
@@ -102,7 +108,7 @@ def test_unsupported_selection_is_rejected_before_install(tmp_path: Path) -> Non
             repo_root=tmp_path,
             existing_lock=None,
             explicit_selection="gemini",
-            executable=str(_cli(tmp_path)),
+            executable=_cli(tmp_path),
         )
 
 
@@ -113,7 +119,7 @@ def test_all_selection_rejects_unsupported_before_install(tmp_path: Path) -> Non
             repo_root=tmp_path,
             existing_lock=None,
             explicit_selection="all",
-            executable=str(_cli(tmp_path)),
+            executable=_cli(tmp_path),
         )
 
 
@@ -125,6 +131,6 @@ def test_failed_official_install_preserves_external_boundary(tmp_path: Path) -> 
             repo_root=tmp_path,
             existing_lock=None,
             explicit_selection="codex",
-            executable=str(executable),
+            executable=executable,
         )
     assert (tmp_path / ".agents/skills/partial.md").exists()
