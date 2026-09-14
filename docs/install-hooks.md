@@ -6,9 +6,12 @@
 A molecule may declare an optional `install_hook` in its `manifest.json`. `spaex install` invokes each declared hook as a normal subprocess after any required atom materialization and before publishing the install.lock generation; hook-only molecules run without atom materialization. Hooks are the escape hatch for side effects that are not delivered files: appending `.gitignore` lines, registering git hooks, provisioning tools in the consumer repo, etc.
 
 Molecules that declare `external_skills` use this same hook boundary to
-delegate installation to skills.sh or agentskills.io. The referenced skill
-may live in the same publisher repository; spaex does not itself resolve or
-materialize that skill content.
+delegate installation to an external Agent Skills adapter. The default
+publisher-owned adapter is the Python `skillsmd` package invoked through
+`uvx`; `agentskills.io` defines the format and is not an installer. The hook
+reads the pinned molecule manifest from `SPAEX_MOLECULE_MANIFEST`. The
+referenced skill may live in the same publisher repository; spaex does not
+itself resolve or materialize that skill content.
 
 ## Declaring a hook
 

@@ -22,15 +22,18 @@ This is a design record. It fixes *direction and phasing*, not contracts. The no
 
 Two related problems surfaced in the 2026-09-08 session.
 
-**Problem A: spaex ships and versions skills, but the skill ecosystem already has that job.** The `graphify-first-authoring` and `speckit-session-hopper` molecules in [haexmas/atoms](https://github.com/haexmas/atoms) publish skill files that spaex materializes into consumer repos. Meanwhile [skills.sh](https://www.skills.sh/) (via `npx skillsadd <owner/repo>`) and [agentskills.io](https://agentskills.io/skill-creation/quickstart) (the open `.agents/skills/SKILL.md` format, adopted by Claude Code, Codex, Cursor, Copilot, etc.) already own skill discovery, distribution, and multi-agent portability. Duplicating that in spaex/atoms adds maintenance without users (see `spaex_pre_user` memory) and confuses the molecule ontology.
+**Problem A: spaex ships and versions skills, but the skill ecosystem already has that job.** The `graphify-first-authoring` and `speckit-session-hopper` molecules in [haexmas/atoms](https://github.com/haexmas/atoms) publish skill files that spaex materializes into consumer repos. Meanwhile [skills.sh](https://www.skills.sh/) provides discovery and the Python `skillsmd` adapter provides a uv-based installation path for the open [Agent Skills format](https://agentskills.io/skill-creation/quickstart), adopted by Claude Code, Codex, Cursor, Copilot, and others. Duplicating that in spaex/atoms adds maintenance without users (see `spaex_pre_user` memory) and confuses the molecule ontology.
 
 **Problem B: spaex has no browsable, click-toggleable composition surface.** Consumers today edit `.spaex.json` by hand and run `spaex add` / `spaex remove` to change what is active. There is no way to see which molecules are pinned, which atoms they contribute, which constitution parts are active, or which of them came from where. The operator's original vision was "custom harness per repo, selectable via GUI". DeepSeek Harness (dsh) already ships that kind of GUI for its Cordis-plugin composition; its Settings > Plugins tab and Agent presets screen are structurally isomorphic to the spaex molecule/constitution model.
 
 ## 2. Non-goals
 
 - **spaex does not become a runtime.** dsh owns an entire agent loop (LLM adapters, session log, tool pipeline, web UI). spaex remains a meta-composition layer that produces artifacts consumed by any agent runtime (Claude Code, Codex, Gemini CLI, potentially dsh itself). See `spaex_composition_gui_vision` memory.
-- **spaex does not become a skill registry.** After Phase A, spaex neither indexes nor mirrors skills. It only records "this molecule expects the following external skills" and delegates the actual install to skills.sh or agentskills.io.
-- **No SHA pinning for skills.** Skills go through their upstream registry's versioning. spaex's Principle IV pinning applies only to the molecule that references them. If a skill registry lacks immutable pinning (skills.sh currently does, per the 2026-09-03 findings), that is a known limitation the consumer opts into by using it.
+- **spaex does not become a skill registry.** After Phase A, spaex neither indexes nor mirrors skills. It only records "this molecule expects the following external skills" and delegates the actual install to the publisher-owned `skillsmd` hook adapter.
+- **No skill-content entry in the spaex lockfile.** The external reference
+  records a repository, full revision SHA, and path for provenance, while the
+  installed skill content and adapter outcome remain outside spaex's
+  `install.lock`.
 - **No native Electron/desktop shell in v1 of the GUI.** The Phase D GUI is a locally-hosted web app served by the spaex CLI (analogous to `dsh web`). Desktop packaging is a follow-up if there is demand.
 - **No live-reload / live-patching of the composition.** The GUI represents the state of `.spaex.json` and `.spaex/install.lock`; user actions rewrite those files and trigger a normal `spaex install`. No in-process patch overlay like dsh's Cordis patch layer.
 - **Constitution stays authored, not composed in the GUI.** The GUI shows which constitution files are active and their provenance; it does not offer a WYSIWYG constitution editor. Constitution assembly rules stay as they are (see `spaex_constitution_terminology` memory).
@@ -70,7 +73,7 @@ Decisions are numbered so downstream specs can cite them (`Roadmap 2026-09-08 §
 
 ### Decision 2: Install-hooks (Spec 016) carry skill installation
 
-A molecule that declares external skills gets a small hook (declared via Spec 016's `install_hook`) that calls `npx skillsadd <owner/repo>` or the equivalent agentskills.io command in the consumer repo during `spaex install`. spaex itself does not run the skill installer directly; it stays a level above.
+A molecule that declares external skills gets a small hook (declared via Spec 016's `install_hook`) that reads the pinned molecule manifest and calls `uvx --from skillsmd==<version> skillsmd add ...` in the consumer repo during `spaex install`. spaex itself does not run the skill installer directly; it stays a level above. The Vercel npm CLI remains an optional alternative, while agentskills.io defines the format rather than providing an installer.
 
 **Why:** avoid inventing a second side-effect mechanism next to Spec 016. `install_hook` is already trust-anchored on the SHA pin, already runs at the right moment (after atom materialization), and already handles failure via `on_failure: "abort" | "warn"`.
 
@@ -133,8 +136,11 @@ Each phase corresponds to one Speckit spec. Phase A is a breaking change and dri
 ### Phase A: Skills externalization (proposed Spec 018 slot, spaex 5.0.0)
 
 - Deprecate and remove the skill atom category from the molecule schema.
-- Introduce `atoms.external_skills` (or equivalent, name settled in the spec) as a list of skill references (skills.sh slug, agentskills.io repo/path).
-- Extend the install-hook contract from Spec 016 so a molecule can declare "run `npx skillsadd <owner/repo>`" as an install-time side effect.
+- Introduce top-level `external_skills` as structured repository/revision/path
+  references.
+- Extend the install-hook contract from Spec 016 so a molecule can read the
+  pinned manifest and run the pinned `skillsmd` adapter through `uvx` as an
+  install-time side effect.
 - Migrate `graphify-first-authoring` and `speckit-session-hopper` in [haexmas/atoms](https://github.com/haexmas/atoms) to the new shape; publish as new molecule versions.
 - Update consumer docs: adoption flow no longer materializes skill files; skills are installed by the hook.
 
