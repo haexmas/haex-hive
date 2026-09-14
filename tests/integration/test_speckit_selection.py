@@ -3,12 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+from io import StringIO
 from pathlib import Path
 
 import pytest
 
 from spaex.constitution.resolve import ResolvedMolecule
-from spaex.integrations.speckit import prepare_install
+from spaex.integrations.speckit import prepare_install, select_integrations
 from spaex.model.install_lock import InstallLock, MoleculeEntry, SpeckitLockRecord
 from spaex.model.molecule_manifest import MoleculeManifest
 from spaex.util.errors import (
@@ -146,6 +147,34 @@ def test_noninteractive_missing_selection_refuses(tmp_path: Path) -> None:
             existing_lock=None,
             executable=_fake_cli(tmp_path),
         )
+
+
+def test_all_selection_requires_interactive_confirmation() -> None:
+    output = StringIO()
+
+    selected = select_integrations(
+        "all",
+        ("claude", "codex"),
+        persisted=None,
+        stdin=StringIO("codex\n"),
+        stdout=output,
+    )
+
+    assert selected == ("codex",)
+    assert "Select integrations" in output.getvalue()
+
+
+def test_noninteractive_all_selection_refuses_before_cli_invocation(tmp_path: Path) -> None:
+    with pytest.raises(SpeckitSelectionRequiredError, match="interactive selection"):
+        prepare_install(
+            [_resolved(tmp_path, molecule_id="com.example.speckit", options={"codex": ""})],
+            repo_root=tmp_path,
+            existing_lock=None,
+            explicit_selection="all",
+            executable=_fake_cli(tmp_path),
+        )
+
+    assert not (tmp_path / "calls.log").exists()
 
 
 def test_legacy_lock_reuses_selection_without_reinstalling(tmp_path: Path) -> None:

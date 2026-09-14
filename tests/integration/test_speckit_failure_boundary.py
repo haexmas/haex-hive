@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import replace
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -141,6 +142,7 @@ def test_all_selection_rejects_unsupported_before_install(tmp_path: Path) -> Non
             repo_root=tmp_path,
             existing_lock=None,
             explicit_selection="all",
+            stdin=StringIO("all\n"),
             executable=_cli(tmp_path),
         )
 

@@ -52,6 +52,10 @@ spaex install --speckit-agents claude,codex
 Verify that only the newly selected Claude integration is installed and the
 Codex result remains recorded.
 
+Never use `--speckit-agents all` as an unattended shortcut. If it is supplied,
+spaex opens the selector so the operator can review the available integrations
+and choose the final set; without an interactive terminal it refuses safely.
+
 ## 5. Validate automation and failures
 
 Exercise these cases with the fake CLI:

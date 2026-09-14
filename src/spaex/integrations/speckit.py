@@ -114,13 +114,20 @@ def select_integrations(
     stdin: TextIO | None = None,
     stdout: TextIO | None = None,
 ) -> tuple[str, ...]:
-    """Apply explicit, persisted, interactive, then non-interactive selection precedence."""
-    if explicit is not None:
+    """Select integrations without allowing an implicit multi-agent rollout.
+
+    Concrete explicit selections are trusted because they name the exact
+    integrations to install. The special ``all`` shorthand is treated as a
+    request to open the interactive selector, so an automated caller cannot
+    silently expand a declaration to every supported agent.
+    """
+    explicit_is_all = explicit is not None and explicit.strip().lower() == "all"
+    if explicit is not None and not explicit_is_all:
         try:
             return parse_selection(explicit, declared)
         except ValueError as exc:
             raise SpeckitSelectionRequiredError(message=str(exc)) from exc
-    if persisted is not None:
+    if persisted is not None and not explicit_is_all:
         try:
             return parse_selection(",".join(persisted), declared)
         except ValueError as exc:
@@ -131,8 +138,12 @@ def select_integrations(
     if stdin is None and not input_stream.isatty():
         raise SpeckitSelectionRequiredError(
             message=(
-                "Spec Kit integrations are declared but no selection was provided; "
-                "use --speckit-agents or --no-speckit-integrations"
+                "Spec Kit integrations require an interactive selection when "
+                "`all` was requested; use --speckit-agents with explicit keys "
+                "or --no-speckit-integrations"
+                if explicit_is_all
+                else "Spec Kit integrations are declared but no selection was "
+                "provided; use --speckit-agents or --no-speckit-integrations"
             ),
             context={"available": ",".join(sorted(declared))},
         )
@@ -337,6 +348,8 @@ def prepare_install(
     explicit_selection: str | None = None,
     disabled: bool = False,
     executable: CliExecutable | None = None,
+    stdin: TextIO | None = None,
+    stdout: TextIO | None = None,
 ) -> SpeckitInstallRecords:
     """Validate declarations, select agents, and install external integrations.
 
@@ -411,6 +424,8 @@ def prepare_install(
         explicit_selection,
         tuple(first.integrations),
         persisted=persisted,
+        stdin=stdin,
+        stdout=stdout,
     )
     if not selected:
         skipped_records = {
