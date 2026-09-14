@@ -1,0 +1,156 @@
+from __future__ import annotations
+
+import json
+import stat
+from pathlib import Path
+
+import pytest
+
+from spaex.constitution.resolve import ResolvedMolecule
+from spaex.integrations.speckit import prepare_install
+from spaex.model.install_lock import InstallLock, MoleculeEntry
+from spaex.model.molecule_manifest import MoleculeManifest
+from spaex.util.errors import (
+    SpeckitDeclarationConflictError,
+    SpeckitSelectionRequiredError,
+)
+
+
+def _fake_cli(tmp_path: Path) -> Path:
+    executable = tmp_path / "specify"
+    executable.write_text(
+        """#!/bin/sh
+printf '%s\\n' "$*" >> CALLS
+if [ "$1" = version ]; then echo 'CLI Version 0.8.1.dev0'; exit 0; fi
+if [ "$1" = integration ] && [ "$2" = list ]; then
+  printf '│ claude │ Claude Code │\\n│ codex │ Codex CLI │\\n'
+  exit 0
+fi
+if [ "$1" = integration ] && [ "$2" = install ]; then
+  touch "$PWD/installed-$3"
+  exit 0
+fi
+exit 2
+""".replace("CALLS", str(tmp_path / "calls.log"))
+    )
+    executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+    return executable
+
+
+def _resolved(tmp_path: Path, *, molecule_id: str, options: dict[str, str]):
+    manifest = MoleculeManifest.from_json(
+        json.dumps(
+            {
+                "spaex_version": "4",
+                "id": molecule_id,
+                "version": "1.0.0",
+                "priority": 1,
+                "atoms": {},
+                "speckit": {
+                    "version_constraint": ">=0.8.1",
+                    "integrations": {
+                        key: {"integration_options": value}
+                        for key, value in options.items()
+                    },
+                },
+            }
+        ).encode()
+    )
+    return ResolvedMolecule(
+        molecule_id=molecule_id,
+        source_url="https://example.com/publisher",
+        revision="a" * 40,
+        repo_dir=tmp_path,
+        molecule_path="molecule",
+        install_hook=None,
+        effective_priority=1,
+        molecule_manifest=manifest,
+        cache_dir=tmp_path,
+    )
+
+
+def _lock(resolved: ResolvedMolecule, record) -> InstallLock:
+    return InstallLock(
+        spaex_version="4",
+        generation_id="g_20260914T120000Z_abcd",
+        molecules=(
+            MoleculeEntry(
+                id=resolved.molecule_id,
+                source=resolved.source_url,
+                revision=resolved.revision,
+                paths=(),
+                speckit=record,
+            ),
+        ),
+    )
+
+
+def test_changed_selection_installs_only_the_new_agent(tmp_path: Path) -> None:
+    executable = _fake_cli(tmp_path)
+    resolved = [
+        _resolved(
+            tmp_path,
+            molecule_id="com.example.speckit",
+            options={"claude": "", "codex": "--skills"},
+        )
+    ]
+    first = prepare_install(
+        resolved,
+        repo_root=tmp_path,
+        existing_lock=None,
+        explicit_selection="codex",
+        executable=str(executable),
+    )
+    prepare_install(
+        resolved,
+        repo_root=tmp_path,
+        existing_lock=_lock(resolved[0], first[resolved[0].molecule_id]),
+        explicit_selection="claude,codex",
+        executable=str(executable),
+    )
+    installs = [
+        line
+        for line in (tmp_path / "calls.log").read_text().splitlines()
+        if " install " in line
+    ]
+    assert installs.count("integration install codex --integration-options=--skills") == 1
+    assert installs.count("integration install claude") == 1
+
+
+def test_conflicting_declarations_refuse_before_cli_invocation(tmp_path: Path) -> None:
+    executable = _fake_cli(tmp_path)
+    resolved = [
+        _resolved(tmp_path, molecule_id="com.example.first", options={"codex": "--skills"}),
+        _resolved(tmp_path, molecule_id="com.example.second", options={"codex": ""}),
+    ]
+    with pytest.raises(SpeckitDeclarationConflictError):
+        prepare_install(
+            resolved,
+            repo_root=tmp_path,
+            existing_lock=None,
+            explicit_selection="codex",
+            executable=str(executable),
+        )
+    assert not (tmp_path / "calls.log").exists()
+
+
+def test_noninteractive_missing_selection_refuses(tmp_path: Path) -> None:
+    with pytest.raises(SpeckitSelectionRequiredError):
+        prepare_install(
+            [_resolved(tmp_path, molecule_id="com.example.speckit", options={"codex": ""})],
+            repo_root=tmp_path,
+            existing_lock=None,
+            executable=str(_fake_cli(tmp_path)),
+        )
+
+
+def test_opt_out_skips_cli_and_records_skip(tmp_path: Path) -> None:
+    resolved = [_resolved(tmp_path, molecule_id="com.example.speckit", options={"codex": ""})]
+    records = prepare_install(
+        resolved,
+        repo_root=tmp_path,
+        existing_lock=None,
+        disabled=True,
+        executable=str(tmp_path / "missing-specify"),
+    )
+    assert records[resolved[0].molecule_id].outcomes == {"codex": "skipped"}

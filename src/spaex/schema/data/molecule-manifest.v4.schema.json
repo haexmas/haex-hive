@@ -24,14 +24,14 @@
     },
     "atoms": {
       "type": "object",
-      "minProperties": 1,
+      "minProperties": 0,
       "additionalProperties": {
         "type": "array",
         "minItems": 1,
         "uniqueItems": true,
         "items": { "$ref": "#/$defs/repoRelativePath" }
       },
-      "description": "Category names mapped to non-empty lists of molecule-directory-relative delivered files. Category keys are open (any string); common categories include constitution, slash_commands, agents, mcps. Environment-config category naming (dev/staging/prod) is Spec 015 scope; Spec 014 makes no commitment."
+      "description": "Category names mapped to non-empty lists of molecule-directory-relative delivered files. A Spec Kit-only molecule may use an empty map when it declares `speckit`. Category keys are open (any string); common categories include constitution, slash_commands, agents, mcps. Environment-config category naming (dev/staging/prod) is Spec 015 scope; Spec 014 makes no commitment."
     },
     "defaults": {
       "type": "object",
@@ -68,6 +68,34 @@
       },
       "description": "Optional side-effect script that spaex install invokes after any required atom materialization (hook-only molecules run without atom materialization), per molecule in effective-priority order. Runs with cwd = consumer repo root, inherits stdio AND the invoking spaex process's complete environment. Interactive prompts work in TTY environments (the hook may read from stdin, e.g. Python's input()); when stdin is unavailable or reaches EOF, input() raises EOFError, so molecule authors must supply a non-interactive fallback path. Side effects are not reversible by spaex remove; spaex remove emits a WARN when removing a molecule that declared install_hook. Consumers can globally opt out for a single invocation via `spaex install --no-install-hooks` or `spaex add --no-install-hooks`."
     },
+    "speckit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version_constraint", "integrations"],
+      "properties": {
+        "version_constraint": {
+          "type": "string",
+          "pattern": "^(?:>=)?(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "integrations": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z0-9][a-z0-9-]*$": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "integration_options": {
+                "type": "string",
+                "pattern": "^(?!.*(?:--global|--project|&&|\\|\\||[;|<>`$]))[^\\u0000-\\u001F\\u007F\\r\\n]*$"
+              }
+            }
+            }
+          }
+        }
+      }
+    },
     "constitution_fragments": {
       "type": "object",
       "additionalProperties": {
@@ -78,6 +106,14 @@
       "description": "Spec 023 inline behavior fragments. Keys are enclosing-typed-atom ids (used as `atom_source` in provenance when the inline entry omits it). Each value is a non-empty list of inline fragment entries; validated against `#/$defs/inlineConstitutionFragment`. Optional; molecules that carry no behavior fragments omit this field entirely."
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "atoms": { "maxProperties": 0 } }
+      },
+      "then": { "required": ["speckit"] }
+    }
+  ],
   "$defs": {
     "moleculeId": {
       "type": "string",

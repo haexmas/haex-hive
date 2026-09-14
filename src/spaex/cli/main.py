@@ -147,6 +147,21 @@ def _build_parser() -> argparse.ArgumentParser:
             "letting its hook touch the repo (Spec 016 FR-026, FR-028)."
         ),
     )
+    install.add_argument(
+        "--speckit-agents",
+        dest="speckit_agents",
+        default=None,
+        help=(
+            "Select declared Spec Kit integrations (`none`, `all`, or a "
+            "comma-separated list) for this invocation."
+        ),
+    )
+    install.add_argument(
+        "--no-speckit-integrations",
+        dest="no_speckit_integrations",
+        action="store_true",
+        help="Skip declared Spec Kit integrations for this invocation.",
+    )
     # Spec 023: --global switches install into bootstrap-block mode; the
     # optional positional accepts a comma-separated runtime list.
     install.add_argument(

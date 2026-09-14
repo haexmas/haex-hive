@@ -41,11 +41,17 @@ from spaex.install.manifest_lock import (
     ManifestLockContext,
     active_manifest_lock_path,
 )
+from spaex.integrations.speckit import emit_results, prepare_install
 from spaex.io import transaction
 from spaex.io.state import default_state_root, transaction_paths
 from spaex.io.writer_lock import ConstitutionWriterLock
 from spaex.model.consumer_manifest import ConsumerManifest
-from spaex.model.install_lock import HookStatus, InstallLock, MoleculeEntry
+from spaex.model.install_lock import (
+    HookStatus,
+    InstallLock,
+    MoleculeEntry,
+    SpeckitLockRecord,
+)
 from spaex.paths import (
     MANIFEST_RELATIVE_PATH,
     composed_constitution_path,
@@ -240,6 +246,7 @@ def run(
             )
             contributions, resolved = resolve_install_inputs(manifest, state_root)
             contributing_ids = {contribution.source.id for contribution in contributions}
+            existing_lock = _read_live_lock(repo_root)
 
             if not contributions:
                 # Empty-constitution state: valid post-`haex remove` outcome
@@ -253,10 +260,19 @@ def run(
                     state_root=state_root,
                     skip_hooks=skip_hooks,
                 )
+                speckit_records = prepare_install(
+                    resolved,
+                    repo_root=repo_root,
+                    existing_lock=existing_lock,
+                    explicit_selection=getattr(args, "speckit_agents", None),
+                    disabled=bool(getattr(args, "no_speckit_integrations", False)),
+                )
+                emit_results(speckit_records)
                 hook_only_records = _hook_only_records(
                     resolved,
                     contributing_ids=contributing_ids,
                     hook_status=hook_status,
+                    speckit_records=speckit_records,
                 )
                 # FR-025: publish only when the complete post-hook state
                 # (empty constitution + molecule map with hook_status)
@@ -286,13 +302,23 @@ def run(
                 with _preserve_generation_for_behavior(
                     repo_root, resolved, project_local
                 ):
-                    publish_constitution(
-                        [],
-                        repo_root,
-                        state_root=state_root,
-                        hook_only_records=tuple(hook_only_records),
-                        preserved_files=preserved_project_local_files,
-                    )
+                    if speckit_records:
+                        publish_constitution(
+                            [],
+                            repo_root,
+                            state_root=state_root,
+                            hook_only_records=tuple(hook_only_records),
+                            speckit_records=speckit_records,
+                            preserved_files=preserved_project_local_files,
+                        )
+                    else:
+                        publish_constitution(
+                            [],
+                            repo_root,
+                            state_root=state_root,
+                            hook_only_records=tuple(hook_only_records),
+                            preserved_files=preserved_project_local_files,
+                        )
                     new_generation_id = _live_generation_id(repo_root)
                     if hook_only_records:
                         sys.stdout.write(
@@ -366,10 +392,20 @@ def run(
                     skip_hooks=skip_hooks,
                 )
 
+            speckit_records = prepare_install(
+                resolved,
+                repo_root=repo_root,
+                existing_lock=existing_lock,
+                explicit_selection=getattr(args, "speckit_agents", None),
+                disabled=bool(getattr(args, "no_speckit_integrations", False)),
+            )
+            emit_results(speckit_records)
+
             hook_only_records = _hook_only_records(
                 resolved,
                 contributing_ids=contributing_ids,
                 hook_status=hook_status,
+                speckit_records=speckit_records,
             )
             # FR-025: no-op iff the complete post-hook state (atom bytes
             # AND every molecule's hook_status, contributor + hook-only)
@@ -382,6 +418,7 @@ def run(
                     revision=contribution.source.revision,
                     paths=(CONSTITUTION_PATH,),
                     hook_status=hook_status.get(contribution.source.id),
+                    speckit=speckit_records.get(contribution.source.id),
                 ),
                 *hook_only_records,
             ]
@@ -403,14 +440,25 @@ def run(
             with _preserve_generation_for_behavior(
                 repo_root, resolved, project_local
             ):
-                publish_constitution(
-                    contributions,
-                    repo_root,
-                    state_root=state_root,
-                    hook_status=hook_status.get(contribution.source.id),
-                    hook_only_records=tuple(hook_only_records),
-                    preserved_files=preserved_project_local_files,
-                )
+                if speckit_records:
+                    publish_constitution(
+                        contributions,
+                        repo_root,
+                        state_root=state_root,
+                        hook_status=hook_status.get(contribution.source.id),
+                        hook_only_records=tuple(hook_only_records),
+                        speckit_records=speckit_records,
+                        preserved_files=preserved_project_local_files,
+                    )
+                else:
+                    publish_constitution(
+                        contributions,
+                        repo_root,
+                        state_root=state_root,
+                        hook_status=hook_status.get(contribution.source.id),
+                        hook_only_records=tuple(hook_only_records),
+                        preserved_files=preserved_project_local_files,
+                    )
                 new_generation_id = _live_generation_id(repo_root)
                 sys.stdout.write(f"installed generation {new_generation_id}\n")
                 _run_behavior_pipeline(
@@ -508,6 +556,17 @@ def _preserved_project_local_files(
             relative_name, configured.read_bytes()
         )
     return tuple(preserved.values())
+
+
+def _read_live_lock(repo_root: Path) -> InstallLock | None:
+    """Read the current lock for Spec Kit idempotence without blocking install."""
+    path = repo_root / transaction.SPAEX_DIR / transaction.INSTALL_LOCK_NAME
+    if not path.exists():
+        return None
+    try:
+        return InstallLock.from_json(path.read_bytes())
+    except (OSError, ValueError, HaexError):
+        return None
 
 
 def _has_behavior_fragments(resolved: Sequence[ResolvedMolecule]) -> bool:
@@ -675,6 +734,7 @@ def _hook_only_records(
     *,
     contributing_ids: set[str],
     hook_status: dict[str, HookStatus],
+    speckit_records: Mapping[str, SpeckitLockRecord] | None = None,
 ) -> list[MoleculeEntry]:
     """Build install.lock records for hook-only molecules (paths=()).
 
@@ -686,6 +746,7 @@ def _hook_only_records(
     (i.e. skipped by the caller when a preceding abort short-circuited
     later hooks).
     """
+    speckit_records = speckit_records or {}
     return [
         MoleculeEntry(
             id=record.molecule_id,
@@ -693,9 +754,10 @@ def _hook_only_records(
             revision=record.revision,
             paths=(),
             hook_status=hook_status.get(record.molecule_id),
+            speckit=speckit_records.get(record.molecule_id),
         )
         for record in resolved
-        if record.install_hook is not None
+        if (record.install_hook is not None or record.molecule_id in speckit_records)
         and record.molecule_id not in contributing_ids
-        and record.molecule_id in hook_status
+        and (record.molecule_id in hook_status or record.molecule_id in speckit_records)
     ]
