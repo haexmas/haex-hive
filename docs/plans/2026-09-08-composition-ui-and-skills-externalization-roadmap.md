@@ -22,14 +22,14 @@ This is a design record. It fixes *direction and phasing*, not contracts. The no
 
 Two related problems surfaced in the 2026-09-08 session.
 
-**Problem A: spaex ships and versions skills, but the skill ecosystem already has that job.** The `graphify-first-authoring` and `speckit-session-hopper` molecules in [haexmas/atoms](https://github.com/haexmas/atoms) publish skill files that spaex materializes into consumer repos. Meanwhile [skills.sh](https://www.skills.sh/) provides discovery and the Python `skillsmd` adapter provides a uv-based installation path for the open [Agent Skills format](https://agentskills.io/skill-creation/quickstart), adopted by Claude Code, Codex, Cursor, Copilot, and others. Duplicating that in spaex/atoms adds maintenance without users (see `spaex_pre_user` memory) and confuses the molecule ontology.
+**Problem A: spaex ships and versions skills, but the skill ecosystem already has that job.** The `graphify-first-authoring` and `speckit-session-hopper` molecules in [haexmas/atoms](https://github.com/haexmas/atoms) publish skill files that spaex materializes into consumer repos. Meanwhile [skills.sh](https://www.skills.sh/) provides discovery and the open [Agent Skills format](https://agentskills.io/skill-creation/quickstart) is supported by Claude Code, Codex, Cursor, Copilot, and others. Duplicating that in spaex/atoms adds maintenance without users (see `spaex_pre_user` memory) and confuses the molecule ontology.
 
 **Problem B: spaex has no browsable, click-toggleable composition surface.** Consumers today edit `.spaex.json` by hand and run `spaex add` / `spaex remove` to change what is active. There is no way to see which molecules are pinned, which atoms they contribute, which constitution parts are active, or which of them came from where. The operator's original vision was "custom harness per repo, selectable via GUI". DeepSeek Harness (dsh) already ships that kind of GUI for its Cordis-plugin composition; its Settings > Plugins tab and Agent presets screen are structurally isomorphic to the spaex molecule/constitution model.
 
 ## 2. Non-goals
 
 - **spaex does not become a runtime.** dsh owns an entire agent loop (LLM adapters, session log, tool pipeline, web UI). spaex remains a meta-composition layer that produces artifacts consumed by any agent runtime (Claude Code, Codex, Gemini CLI, potentially dsh itself). See `spaex_composition_gui_vision` memory.
-- **spaex does not become a skill registry.** After Phase A, spaex neither indexes nor mirrors skills. It only records "this molecule expects the following external skills" and delegates the actual install to the publisher-owned `skillsmd` hook adapter.
+- **spaex does not become a skill registry.** After Phase A, spaex neither indexes nor mirrors skills. It records "this molecule expects the following external skills" and exposes them to an explicit consumer-selected skill-management operation.
 - **No skill-content entry in the spaex lockfile.** The external reference
   records a repository, full revision SHA, and path for provenance, while the
   installed skill content and adapter outcome remain outside spaex's
@@ -138,9 +138,9 @@ Each phase corresponds to one Speckit spec. Phase A is a breaking change and dri
 - Deprecate and remove the skill atom category from the molecule schema.
 - Introduce top-level `external_skills` as structured repository/revision/path
   references.
-- Extend the install-hook contract from Spec 016 so a molecule can read the
-  pinned manifest and run the pinned `skillsmd` adapter through `uvx` as an
-  install-time side effect.
+- Add a consumer-owned skill-installation policy and explicit skill-management
+  commands. Normal `spaex install` only reports pending external skills; it
+  does not invoke an installer selected by the provider.
 - Migrate `graphify-first-authoring` and `speckit-session-hopper` in [haexmas/atoms](https://github.com/haexmas/atoms) to the new shape; publish as new molecule versions.
 - Update consumer docs: adoption flow no longer materializes skill files; skills are installed by the hook.
 

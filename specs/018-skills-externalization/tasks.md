@@ -12,21 +12,22 @@ description: "Task list for structured external skill references and uvx hook de
 workflow. Contract and integration tests are written before implementation.
 
 **Scope**: This task list covers the clarified Phase-A delta: structured
-`external_skills` references, the `skillsmd`/`uvx` default adapter contract,
-and direct access to the pinned molecule manifest from an install hook. It
-does not implement a skills registry, copy skill files through spaex, or build
-the later UI phases.
+`external_skills` references, the consumer-owned `skill_installation` policy,
+and explicit skill-management commands. It does not implement a skills
+registry, copy skill files through normal spaex materialization, or build the
+later UI phases.
 
 ## Phase 1: Setup and artifact alignment
 
 **Purpose**: Make the design artifacts agree before code changes begin.
 
 - [ ] T001 Update `specs/018-skills-externalization/plan.md` with the
-  structured reference shape, `skillsmd` as the default external adapter, and
-  `SPAEX_MOLECULE_MANIFEST` as an existing-manifest path contract.
+  structured reference shape, consumer-owned `skill_installation` policy, and
+  explicit skill-management lifecycle.
 - [ ] T002 [P] Synchronize the data model and manifest contract in
   `specs/018-skills-externalization/data-model.md` and
-  `specs/018-skills-externalization/contracts/molecule-manifest-external-skills.v1.md`.
+  `specs/018-skills-externalization/contracts/molecule-manifest-external-skills.v1.md`,
+  plus `contracts/consumer-manifest-skill-installation.v1.md`.
 
 ## Phase 2: Foundational contract work
 
@@ -99,52 +100,54 @@ compatibility tests.
 
 ## Phase 5: User Story 3 - Delegate installation through the hook boundary (P2)
 
-**Goal**: Let a molecule-owned hook read the pinned manifest and invoke the
-Python/uv-based `skillsmd` adapter while spaex remains the orchestrator.
+**Goal**: Let the consumer explicitly choose and operate an external skill
+installer while spaex remains neutral about the provider's installer choice.
 
-**Independent Test**: A fixture hook reads the manifest path supplied by spaex,
-invokes a fake skillsmd-compatible command, and receives the normal hook
-failure semantics.
+**Independent Test**: A fixture molecule is installed normally and only reports
+pending external skills; an explicit skill-install command persists a
+consumer-selected policy and invokes a fake adapter with the structured
+references.
 
 ### Tests for User Story 3
 
-- [ ] T014 [P] [US3] Add a hook-runner unit test in
-  `tests/unit/test_hook_runner.py` asserting inherited environment, consumer
-  repository cwd, and `SPAEX_MOLECULE_MANIFEST` pointing to the existing
-  extracted `manifest.json`.
-- [ ] T015 [US3] Add the end-to-end fixture in
-  `tests/integration/test_external_skill_hook.py`; the hook reads the pinned
-  manifest and uses a local fake installer, so tests do not contact PyPI or a
-  registry.
+- [ ] T014 [P] [US3] Add consumer-manifest contract tests in
+  `tests/contract/test_consumer_manifest_skill_installation.py` for policy
+  modes, adapter/scope/agent validation, and absent-policy behavior.
+- [ ] T015 [US3] Add CLI integration tests in
+  `tests/integration/test_skill_installation_commands.py` proving that normal
+  `spaex install` reports pending references without installing and that the
+  explicit command persists the consumer policy.
 
 ### Implementation for User Story 3
 
-- [ ] T016 [US3] Update `src/spaex/install/hook_runner.py` to pass the path of
-  the already extracted molecule manifest as `SPAEX_MOLECULE_MANIFEST` while
-  preserving inherited environment, cwd, stdio, and existing containment and
-  failure behavior.
-- [ ] T017 [US3] Add the `uvx skillsmd` invocation example and pinned adapter
-  guidance to `docs/install-hooks.md` and
-  `docs/adr/0021-external-skills-delegated-to-hooks.md`.
-- [ ] T018 [US3] Clarify in `specs/018-skills-externalization/research.md` and
-  `specs/018-skills-externalization/spec.md` that `agentskills.io` defines the
-  format, `skillsmd` provides the default Python adapter, and the installed
-  skill content remains outside spaex's lockfile.
+- [ ] T016 [US3] Extend `src/spaex/schema/data/consumer-manifest.v4.schema.json`
+  and `src/spaex/model/consumer_manifest.py` with the consumer-owned
+  `skill_installation` policy.
+- [ ] T017 [US3] Add explicit `spaex skills install` and
+  `spaex skills configure` command handling in `src/spaex/cli/skills.py`;
+  first install prompts only in an interactive session and later configuration
+  changes do not remove installed skills implicitly.
+- [ ] T018 [US3] Add a consumer-selected adapter boundary in
+  `src/spaex/skills/installer.py`; keep `skillsmd`, the Vercel CLI, and manual
+  installation as adapter choices rather than provider behavior.
+- [ ] T019 [US3] Preserve the existing hook environment contract in
+  `src/spaex/install/hook_runner.py` only for explicitly selected integrations;
+  do not invoke provider hooks as the default external-skill installer.
 
 **Checkpoint**: User Story 3 is independently testable with a local fixture;
-the real `skillsmd` command remains a publisher-owned hook choice.
+the real adapter command remains a consumer-selected choice.
 
 ## Phase 6: Polish and validation
 
 **Purpose**: Validate the clarified design and leave the task state accurate.
 
-- [ ] T019 [P] Update `specs/018-skills-externalization/checklists/requirements.md`
+- [ ] T020 [P] Update `specs/018-skills-externalization/checklists/requirements.md`
   and `specs/018-skills-externalization/quickstart.md` with the final
   structured-reference and manifest-path acceptance evidence.
-- [ ] T020 Run focused contract, parser, hook-runner, and integration tests;
+- [ ] T021 Run focused contract, parser, skill-command, and integration tests;
   then run the full pytest suite, Ruff, mypy, and `git diff --check`. Record
   the exact evidence in this file before marking the tasks complete.
-- [ ] T021 Review the final diff against `.spaex/constitution.md` and
+- [ ] T022 Review the final diff against `.spaex/constitution.md` and
   `.specify/memory/constitution.md`, confirm no new runtime registry
   dependency was introduced, and update `specs/018-skills-externalization/tasks.md`
   checkboxes in the same commit as each completed task.
