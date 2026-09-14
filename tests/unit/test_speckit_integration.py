@@ -88,6 +88,16 @@ def test_install_argv_passes_options_as_one_argument() -> None:
     ]
 
 
+def test_install_argv_passes_explicit_force_flag() -> None:
+    assert build_install_argv("specify", "agy", "", force=True) == [
+        "specify",
+        "integration",
+        "install",
+        "--force",
+        "agy",
+    ]
+
+
 def test_provisioned_cli_uses_uv_tool_run_with_exact_package() -> None:
     assert resolve_cli_executable(_declaration()) == [
         sys.executable,

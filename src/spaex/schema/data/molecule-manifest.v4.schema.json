@@ -90,6 +90,11 @@
           },
           "description": "Exact PyPI package version provisioned through the spaex uv dependency."
         },
+        "force": {
+          "type": "boolean",
+          "default": false,
+          "description": "Pass the official Spec Kit CLI's explicit --force flag for integrations that are not declared multi-install safe. This remains project-local and never enables global installation."
+        },
         "integrations": {
           "type": "object",
           "minProperties": 1,

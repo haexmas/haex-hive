@@ -51,6 +51,7 @@ class SpeckitDeclaration:
     version_constraint: VersionConstraint
     integrations: Mapping[str, str]
     cli: SpeckitCliProvisioning | None = None
+    force: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "integrations", freeze_json(dict(self.integrations)))
@@ -178,10 +179,14 @@ def _parse_speckit(raw: Any) -> SpeckitDeclaration | None:
                 "speckit cli.version must satisfy version_constraint"
             )
         cli = SpeckitCliProvisioning(package=cli_raw["package"], version=cli_version)
+    force = raw.get("force", False)
+    if not isinstance(force, bool):
+        raise SpeckitDeclarationParseError("speckit force must be a boolean")
     return SpeckitDeclaration(
         version_constraint=version_constraint,
         integrations=options,
         cli=cli,
+        force=force,
     )
 
 

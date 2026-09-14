@@ -17,6 +17,7 @@
   },
   "speckit": {
     "version_constraint": "0.12.11",
+    "force": true,
     "cli": {
       "package": "specify-cli",
       "version": "0.12.11"
@@ -48,6 +49,10 @@
 - `integration_options` MUST NOT contain `--global`, `--project`, shell
   operators, NUL bytes, or newline characters. spaex passes it as one argument
   value and never invokes a shell.
+- `force`, when true, MUST cause spaex to pass the official CLI's explicit
+  `--force` option. This is required when the selected set contains an
+  integration that the official CLI does not declare multi-install safe.
+  It remains project-local and MUST NOT enable global installation.
 - A molecule MUST NOT declare a `speckit` object and a Spec Kit `install_hook`
   action for the same integration behavior.
 - The declaration MUST NOT contain a skill path, absolute path, mutable source
@@ -69,7 +74,8 @@
   ```
 
   When non-empty, the declaration's option string is passed as one
-  `--integration-options=<value>` argument. `cwd` is the consumer repository
+  `--integration-options=<value>` argument. When `force` is true, spaex passes
+  `--force` as an explicit CLI argument. `cwd` is the consumer repository
   root. The shell is never used.
 - Global installation is not supported by this contract.
 - The official CLI's stdout/stderr remain visible to the operator. spaex adds a
