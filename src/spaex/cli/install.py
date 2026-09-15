@@ -20,7 +20,7 @@ from types import TracebackType
 from typing import Literal
 
 from spaex.behavior import orchestrate as behavior_orchestrate
-from spaex.behavior.composer.invoke import DEFAULT_COMPOSER_LOG
+from spaex.behavior.composer.invoke import COMPOSER_LOG_ENV, DEFAULT_COMPOSER_LOG
 from spaex.behavior.fragment import BehaviorFragment
 from spaex.behavior.materialize import project_local_from_config
 from spaex.behavior.stale import STALE_FILENAME, StaleMarker, read_stale
@@ -549,10 +549,20 @@ def _preserve_generation_for_behavior(
         ) -> Literal[False]:
             try:
                 if exc_type is not None or self._rollback_requested:
-                    composer_log = repo_root / DEFAULT_COMPOSER_LOG
-                    preserved_log = (
-                        composer_log.read_bytes() if composer_log.exists() else None
+                    raw_log_path = os.environ.get(COMPOSER_LOG_ENV)
+                    composer_log = (
+                        Path(raw_log_path)
+                        if raw_log_path
+                        else repo_root / DEFAULT_COMPOSER_LOG
                     )
+                    if raw_log_path and not composer_log.is_absolute():
+                        composer_log = Path.cwd() / composer_log
+                    try:
+                        preserved_log = (
+                            composer_log.read_bytes() if composer_log.is_file() else None
+                        )
+                    except OSError:
+                        preserved_log = None
                     if live.exists():
                         shutil.rmtree(live)
                     if had_live:
@@ -562,8 +572,11 @@ def _preserve_generation_for_behavior(
                         # the log (it postdates the backup snapshot), and the
                         # invalid-output hint sends the operator here to inspect
                         # it. Restoring the old generation must not erase it.
-                        composer_log.parent.mkdir(parents=True, exist_ok=True)
-                        composer_log.write_bytes(preserved_log)
+                        try:
+                            composer_log.parent.mkdir(parents=True, exist_ok=True)
+                            composer_log.write_bytes(preserved_log)
+                        except OSError:
+                            pass
             finally:
                 shutil.rmtree(backup_root, ignore_errors=True)
             return False

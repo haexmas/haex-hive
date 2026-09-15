@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from spaex.behavior.composer.invoke import COMPOSER_LOG_ENV
 from spaex.cli import install
 
 
@@ -62,3 +63,55 @@ def test_behavior_failure_preserves_composer_log(tmp_path: Path) -> None:
     assert (live / "composer.log").read_text(encoding="utf-8") == (
         "raw response, no sentinel"
     )
+
+
+def test_behavior_failure_preserves_configured_composer_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    live = repo / ".spaex"
+    live.mkdir(parents=True)
+    (live / "install.lock").write_text("old generation", encoding="utf-8")
+    configured_log = live / "custom-composer.log"
+    monkeypatch.setenv(COMPOSER_LOG_ENV, str(configured_log))
+    resolved = [
+        SimpleNamespace(
+            molecule_manifest=SimpleNamespace(
+                atoms={"behavior": ["fragment.md"]},
+                constitution_fragments={},
+            )
+        )
+    ]
+
+    behavior_transaction = install._preserve_generation_for_behavior(repo, resolved)
+    with pytest.raises(RuntimeError, match="composer failed"), behavior_transaction:
+        (live / "install.lock").write_text("new generation", encoding="utf-8")
+        configured_log.write_text("raw response, no sentinel", encoding="utf-8")
+        raise RuntimeError("composer failed")
+
+    assert (live / "install.lock").read_text(encoding="utf-8") == "old generation"
+    assert configured_log.read_text(encoding="utf-8") == "raw response, no sentinel"
+
+
+def test_behavior_rollback_survives_invalid_composer_log_path(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    live = repo / ".spaex"
+    live.mkdir(parents=True)
+    (live / "install.lock").write_text("old generation", encoding="utf-8")
+    (live / "composer.log").mkdir()
+    resolved = [
+        SimpleNamespace(
+            molecule_manifest=SimpleNamespace(
+                atoms={"behavior": ["fragment.md"]},
+                constitution_fragments={},
+            )
+        )
+    ]
+
+    behavior_transaction = install._preserve_generation_for_behavior(repo, resolved)
+    with pytest.raises(RuntimeError, match="composer failed"), behavior_transaction:
+        (live / "install.lock").write_text("new generation", encoding="utf-8")
+        raise RuntimeError("composer failed")
+
+    assert (live / "install.lock").read_text(encoding="utf-8") == "old generation"
+    assert (live / "composer.log").is_dir()
