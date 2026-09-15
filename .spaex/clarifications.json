@@ -1,46 +1,4 @@
 {
   "schema_version": 1,
-  "clarifications": {
-    "4735d3ac87b6c230fa3e19fffd688061240be04a45f2aa92cd3062dcf4526ded": {
-      "question": "For Python code, should tests use the project's chosen framework and explicit fixtures, as required by the Python fragments, or should non-trivial logic use only one framework-free, fixture-free runnable check as stated by ponytail?",
-      "cited_fragments": [
-        {
-          "molecule_id": "com.github.haexmas.atoms.ponytail",
-          "fragment_id": "ponytail",
-          "body_sha256": "b57f736a83ddab7111d752008c3e131a157e646a6b47c9eb223f076c494685a8"
-        },
-        {
-          "molecule_id": "com.github.haexmas.atoms.python",
-          "fragment_id": "python",
-          "body_sha256": "fc2d9653b5aea74cf5bd632dd353d275b84f85d58998de136e8ab8d0cf967881"
-        },
-        {
-          "molecule_id": "com.github.haexmas.atoms.python",
-          "fragment_id": "python-testing",
-          "body_sha256": "909555b4a071f7b52e06c9b4e83f45ebb75407886ab0cb1aab90b3fc198c458f"
-        }
-      ],
-      "answer": "For non-trivial Python changes in a repository with an established test suite, tests use the project's chosen framework and explicit fixtures where setup or cleanup requires them. Ponytail's framework-free, fixture-free runnable check applies to throwaway or exploratory logic, or to projects without an established test framework; it does not override the repository's test discipline for production changes.",
-      "asked_at": "2026-09-14T20:22:05Z",
-      "answered_at": "2026-09-14T20:22:05Z"
-    },
-    "68db80441fd732105ceaee7aa28a70d70f9f671c0b2ff88db709f33d5628e851": {
-      "question": "Should meaningful helper extraction and refactoring be permitted when not explicitly requested, as recommended by general-coding, or should all unrequested abstractions be prohibited as stated by ponytail?",
-      "cited_fragments": [
-        {
-          "molecule_id": "com.github.haexmas.atoms.general-coding",
-          "fragment_id": "general-coding",
-          "body_sha256": "dab224faa4686087f525133f3925f28cd335966bccb8ecc3116fdf70a9a08095"
-        },
-        {
-          "molecule_id": "com.github.haexmas.atoms.ponytail",
-          "fragment_id": "ponytail",
-          "body_sha256": "b57f736a83ddab7111d752008c3e131a157e646a6b47c9eb223f076c494685a8"
-        }
-      ],
-      "answer": "Meaningful helper extraction and refactoring are permitted when the change addresses real repeated behavior, clarifies a coherent responsibility, or extends an existing candidate identified by graphify. Ponytail prohibits speculative or convenience abstractions; unrequested refactors must still be proposed rather than applied automatically, and borderline or scope-expanding cases require operator escalation.",
-      "asked_at": "2026-09-14T20:21:31Z",
-      "answered_at": "2026-09-14T20:21:31Z"
-    }
-  }
+  "clarifications": {}
 }
