@@ -183,7 +183,7 @@ Materialization treats inline entries identically to standalone fragments.
 uv run pytest tests/behavior/fault_injection/
 ```
 
-Covers the five Composer failure categories (timeout, runtime-error, invalid-output, quota, no-runtime) against a mock Composer harness.
+Covers the five Composer failure categories (timeout, runtime-error, invalid-output, quota, no-runtime) against a mock Composer harness, plus a sixth file covering the invalid-output category's silent-incompleteness case (FR-012b): a syntactically valid Shape A response that drops one or more input fragments from its citations with no recorded clarification.
 
 ### Run the reproducibility test
 
