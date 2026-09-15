@@ -20,6 +20,7 @@ from types import TracebackType
 from typing import Literal
 
 from spaex.behavior import orchestrate as behavior_orchestrate
+from spaex.behavior.composer.invoke import DEFAULT_COMPOSER_LOG
 from spaex.behavior.fragment import BehaviorFragment
 from spaex.behavior.materialize import project_local_from_config
 from spaex.behavior.stale import STALE_FILENAME, StaleMarker, read_stale
@@ -548,10 +549,21 @@ def _preserve_generation_for_behavior(
         ) -> Literal[False]:
             try:
                 if exc_type is not None or self._rollback_requested:
+                    composer_log = repo_root / DEFAULT_COMPOSER_LOG
+                    preserved_log = (
+                        composer_log.read_bytes() if composer_log.exists() else None
+                    )
                     if live.exists():
                         shutil.rmtree(live)
                     if had_live:
                         backup_live.rename(live)
+                    if preserved_log is not None:
+                        # The failure that triggered this rollback is what wrote
+                        # the log (it postdates the backup snapshot), and the
+                        # invalid-output hint sends the operator here to inspect
+                        # it. Restoring the old generation must not erase it.
+                        composer_log.parent.mkdir(parents=True, exist_ok=True)
+                        composer_log.write_bytes(preserved_log)
             finally:
                 shutil.rmtree(backup_root, ignore_errors=True)
             return False
