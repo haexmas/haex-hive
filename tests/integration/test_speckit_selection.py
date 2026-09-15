@@ -9,7 +9,11 @@ from pathlib import Path
 import pytest
 
 from spaex.constitution.resolve import ResolvedMolecule
-from spaex.integrations.speckit import prepare_install, select_integrations
+from spaex.integrations.speckit import (
+    declaration_fingerprint,
+    prepare_install,
+    select_integrations,
+)
 from spaex.model.install_lock import InstallLock, MoleculeEntry, SpeckitLockRecord
 from spaex.model.molecule_manifest import MoleculeManifest
 from spaex.util.errors import (
@@ -149,6 +153,37 @@ def test_noninteractive_missing_selection_refuses(tmp_path: Path) -> None:
         )
 
 
+def test_skipped_record_does_not_suppress_interactive_selection(tmp_path: Path) -> None:
+    executable = _fake_cli(tmp_path)
+    resolved = _resolved(tmp_path, molecule_id="com.example.speckit", options={"codex": ""})
+    manifest = resolved.molecule_manifest
+    assert manifest is not None and manifest.speckit is not None
+    previous = SpeckitLockRecord(
+        cli_version="not-run",
+        declaration_fingerprint=declaration_fingerprint(
+            manifest.speckit,
+            resolved.source_url,
+            resolved.revision,
+        ),
+        selected=(),
+        outcomes={"codex": "skipped"},
+    )
+    output = StringIO()
+
+    records = prepare_install(
+        [resolved],
+        repo_root=tmp_path,
+        existing_lock=_lock(resolved, previous),
+        executable=executable,
+        stdin=StringIO("codex\n"),
+        stdout=output,
+    )
+
+    assert records[resolved.molecule_id].selected == ("codex",)
+    assert "Which agents should receive the Spec Kit skills?" in output.getvalue()
+    assert "integration install codex" in (tmp_path / "calls.log").read_text()
+
+
 def test_all_selection_requires_interactive_confirmation() -> None:
     output = StringIO()
 
@@ -161,7 +196,7 @@ def test_all_selection_requires_interactive_confirmation() -> None:
     )
 
     assert selected == ("codex",)
-    assert "Select integrations" in output.getvalue()
+    assert "Which agents should receive the Spec Kit skills?" in output.getvalue()
 
 
 def test_noninteractive_all_selection_refuses_before_cli_invocation(tmp_path: Path) -> None:

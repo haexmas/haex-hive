@@ -147,9 +147,11 @@ def select_integrations(
             ),
             context={"available": ",".join(sorted(declared))},
         )
-    output_stream.write("Spec Kit integrations:\n")
+    output_stream.write("Spec Kit agents that can receive skills:\n")
     output_stream.write("  " + ", ".join(sorted(declared)) + "\n")
-    output_stream.write("Select integrations (all, none, or comma-separated keys): ")
+    output_stream.write(
+        "Which agents should receive the Spec Kit skills? (all, none, or comma-separated keys): "
+    )
     output_stream.flush()
     try:
         raw = input_stream.readline()
@@ -395,7 +397,12 @@ def prepare_install(
         if (
             previous is not None
             and previous.declaration_fingerprint == fingerprints[record.molecule_id]
+            and previous.selected
         ):
+            # An empty selection is the persisted shape of a skipped or
+            # explicitly disabled integration run, not a successful agent
+            # choice. Ask again on the next interactive install so adding a
+            # Spec Kit molecule cannot silently omit all agent skills.
             persisted = previous.selected
             break
 
