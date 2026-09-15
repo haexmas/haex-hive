@@ -37,7 +37,7 @@ Evaluating spec 023 against `spaex Constitution 1.4.1`:
 - **Principle VIII (No Concealment Instructions)**: Composer output is a constitution intended for the operator's own reading; nothing about the spec instructs agents to hide anything. PASS.
 
 **Development Workflow items:**
-- Speckit workflow adherence: this spec goes through `/speckit-specify → /speckit-clarify → /speckit-plan → /speckit-tasks → /speckit-implement`, per constitution and per memory `spaex_speckit_workflow_for_impl`. PASS.
+- Speckit workflow adherence: this spec goes through `/speckit-specify → /speckit-clarify → /speckit-plan → /speckit-tasks → /speckit-analyze → /speckit-implement`, per constitution and per memory `spaex_speckit_workflow_for_impl`. PASS.
 - Phase discipline: the spec targets 4.2.0 additive-minor before the 2026-09-08 roadmap's Phase A (5.0.0 skills externalization). This does not skip any phase-0-to-7 prerequisite; it uses existing Spec 016 and Spec 017 infra and does not depend on any 4.2+ phase artifact. PASS.
 - ADR requirement: two ADRs recommended, both landed via this spec's PR:
   - ADR-0012: Reserved paths for behavior-harness (`<repo-root>/.spaex/constitution.md`, `.spaex/constitution.d/`, `.spaex/clarifications.json`); the review-gate framing for `.spaex/constitution.md` (git diff on commit as gate, no sidecar required).

@@ -42,6 +42,12 @@ _MOL_B = "com.example.publisher.rebase-flow"
 _CANONICAL = "https://example.invalid/example/publisher-add-time-plausibility"
 
 
+def _lock_ids(consumer: Path) -> list[str]:
+    """Return the active molecule IDs from the published install lock."""
+    lock = json.loads((consumer / ".spaex" / "install.lock").read_text())
+    return [entry["id"] for entry in lock["molecules"]]
+
+
 def _git(cwd: Path, *args: str) -> str:
     proc = subprocess.run(
         ["git", "-C", str(cwd), *args], capture_output=True, text=True, check=True
@@ -218,6 +224,8 @@ def test_add_of_contradicting_molecule_warns_marks_stale_and_exits_zero(
     spaex_md_path = consumer / ".spaex/constitution.md"
     assert spaex_md_path.exists()
     baseline_bytes = spaex_md_path.read_bytes()
+    baseline_lock_bytes = (consumer / ".spaex" / "install.lock").read_bytes()
+    assert _lock_ids(consumer) == [_MOL_A]
     assert not (consumer / ".spaex" / ".stale").exists()
 
     capsys.readouterr()  # discard first-add output
@@ -241,6 +249,8 @@ def test_add_of_contradicting_molecule_warns_marks_stale_and_exits_zero(
 
     # `.spaex/constitution.md` is untouched: no regeneration at add-time (FR-024a).
     assert spaex_md_path.read_bytes() == baseline_bytes
+    assert (consumer / ".spaex" / "install.lock").read_bytes() == baseline_lock_bytes
+    assert _lock_ids(consumer) == [_MOL_A]
 
     stale_path = consumer / ".spaex" / ".stale"
     assert stale_path.exists()
@@ -279,6 +289,7 @@ def test_remove_rechecks_without_regenerating_and_clears_resolved_stale(
         == 0
     )
     baseline_bytes = (consumer / ".spaex/constitution.md").read_bytes()
+    assert _lock_ids(consumer) == [_MOL_A]
 
     assert (
         haex_add_helpers["run_add"](
@@ -308,6 +319,7 @@ def test_remove_rechecks_without_regenerating_and_clears_resolved_stale(
     )
     assert calls == [1, 2]
     assert (consumer / ".spaex/constitution.md").read_bytes() == baseline_bytes
+    assert _lock_ids(consumer) == [_MOL_A]
     assert not (consumer / ".spaex" / ".stale").exists()
     capsys.readouterr()
 
@@ -323,6 +335,7 @@ def test_remove_rechecks_without_regenerating_and_clears_resolved_stale(
         == 0
     )
     assert not (consumer / ".spaex/constitution.md").exists()
+    assert _lock_ids(consumer) == []
 
 
 def test_overlap_shape_b_does_not_mark_add_as_contradiction(

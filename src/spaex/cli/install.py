@@ -119,8 +119,10 @@ def _is_no_op(
 
     * ``expected_body`` is ``bytes``: ``constitution.md`` must exist with
       matching bytes.
-    * ``expected_body`` is ``None``: empty-constitution state,
-      ``constitution.md`` must NOT exist.
+    * ``expected_body`` is ``None``: no classic constitution contribution;
+      ``constitution.md`` must not exist unless
+      ``allow_existing_behavior_artifact`` is enabled for active behavior or
+      project-local fragments.
 
     Molecule map: ``expected_records`` is sorted with the same key that
     ``_publish_constitution`` uses, so equality is a direct tuple compare

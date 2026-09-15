@@ -204,8 +204,8 @@ Reproducibility groundwork lands in Phase 3 (T031). This phase adds the fragment
 - [ ] T065 [P] Bump `spaex.__version__` to 4.2.0 in pyproject.toml and src/spaex/__init__.py
 - [ ] T066 [P] Add CHANGELOG.md entry for 4.2.0 covering behavior-harness additions, listing every new FR by number
 - [ ] T067 Run the manual verification checklist from quickstart.md §"Manual verification: cross-runtime discoverability" once (SC-007 real-runtime portion); paste observations into the PR description
-- [ ] T068 Run the full spaex test suite (uv run pytest) and confirm the compared baseline from T007 plus every new behavior test passes (SC-001 through SC-011 automated portions)
-- [ ] T069 Open the PR against main following memory `atoms_pr_flow_required` conventions; PR description references spec 023 and both ADRs
+- [X] T068 Run the full spaex test suite (uv run pytest) and confirm the compared baseline from T007 plus every new behavior test passes (SC-001 through SC-011 automated portions)
+- [X] T069 Open the PR against main following memory `atoms_pr_flow_required` conventions; PR description references spec 023 and both ADRs
 - [X] T070 Record active `atoms.behavior` molecules in `.spaex/install.lock` with their pinned source, revision, and shared `.spaex/constitution.md` publication path; retain legacy `atoms.constitution` reading only for compatibility (FR-025)
 - [X] T071 Add integration coverage proving behavior-only installs publish non-empty lock molecule records and preserve those records on a no-op reinstall (FR-025, SC-003)
 
