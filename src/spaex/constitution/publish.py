@@ -2,12 +2,12 @@
 
 `haex install`'s constitution-side terminal step. Two duties:
 
-- **Join**: when a molecule declares `atoms.constitution: [a.md, b.md, ...]`
-  the tool concatenates those file bytes (in the resolver's declared order,
-  newline-separated) into the single effective constitution written to
-  `.spaex/constitution.md`. That splitting exists purely for authoring
-  maintainability; there is still only ever ONE effective constitution per
-  adopted molecule set (ADR 0010).
+- **Join**: legacy molecules may declare `atoms.constitution: [a.md, b.md,
+  ...]`; the tool concatenates those file bytes (in the resolver's declared
+  order, newline-separated) into the single effective constitution written to
+  `.spaex/constitution.md`. New molecules use `atoms.behavior` fragments and
+  the behavior pipeline. There is still only ever ONE effective constitution
+  per adopted molecule set (ADR 0010).
 - **Atomic publish**: writes the joined constitution plus install.lock as
   one rename-swap generation with post-write verification.
 
@@ -17,9 +17,11 @@ publishing the generation.
 
 The empty case is also legitimate: an operator who ran `haex remove` on
 their last constitution-contributing molecule adopts the empty state. In
-that case only `install.lock` is staged (with `molecules=()` after orphan
-cleanup) and the pre-existing `constitution.md` disappears with the
-rename-swap of `.spaex/` (delete-orphans via full-directory swap).
+that case only `install.lock` is staged after orphan cleanup and the
+pre-existing `constitution.md` disappears with the rename-swap of `.spaex/`
+(delete-orphans via full-directory swap). Behavior-only generations are the
+exception: their shared composed artifact is preserved and their molecule
+records are published alongside the lock.
 """
 
 from __future__ import annotations
@@ -217,7 +219,7 @@ def publish_constitution(
     its sole contributed path.
 
     When ``contributions`` is empty the empty-constitution state is
-    published: ``install.lock`` with only the ``hook_only_records`` (if
+    published: ``install.lock`` with the non-classic molecule records (if
     any) and any pre-existing ``constitution.md`` disappears via the
     rename-swap of ``.spaex/``.
 
@@ -226,9 +228,10 @@ def publish_constitution(
     molecule declared no install_hook; the writer omits the field then.
 
     Optional ``hook_only_records`` carries per-molecule install.lock
-    entries for hook-only molecules (paths=()) whose install_hook ran
-    during this generation. They are merged into the sorted molecules
-    array alongside the constitution contributor's record.
+    entries for molecules without a classic constitution contribution.
+    Hook-only molecules use ``paths=()``; behavior molecules use the shared
+    ``.spaex/constitution.md`` path. They are merged into the sorted
+    molecules array alongside the constitution contributor's record.
 
     ``preserved_files`` carries configured project-local source files through
     the full-directory rename-swap.

@@ -55,6 +55,19 @@ The single spaex-owned artifact at `<repo-root>/.spaex/constitution.md`.
 4. Committed as version-controlled content.
 5. Read at runtime by any agent that has run the global bootstrap.
 
+### Install-lock relationship
+
+Every active molecule that contributes `atoms.behavior` fragments is recorded
+in `.spaex/install.lock` after a successful install. Its entry uses the
+canonical pinned `source` and `revision` and lists the shared
+`.spaex/constitution.md` publication path. The per-molecule fragment files
+remain inspectable under `.spaex/constitution.d/<molecule-id>/`; their
+individual paths are not duplicated in the lock because the composed
+constitution is the publication boundary.
+
+Legacy `atoms.constitution` declarations may still be read for compatibility,
+but new molecules use `atoms.behavior` and fragment modality metadata.
+
 ### Composed Clause
 
 A single rendered directive inside `.spaex/constitution.md`.

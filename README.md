@@ -19,7 +19,7 @@ A molecule may declare an optional `install_hook` in its `manifest.json`. `spaex
 
 ## Atom-category conventions
 
-The v4 molecule-manifest schema treats `atoms{}` as an open `Dict[str, List[str]]` map. Publishers pick category names by convention. Common categories today: `constitution`, `slash_commands`, `agents`, `mcps`.
+The v4 molecule-manifest schema treats `atoms{}` as an open `Dict[str, List[str]]` map. Publishers pick category names by convention. Common categories today: `behavior`, `slash_commands`, `agents`, `mcps`. The legacy `constitution` category remains readable for older molecules but is not the canonical way to contribute policy.
 
 **Environment-config files** (`flake.nix`, `Dockerfile`, `devcontainer.json`, `.envrc`, `shell.nix`, etc.) can be declared under any category name a publisher chooses. The retired `skill` and `skills` categories are the one exception: a skill may still live in the publisher repository, but is declared as an `external_skills` reference and installed by the molecule's `install_hook`. Spec 014 makes no other naming commitment here; multi-environment vocabulary (dev/staging/prod), consumer-side selection, and orchestration verbs are the scope of Spec 015 (planned; see [docs/plans/2026-09-07-slot-015-multi-environment-placeholder.md](docs/plans/2026-09-07-slot-015-multi-environment-placeholder.md)).
 
