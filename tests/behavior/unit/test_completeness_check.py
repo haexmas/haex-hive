@@ -112,6 +112,18 @@ def test_inline_code_in_clause_text_is_not_mistaken_for_a_citation() -> None:
     )
 
 
+def test_citation_like_text_outside_a_clause_does_not_count() -> None:
+    fragments = [_fragment("alpha", "rule-a")]
+    body = "The omitted rule is documented here. _[from `alpha/rule-a`]_\n"
+
+    with pytest.raises(ComposerInvalidOutputError, match="alpha/rule-a"):
+        orchestrate._verify_completeness(
+            canonical_fragments=fragments,
+            composed_body=body,
+            clarifications=ClarificationsStore(),
+        )
+
+
 def test_reports_every_missing_fragment_sorted() -> None:
     fragments = [
         _fragment("zeta", "rule-z"),

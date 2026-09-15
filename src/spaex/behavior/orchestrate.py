@@ -723,20 +723,24 @@ def _is_clarifications_content_changed(
     return dict(current.entries) != dict(store.entries)
 
 
-_CITATION_BLOCK_RE = re.compile(r"_\[from (.+?)\]_")
+_CLAUSE_CITATION_RE = re.compile(
+    r"^- .+?\. _\[from (?P<provenance>`[^`]+`(?:, `[^`]+`)*)\]_$",
+    re.MULTILINE,
+)
 _SCOPED_ID_RE = re.compile(r"`([^`]+)`")
 
 
 def _cited_scoped_ids(composed_body: str) -> set[str]:
-    """Every `<molecule-id>/<fragment-id>` cited in a `_[from ...]_` annotation.
+    """Every scoped id cited in a documented per-clause provenance annotation.
 
-    Scoped to provenance annotations specifically (not any backtick span in
-    the document) because clause text itself may contain unrelated inline
-    code, e.g. "Use `pyproject.toml` for ...".
+    The full clause shape is required so a Composer cannot satisfy the
+    completeness check with a citation-like note outside a rendered clause.
+    Clause text itself may contain unrelated inline code, e.g. "Use
+    `pyproject.toml` for ...".
     """
     cited: set[str] = set()
-    for block in _CITATION_BLOCK_RE.finditer(composed_body):
-        cited.update(_SCOPED_ID_RE.findall(block.group(1)))
+    for clause in _CLAUSE_CITATION_RE.finditer(composed_body):
+        cited.update(_SCOPED_ID_RE.findall(clause.group("provenance")))
     return cited
 
 
