@@ -4,7 +4,7 @@ workflow:
   name: "Full SDD Cycle"
   version: "1.0.0"
   author: "GitHub"
-  description: "Runs specify → plan → tasks → implement with review gates"
+  description: "Runs specify → clarify → plan → tasks → analyze → implement with review gates"
 
 requires:
   speckit_version: ">=0.7.2"
@@ -38,6 +38,12 @@ steps:
     options: [approve, reject]
     on_reject: abort
 
+  - id: clarify
+    command: speckit.clarify
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.spec }}"
+
   - id: plan
     command: speckit.plan
     integration: "{{ inputs.integration }}"
@@ -55,6 +61,18 @@ steps:
     integration: "{{ inputs.integration }}"
     input:
       args: "{{ inputs.spec }}"
+
+  - id: analyze
+    command: speckit.analyze
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.spec }}"
+
+  - id: review-analysis
+    type: gate
+    message: "Review the cross-artifact analysis before implementation."
+    options: [approve, reject]
+    on_reject: abort
 
   - id: implement
     command: speckit.implement
