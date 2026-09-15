@@ -7,7 +7,14 @@ from pathlib import Path
 import pytest
 
 from spaex.behavior.composer.failure import ComposerTimeoutError
+from spaex.behavior.composer.invoke import InvokeOptions, _resolve_timeout
 from spaex.util import exit_codes
+
+
+def test_default_composer_timeout_is_300_seconds(monkeypatch) -> None:
+    monkeypatch.delenv("SPAEX_COMPOSER_TIMEOUT", raising=False)
+
+    assert _resolve_timeout(InvokeOptions()) == 300.0
 
 
 def test_timeout_scenario_raises_typed_error_with_exit_30(

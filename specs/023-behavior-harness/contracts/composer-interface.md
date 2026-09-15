@@ -13,7 +13,7 @@ spaex constructs a litellm request using:
 - System prompt: the canonical Composer prompt (see below).
 - User message: JSON-serialized composer input (see below).
 - Response format: text (Composer prompt requires strict Markdown output).
-- Timeout: `SPAEX_COMPOSER_TIMEOUT` seconds (default 30).
+- Timeout: `SPAEX_COMPOSER_TIMEOUT` seconds (default 300).
 
 ### 2. CLI shell-out to installed agent runtime
 

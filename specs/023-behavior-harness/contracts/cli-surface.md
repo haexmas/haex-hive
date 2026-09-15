@@ -113,7 +113,7 @@ Existing commands. Extended per Clarification Q2:
 ## Environment variables
 
 - `SPAEX_LLM_MODEL`: override the auto-selected LLM model (litellm model id). Defaults to the runtime's canonical model.
-- `SPAEX_COMPOSER_TIMEOUT`: composer timeout in seconds. Defaults to 30.
+- `SPAEX_COMPOSER_TIMEOUT`: composer timeout in seconds. Defaults to 300.
 - `SPAEX_COMPOSER_LOG`: path to write raw Composer output on invalid-output failures. Defaults to `.spaex/composer.log`.
 
 ## Flags NOT introduced by this spec
