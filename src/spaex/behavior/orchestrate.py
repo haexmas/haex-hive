@@ -27,6 +27,7 @@ staging tree without invoking the Composer.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -282,6 +283,12 @@ def run(
         )
 
     assert isinstance(invoke_result.result, ComposedShape)
+
+    _verify_completeness(
+        canonical_fragments=canonical_fragments,
+        composed_body=invoke_result.result.body,
+        clarifications=store,
+    )
 
     emit_outcome = _commit_behavior_artifacts(
         repo_root=repo_root,
@@ -714,6 +721,58 @@ def _is_clarifications_content_changed(
     except Exception:  # noqa: BLE001
         return True
     return dict(current.entries) != dict(store.entries)
+
+
+_CITATION_BLOCK_RE = re.compile(r"_\[from (.+?)\]_")
+_SCOPED_ID_RE = re.compile(r"`([^`]+)`")
+
+
+def _cited_scoped_ids(composed_body: str) -> set[str]:
+    """Every `<molecule-id>/<fragment-id>` cited in a `_[from ...]_` annotation.
+
+    Scoped to provenance annotations specifically (not any backtick span in
+    the document) because clause text itself may contain unrelated inline
+    code, e.g. "Use `pyproject.toml` for ...".
+    """
+    cited: set[str] = set()
+    for block in _CITATION_BLOCK_RE.finditer(composed_body):
+        cited.update(_SCOPED_ID_RE.findall(block.group(1)))
+    return cited
+
+
+def _verify_completeness(
+    *,
+    canonical_fragments: Sequence[BehaviorFragment],
+    composed_body: str,
+    clarifications: ClarificationsStore,
+) -> None:
+    """Abort as `invalid-output` when the Composer silently dropped a fragment (FR-012b).
+
+    A fragment is accounted for if it is cited in the composed body, or if a
+    currently-valid persisted clarification (post-`invalidate()`) names it —
+    meaning it was surfaced through the Shape B contradiction/overlap path
+    and the operator's resolution already accounts for its absence. Anything
+    else is exactly the silent-drop failure mode `emit_composed`'s hash
+    checks cannot see, because those hashes are computed from the input, not
+    the output body.
+    """
+    cited = _cited_scoped_ids(composed_body)
+    excused = {
+        cited_fragment.scoped_id
+        for clarification in clarifications.entries.values()
+        for cited_fragment in clarification.cited_fragments
+    }
+    missing = sorted(
+        f.scoped_id
+        for f in canonical_fragments
+        if f.scoped_id not in cited and f.scoped_id not in excused
+    )
+    if missing:
+        raise_for(
+            ComposerFailureCategory.INVALID_OUTPUT,
+            "Composer output omits fragment(s) with no recorded clarification: "
+            + ", ".join(missing),
+        )
 
 
 __all__ = [
