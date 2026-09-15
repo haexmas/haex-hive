@@ -87,7 +87,8 @@ The file-naming convention (`.haex-hive.json` → `.spaex.json`; `.haex-hive/ins
 ### `atoms{}` category vocabulary
 
 Categories are **open**: any string key. Publishers pick category names by convention. Common categories today:
-- `constitution`: files that participate in constitution assembly (see Spec 007/008).
+- `behavior`: modality-bearing constitution fragments consumed by the behavior harness (Spec 023).
+- `constitution`: legacy whole-constitution files retained only for compatibility with older molecules.
 - `slash_commands`: files placed under `.claude/commands/` (or the equivalent for other agent CLIs).
 - `agents`: agent-role files.
 - `mcps`: MCP-server descriptors.
@@ -118,7 +119,7 @@ Categories are **open**: any string key. Publishers pick category names by conve
 | `id` | moleculeId | yes | |
 | `revision` | 40-hex SHA | yes | Commit SHA the molecule was fetched at. |
 | `source` | canonical URL | yes | The publisher URL. |
-| `paths` | array of POSIX relative paths | yes | Files this molecule contributed under participating roots. Sorted. |
+| `paths` | array of POSIX relative paths | yes | Files this molecule contributed under participating roots. Behavior molecules list the shared `.spaex/constitution.md` publication path. Sorted. |
 
 **Retired fields (per Spec 008 npm/pip-shape amendment, do not reintroduce in v4)**:
 - `generated_by`, `constitution`, `participating_roots`, `generation_inputs`.

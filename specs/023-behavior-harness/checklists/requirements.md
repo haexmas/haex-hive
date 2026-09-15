@@ -35,7 +35,7 @@ Validation run 2026-09-10 against the spec produced by /speckit-specify on branc
 
 **Content Quality**: the spec references specific file names (AGENTS.md, CLAUDE.md, .spaex/manifest.json, .spaex/constitution.d/) because these are the observable artifacts the feature interacts with, not implementation choices. Agent runtime names (Claude Code, Codex CLI, Gemini CLI) appear as target platforms in FR-023 and SC-007 because "multi-agent portability across these three" is the load-bearing user requirement, and naming them makes acceptance verifiable. Neither introduces implementation lock-in.
 
-**Requirement Completeness**: all 24 FRs are stated as observable system behavior. Edge cases cover empty sets, permissive-only sets, missing runtime, duplicate content, pre-existing operator-authored content, stale clarifications, prompt-version bumps, large fragment counts, and non-English prose.
+**Requirement Completeness**: all 25 FRs are stated as observable system behavior. Edge cases cover empty sets, behavior-only install-lock publication, permissive-only sets, missing runtime, duplicate content, pre-existing operator-authored content, stale clarifications, prompt-version bumps, large fragment counts, and non-English prose.
 
 **Feature Readiness**: six user stories cover the four requested flows (author declares fragment; consumer install with strict conflict abort; consumer build with clarification round; project additive local fragments) plus two supporting stories (consumer sees composed harness; cross-machine reproducibility).
 

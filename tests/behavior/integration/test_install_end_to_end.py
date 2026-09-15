@@ -11,6 +11,8 @@ Verifies:
 - Provenance suffix names both molecule/fragment scoped keys.
 - `.spaex/constitution.d/<molecule-id>/<fragment-id>.md` is materialized for
   each molecule (SC-001 acceptance scenario).
+- `.spaex/install.lock` records both behavior molecules and the shared
+  composed constitution publication path.
 """
 
 from __future__ import annotations
@@ -295,6 +297,26 @@ def test_install_composes_both_fragments_into_spaex_md(
     assert frag_a.exists()
     assert frag_b.exists()
     assert "**MUST** run the project's tests" in frag_a.read_text(encoding="utf-8")
+
+    install_lock = json.loads(
+        (consumer / ".spaex" / "install.lock").read_text(encoding="utf-8")
+    )
+    assert [entry["id"] for entry in install_lock["molecules"]] == [
+        "com.example.publisher.commit-hygiene",
+        "com.example.publisher.strict-testing",
+    ]
+    assert all(
+        entry["paths"] == [".spaex/constitution.md"]
+        for entry in install_lock["molecules"]
+    )
+    assert all(
+        entry["source"] == _CANONICAL and entry["revision"] == head
+        for entry in install_lock["molecules"]
+    )
+
+    install_lock_bytes = (consumer / ".spaex" / "install.lock").read_bytes()
+    assert _run_install(consumer, state_root, monkeypatch) == 0
+    assert (consumer / ".spaex" / "install.lock").read_bytes() == install_lock_bytes
 
 
 def _add_and_prepare_for_reinstall(

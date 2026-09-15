@@ -97,7 +97,12 @@ class SpeckitLockRecord:
 
 @dataclass(frozen=True)
 class MoleculeEntry:
-    """One installed molecule's sealed contribution (data-model.md §MoleculeEntry)."""
+    """One installed molecule's sealed contribution (data-model.md §MoleculeEntry).
+
+    Behavior molecules use the shared ``.spaex/constitution.md`` publication
+    path in ``paths``; their inspectable fragment files are not duplicated in
+    the lock entry.
+    """
 
     id: str
     source: str

@@ -138,18 +138,12 @@ def _is_no_op(
         lock = InstallLock.from_json(lock_path.read_bytes())
     except (OSError, ValueError, HaexError):
         return False
-    has_constitution_record = any(
-        CONSTITUTION_PATH in molecule.paths for molecule in lock.molecules
-    )
     if expected_body is None:
-        # Behavior-only manifests also use `.spaex/constitution.md`, but that
-        # artifact is not represented by an install.lock constitution record.
-        # The behavior pass may therefore keep it only when the current
-        # resolved set still declares behavior fragments. A manifest with no
-        # behavior sources must remove any composed artifact.
-        if constitution_path.exists() and (
-            has_constitution_record or not allow_existing_behavior_artifact
-        ):
+        # Behavior-only manifests also use `.spaex/constitution.md`. Their
+        # molecule records now identify that shared output, so an existing
+        # behavior artifact is valid even though there is no classic
+        # atoms.constitution body in this install generation.
+        if constitution_path.exists() and not allow_existing_behavior_artifact:
             return False
     else:
         if not constitution_path.exists():
@@ -245,6 +239,15 @@ def run(
                 repo_root, getattr(manifest, "local_fragments", ())
             )
             contributions, resolved = resolve_install_inputs(manifest, state_root)
+            preserved_behavior_files = (
+                _preserved_behavior_files(repo_root)
+                if project_local or _has_behavior_fragments(resolved)
+                else ()
+            )
+            preserved_files = (
+                *preserved_project_local_files,
+                *preserved_behavior_files,
+            )
             contributing_ids = {contribution.source.id for contribution in contributions}
             existing_lock = _read_live_lock(repo_root)
 
@@ -299,9 +302,11 @@ def run(
                         abort_on_contradiction=abort_on_contradiction,
                     )
                     return exit_codes.SUCCESS
-                with _preserve_generation_for_behavior(
+                generation_context = _preserve_generation_for_behavior(
                     repo_root, resolved, project_local
-                ):
+                )
+                stale_bytes_to_restore: bytes | None = None
+                with generation_context:
                     if speckit_records:
                         publish_constitution(
                             [],
@@ -309,7 +314,7 @@ def run(
                             state_root=state_root,
                             hook_only_records=tuple(hook_only_records),
                             speckit_records=speckit_records.publication_records,
-                            preserved_files=preserved_project_local_files,
+                            preserved_files=preserved_files,
                         )
                     else:
                         publish_constitution(
@@ -317,7 +322,7 @@ def run(
                             repo_root,
                             state_root=state_root,
                             hook_only_records=tuple(hook_only_records),
-                            preserved_files=preserved_project_local_files,
+                            preserved_files=preserved_files,
                         )
                     new_generation_id = _live_generation_id(repo_root)
                     if hook_only_records:
@@ -328,12 +333,24 @@ def run(
                         sys.stdout.write(
                             f"installed empty generation {new_generation_id}\n"
                         )
-                    _run_behavior_pipeline(
+                    outcome = _run_behavior_pipeline(
                         repo_root=repo_root,
                         state_root=state_root,
                         resolved=resolved,
                         project_local=project_local,
                         abort_on_contradiction=abort_on_contradiction,
+                    )
+                    if (
+                        not abort_on_contradiction
+                        and _behavior_publication_deferred(outcome, resolved, project_local)
+                    ):
+                        stale_bytes_to_restore = _read_stale_bytes(repo_root)
+                        rollback = getattr(generation_context, "rollback", None)
+                        if rollback is not None:
+                            rollback()
+                if stale_bytes_to_restore is not None:
+                    (repo_root / ".spaex" / STALE_FILENAME).write_bytes(
+                        stale_bytes_to_restore
                     )
                 return exit_codes.SUCCESS
 
@@ -379,7 +396,7 @@ def run(
                     contributions,
                     repo_root,
                     state_root=state_root,
-                    preserved_files=preserved_project_local_files,
+                    preserved_files=preserved_files,
                 )
                 if hook_enabled and not contributor_matches_disk
                 else nullcontext()
@@ -437,9 +454,11 @@ def run(
                 )
                 return exit_codes.SUCCESS
 
-            with _preserve_generation_for_behavior(
+            generation_context = _preserve_generation_for_behavior(
                 repo_root, resolved, project_local
-            ):
+            )
+            stale_bytes_to_restore = None
+            with generation_context:
                 if speckit_records:
                     publish_constitution(
                         contributions,
@@ -448,7 +467,7 @@ def run(
                         hook_status=hook_status.get(contribution.source.id),
                         hook_only_records=tuple(hook_only_records),
                         speckit_records=speckit_records.publication_records,
-                        preserved_files=preserved_project_local_files,
+                        preserved_files=preserved_files,
                     )
                 else:
                     publish_constitution(
@@ -457,16 +476,28 @@ def run(
                         state_root=state_root,
                         hook_status=hook_status.get(contribution.source.id),
                         hook_only_records=tuple(hook_only_records),
-                        preserved_files=preserved_project_local_files,
+                        preserved_files=preserved_files,
                     )
                 new_generation_id = _live_generation_id(repo_root)
                 sys.stdout.write(f"installed generation {new_generation_id}\n")
-                _run_behavior_pipeline(
+                outcome = _run_behavior_pipeline(
                     repo_root=repo_root,
                     state_root=state_root,
                     resolved=resolved,
                     project_local=project_local,
                     abort_on_contradiction=abort_on_contradiction,
+                )
+                if (
+                    not abort_on_contradiction
+                    and _behavior_publication_deferred(outcome, resolved, project_local)
+                ):
+                    stale_bytes_to_restore = _read_stale_bytes(repo_root)
+                    rollback = getattr(generation_context, "rollback", None)
+                    if rollback is not None:
+                        rollback()
+            if stale_bytes_to_restore is not None:
+                (repo_root / ".spaex" / STALE_FILENAME).write_bytes(
+                    stale_bytes_to_restore
                 )
             return exit_codes.SUCCESS
     except HaexError:
@@ -498,8 +529,14 @@ def _preserve_generation_for_behavior(
         shutil.copytree(live, backup_live, symlinks=True)
 
     class _GenerationRollback(AbstractContextManager[None]):
+        _rollback_requested = False
+
         def __enter__(self) -> None:
             return None
+
+        def rollback(self) -> None:
+            """Request restoration while allowing the caller to finish cleanly."""
+            self._rollback_requested = True
 
         def __exit__(
             self,
@@ -508,7 +545,7 @@ def _preserve_generation_for_behavior(
             traceback: TracebackType | None,
         ) -> Literal[False]:
             try:
-                if exc_type is not None:
+                if exc_type is not None or self._rollback_requested:
                     if live.exists():
                         shutil.rmtree(live)
                     if had_live:
@@ -579,6 +616,41 @@ def _has_behavior_fragments(resolved: Sequence[ResolvedMolecule]) -> bool:
         )
         for record in resolved
     )
+
+
+def _preserved_behavior_files(repo_root: Path) -> tuple[transaction.StagedFile, ...]:
+    """Carry behavior inputs and outputs through the install directory swap.
+
+    The behavior pipeline owns these files, but the install transaction also
+    swaps the complete ``.spaex/`` directory while updating ``install.lock``.
+    Preserve the current behavior tree so a lock-only update cannot erase the
+    composed artifact, prompt override, clarifications, or stale marker before
+    orchestration gets a chance to reconcile them.
+    """
+    live_root = repo_root / transaction.SPAEX_DIR
+    if not live_root.exists():
+        return ()
+
+    preserved_names = {
+        transaction.CONSTITUTION_NAME,
+        "clarifications.json",
+        "composer-prompt.md",
+        ".stale",
+    }
+    preserved: list[transaction.StagedFile] = []
+    for path in live_root.rglob("*"):
+        if not path.is_file() or path.is_symlink():
+            continue
+        relative = path.relative_to(live_root)
+        if (
+            relative.parts[0] != "constitution.d"
+            and relative.as_posix() not in preserved_names
+        ):
+            continue
+        preserved.append(
+            transaction.StagedFile(relative.as_posix(), path.read_bytes())
+        )
+    return tuple(preserved)
 
 
 def _run_hooks(
@@ -682,7 +754,7 @@ def _run_behavior_pipeline(
     resolved: list[ResolvedMolecule],
     project_local: Sequence[BehaviorFragment] = (),
     abort_on_contradiction: bool = True,
-) -> None:
+) -> behavior_orchestrate.BehaviorOutcome:
     """Spec 023 behavior-harness pass.
 
     Runs after the Spec 008 `.spaex/` rename-swap so behavior-authored
@@ -727,6 +799,29 @@ def _run_behavior_pipeline(
         from spaex.cli import behavior_commands  # local import to avoid cycles
 
         behavior_commands.maybe_emit_no_bootstrap_hint()
+    return outcome
+
+
+def _behavior_publication_deferred(
+    outcome: behavior_orchestrate.BehaviorOutcome,
+    resolved: Sequence[ResolvedMolecule],
+    project_local: Sequence[BehaviorFragment],
+) -> bool:
+    """Return whether an internal add/remove must retain the old generation."""
+    if not project_local and not _has_behavior_fragments(resolved):
+        return False
+    return not (
+        outcome.published or outcome.skipped_composer or outcome.removed_constitution
+    )
+
+
+def _read_stale_bytes(repo_root: Path) -> bytes | None:
+    """Snapshot the add-time stale marker before rolling back the generation."""
+    path = repo_root / transaction.SPAEX_DIR / STALE_FILENAME
+    try:
+        return path.read_bytes() if path.exists() else None
+    except OSError:
+        return None
 
 
 def _hook_only_records(
@@ -736,28 +831,43 @@ def _hook_only_records(
     hook_status: dict[str, HookStatus],
     speckit_records: Mapping[str, SpeckitLockRecord] | None = None,
 ) -> list[MoleculeEntry]:
-    """Build install.lock records for hook-only molecules (paths=()).
+    """Build install.lock records without a classic constitution contribution.
 
-    A record is emitted for every resolved molecule that declares
-    ``install_hook`` and does NOT contribute an ``atoms.constitution``
-    file. The constitution-contributing molecule's record is created
-    elsewhere by ``publish_constitution``. Records only appear here for
-    molecules whose hook actually reached a status in ``hook_status``
-    (i.e. skipped by the caller when a preceding abort short-circuited
-    later hooks).
+    Behavior molecules use the shared composed constitution as their
+    publication path, so they are recorded alongside hook-only molecules
+    during every successful install. A rejected or deferred Composer result
+    is rolled back by the surrounding generation transaction, so it cannot
+    replace the last valid published behavior generation. This keeps
+    install.lock's molecule list useful for both the legacy
+    ``atoms.constitution`` path and the canonical ``atoms.behavior`` path.
+    Hook-only records still use ``paths=()``. Records only appear here for
+    molecules whose hook reached a status, whose Spec Kit integration was
+    selected, or which contributed behavior fragments.
     """
     speckit_records = speckit_records or {}
-    return [
-        MoleculeEntry(
-            id=record.molecule_id,
-            source=record.source_url,
-            revision=record.revision,
-            paths=(),
-            hook_status=hook_status.get(record.molecule_id),
-            speckit=speckit_records.get(record.molecule_id),
+    records: list[MoleculeEntry] = []
+    for record in resolved:
+        if record.molecule_id in contributing_ids:
+            continue
+        has_behavior = _has_behavior_fragments((record,))
+        has_hook_or_speckit = (
+            record.install_hook is not None or record.molecule_id in speckit_records
         )
-        for record in resolved
-        if (record.install_hook is not None or record.molecule_id in speckit_records)
-        and record.molecule_id not in contributing_ids
-        and (record.molecule_id in hook_status or record.molecule_id in speckit_records)
-    ]
+        has_recorded_hook_or_speckit = (
+            record.molecule_id in hook_status or record.molecule_id in speckit_records
+        )
+        if not has_behavior and (
+            not has_hook_or_speckit or not has_recorded_hook_or_speckit
+        ):
+            continue
+        records.append(
+            MoleculeEntry(
+                id=record.molecule_id,
+                source=record.source_url,
+                revision=record.revision,
+                paths=(CONSTITUTION_PATH,) if has_behavior else (),
+                hook_status=hook_status.get(record.molecule_id),
+                speckit=speckit_records.get(record.molecule_id),
+            )
+        )
+    return records
